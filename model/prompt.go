@@ -1,4 +1,4 @@
-package main
+package model
 
 import (
 	"fmt"
@@ -18,9 +18,17 @@ var (
 	invalidButton = fmt.Sprintf("[ %s ]", blurredStyle.Render("X"))
 )
 
-type profilePrompt struct {
+type ProfilePrompt struct {
 	focusIndex int
 	inputs     []textinput.Model
+}
+
+func (m *ProfilePrompt) Username() string {
+	return m.inputs[0].Value()
+}
+
+func (m *ProfilePrompt) Password() string {
+	return m.inputs[1].Value()
 }
 
 func validInputs(inputs *[]textinput.Model) bool {
@@ -34,8 +42,8 @@ func validInputs(inputs *[]textinput.Model) bool {
 	return valid
 }
 
-func newPromptModel() profilePrompt {
-	m := profilePrompt{
+func NewPromptModel() ProfilePrompt {
+	m := ProfilePrompt{
 		inputs: make([]textinput.Model, 2),
 	}
 
@@ -65,11 +73,11 @@ func newPromptModel() profilePrompt {
 	return m
 }
 
-func (m profilePrompt) Init() tea.Cmd {
+func (m ProfilePrompt) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (m profilePrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m ProfilePrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -120,7 +128,7 @@ func (m profilePrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *profilePrompt) updateInputs(msg tea.Msg) tea.Cmd {
+func (m *ProfilePrompt) updateInputs(msg tea.Msg) tea.Cmd {
 	cmds := make([]tea.Cmd, len(m.inputs))
 	// Only text inputs with Focus() set will respond, so it's safe to simply
 	// update all of them here without any further logic.
@@ -131,7 +139,7 @@ func (m *profilePrompt) updateInputs(msg tea.Msg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (m profilePrompt) View() string {
+func (m ProfilePrompt) View() string {
 	var b strings.Builder
 
 	for i := range m.inputs {

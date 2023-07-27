@@ -19,14 +19,14 @@ type AddProfileCmd struct {
 
 func (cmd *AddProfileCmd) Run(ctx *kong.Context) error {
 	if cmd.Username == "" || cmd.Password == "" {
-		_m, err := tea.NewProgram(newPromptModel()).Run()
+		_m, err := tea.NewProgram(model.NewPromptModel()).Run()
 		if err != nil {
 			fmt.Printf("Alas, there's been an error: %v", err)
 			os.Exit(1)
 		}
-		m := _m.(profilePrompt)
-		cmd.Username = m.inputs[0].Value()
-		cmd.Password = m.inputs[1].Value()
+		m := _m.(model.ProfilePrompt)
+		cmd.Username = m.Username()
+		cmd.Password = m.Password()
 	}
 
 	profile := config.Profile{
