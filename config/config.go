@@ -1,9 +1,10 @@
 package config
 
 import (
-	"os"
+	"errors"
 
 	toml "github.com/pelletier/go-toml/v2"
+	"github.com/shibukawa/configdir"
 )
 
 type Config struct {
@@ -17,32 +18,29 @@ type Profile struct {
 	Password string
 }
 
+func ConfigDir() configdir.ConfigDir {
+	return configdir.New("parseable", "pb")
+}
+
 func WriteConfigToFile(config *Config, filename string) error {
+	tomlData, _ := toml.Marshal(config)
 
-	tomlData, err := toml.Marshal(config)
-	if err != nil {
-		return err
-	}
+	// Stores to user folder
+	folders := ConfigDir().QueryFolders(configdir.Global)
+	err := folders[0].WriteFile("config.toml", tomlData)
 
-	err = os.WriteFile(filename, tomlData, 0644)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func ReadConfigFromFile(filename string) (*Config, error) {
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
 	var config Config
-	err = toml.Unmarshal(data, &config)
-	if err != nil {
-		return nil, err
-	}
 
-	return &config, nil
+	folder := ConfigDir().QueryFolderContainsFile("config.toml")
+	if folder != nil {
+		data, _ := folder.ReadFile("config.toml")
+		toml.Unmarshal(data, &config)
+		return &config, nil
+	} else {
+		return nil, errors.New("Config file not found")
+	}
 }
