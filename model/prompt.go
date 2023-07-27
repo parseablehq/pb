@@ -23,22 +23,23 @@ type ProfilePrompt struct {
 	inputs     []textinput.Model
 }
 
-func (m *ProfilePrompt) Username() string {
-	return m.inputs[0].Value()
-}
-
-func (m *ProfilePrompt) Password() string {
-	return m.inputs[1].Value()
+func (m *ProfilePrompt) Values() (string, string) {
+	if validInputs(&m.inputs) {
+		return m.inputs[0].Value(), m.inputs[1].Value()
+	} else {
+		return "", ""
+	}
 }
 
 func validInputs(inputs *[]textinput.Model) bool {
 	valid := true
+	username := (*inputs)[0].Value()
+	password := (*inputs)[1].Value()
 
-	for _, input := range *inputs {
-		if input.Value() == "" {
-			valid = false
-		}
+	if strings.Contains(username, " ") || username == "" || password == "" {
+		valid = false
 	}
+
 	return valid
 }
 
