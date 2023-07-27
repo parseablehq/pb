@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"config"
+	"cli/config"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"

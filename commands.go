@@ -1,9 +1,9 @@
 package main
 
 import (
-	"config"
+	"cli/config"
+	"cli/model"
 	"fmt"
-	"model"
 	"os"
 
 	"github.com/alecthomas/kong"

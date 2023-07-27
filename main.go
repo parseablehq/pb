@@ -1,7 +1,7 @@
 package main
 
 import (
-	"config"
+	"cli/config"
 
 	"github.com/alecthomas/kong"
 )
