@@ -35,13 +35,12 @@ var (
 		timeDurationItem{duration: OneWeek, repr: "1 Week"},
 	}
 
-	listItemRender         = lipgloss.NewStyle().Foreground(lipgloss.Color("#a21"))
-	listSelectedItemRender = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFF"))
+	listItemRender         = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#3f9999", Dark: "#edf2fb"})
+	listSelectedItemRender = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#00171f", Dark: "#FFFFFF"})
 )
 
-var rangeNavigationMap = [][]string{
-	{"list", "start"},
-	{"list", "end"},
+var rangeNavigationMap = []string{
+	"list", "start", "end",
 }
 
 type timeDurationItem struct {
@@ -78,11 +77,7 @@ type timeRangeModel struct {
 	list_model  list.Model
 	start_model textinput.Model
 	end_model   textinput.Model
-	mode        Mode
-	focus       struct {
-		x uint
-		y uint
-	}
+	focus       int
 }
 
 func (m *timeRangeModel) StartValue() string {
@@ -111,18 +106,7 @@ func (m *timeRangeModel) SetEnd(t time.Time) {
 	m.end_model.SetValue(m.EndValue())
 }
 
-func (m *timeRangeModel) Focus() {
-	if m.mode == inactive {
-		m.mode = navigation
-	}
-}
-
-func (m *timeRangeModel) Blur() {
-	m.mode = inactive
-}
-
 func (m *timeRangeModel) focusSelected() {
-	m.mode = active
 	switch m.currentFocus() {
 	case "list":
 		return
@@ -146,29 +130,23 @@ func (m *timeRangeModel) blurSelected() {
 
 func (m *timeRangeModel) Navigate(key tea.KeyMsg) {
 	switch key.String() {
-	case "up", "w":
-		if m.focus.y > 0 {
-			m.focus.y -= 1
+	case "shift+tab":
+		if m.focus == 0 {
+			m.focus = len(rangeNavigationMap)
 		}
-	case "down", "s":
-		if m.focus.y < uint(len(rangeNavigationMap))-1 {
-			m.focus.y += 1
+		m.focus -= 1
+	case "tab":
+		if m.focus == len(rangeNavigationMap)-1 {
+			m.focus = -1
 		}
-	case "left", "a":
-		if m.focus.x > 0 {
-			m.focus.x -= 1
-		}
-	case "right", "d":
-		if m.focus.x < uint(len(rangeNavigationMap[m.focus.y]))-1 {
-			m.focus.x += 1
-		}
+		m.focus += 1
 	default:
 		return
 	}
 }
 
 func (m *timeRangeModel) currentFocus() string {
-	return rangeNavigationMap[m.focus.y][m.focus.x]
+	return rangeNavigationMap[m.focus]
 }
 
 func NewTimeRangeModel() timeRangeModel {
@@ -204,11 +182,7 @@ func NewTimeRangeModel() timeRangeModel {
 		list_model:  list,
 		start_model: start,
 		end_model:   end,
-		mode:        inactive,
-		focus: struct {
-			x uint
-			y uint
-		}{0, 0},
+		focus:       0,
 	}
 }
 
@@ -221,20 +195,11 @@ func (m timeRangeModel) Update(msg tea.Msg) (timeRangeModel, tea.Cmd) {
 
 	switch key := msg.(type) {
 	case tea.KeyMsg:
-		if key.Type == tea.KeyEsc {
-			m.mode = navigation
+		if key.Type == tea.KeyShiftTab || key.Type == tea.KeyTab {
 			m.blurSelected()
-			return m, nil
-		}
-
-		if m.mode == navigation {
-			if key.Type == tea.KeyEnter {
-				m.mode = active
-				m.focusSelected()
-			} else {
-				m.Navigate(key)
-			}
-		} else if m.mode == active {
+			m.Navigate(key)
+			m.focusSelected()
+		} else {
 			switch m.currentFocus() {
 			case "list":
 				m.list_model, cmd = m.list_model.Update(key)

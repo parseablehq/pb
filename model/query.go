@@ -155,8 +155,6 @@ func (m *QueryModel) Blur() {
 	switch m.currentFocus() {
 	case "query":
 		m.query.Blur()
-	case "time":
-		m.time_range.Blur()
 	case "table":
 		m.table.Focused(false)
 	default:
@@ -168,8 +166,6 @@ func (m *QueryModel) Focus(id string) {
 	switch id {
 	case "query":
 		m.query.Focus()
-	case "time":
-		m.time_range.Focus()
 	case "table":
 		m.table.Focused(true)
 	}
@@ -207,7 +203,7 @@ func (m *QueryModel) Navigate(key tea.KeyMsg) {
 func (m QueryModel) HandleKeyPress(key tea.KeyMsg) (QueryModel, tea.Cmd) {
 	var cmd tea.Cmd
 
-	if key.Type == tea.KeyEsc && (m.time_range.mode != active) {
+	if key.Type == tea.KeyEsc {
 		m.mode = navigation
 		m.Blur()
 		return m, nil
