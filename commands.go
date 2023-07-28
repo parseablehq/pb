@@ -57,6 +57,9 @@ func (cmd *AddProfileCmd) Run(ctx *kong.Context) error {
 		global_profile = profile
 		return nil
 	} else {
+		if file_config.Profiles == nil {
+			file_config.Profiles = make(map[string]config.Profile)
+		}
 		file_config.Profiles[cmd.Name] = profile
 		if file_config.Default_profile == "" {
 			file_config.Default_profile = cmd.Name
