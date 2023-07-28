@@ -39,8 +39,8 @@ func (cmd *AddProfileCmd) Run(ctx *kong.Context) error {
 
 	profile := config.Profile{
 		Url:      cmd.Url,
-		Username: cmd.Username,
-		Password: cmd.Password,
+		Username: username,
+		Password: password,
 	}
 
 	file_config, err := config.ReadConfigFromFile("config.toml")
