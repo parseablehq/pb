@@ -461,7 +461,7 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 
 	for _, title := range data.schema {
 		switch title {
-		case "p_timestamp", "p_metadata", "p_tag":
+		case "p_timestamp", "p_metadata", "p_tags":
 			continue
 		default:
 			width := inferWidthForColumns(title, &data.data, 100, 10) + 3
