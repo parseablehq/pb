@@ -20,7 +20,7 @@ import (
 	"golang.org/x/term"
 )
 
-const datetime_width = 24
+const datetime_width = 26
 
 var (
 	backgroundColor = lipgloss.Color("#050F10")

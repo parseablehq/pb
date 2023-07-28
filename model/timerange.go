@@ -101,6 +101,16 @@ func (m *timeRangeModel) EndValueUtc() string {
 	return m.end.UTC().Format(time.RFC3339)
 }
 
+func (m *timeRangeModel) SetStart(t time.Time) {
+	m.start = t
+	m.start_model.SetValue(m.StartValue())
+}
+
+func (m *timeRangeModel) SetEnd(t time.Time) {
+	m.end = t
+	m.end_model.SetValue(m.EndValue())
+}
+
 func (m *timeRangeModel) Focus() {
 	if m.mode == inactive {
 		m.mode = navigation
@@ -165,19 +175,27 @@ func NewTimeRangeModel() timeRangeModel {
 	end_time := time.Now()
 	start_time := end_time.Add(TenMinute)
 
-	list := list.New(timeDurations, timeDurationItemDelegate{}, 10, 3)
+	list := list.New(timeDurations, timeDurationItemDelegate{}, 20, 10)
 	list.SetShowPagination(false)
 	list.SetShowHelp(false)
 	list.SetShowFilter(false)
-	list.SetShowTitle(false)
+	list.SetShowTitle(true)
+	list.Styles.TitleBar = baseStyle.Copy()
+	list.Styles.Title = baseStyle.Copy().MarginBottom(1)
+	list.Styles.TitleBar.Align(lipgloss.Left)
+	list.Title = "Select Time Range"
 	list.SetShowStatusBar(false)
+
+	input_style := lipgloss.NewStyle().Bold(true).Faint(true).Width(6).Align(lipgloss.Center)
 
 	start := textinput.New()
 	start.Width = datetime_width
+	start.Prompt = input_style.Render("start")
 	start.SetValue(start_time.Format(time.RFC3339))
 
 	end := textinput.New()
 	end.Width = datetime_width
+	end.Prompt = input_style.Render("end")
 	end.SetValue(end_time.Format(time.RFC3339))
 
 	return timeRangeModel{
@@ -220,6 +238,9 @@ func (m timeRangeModel) Update(msg tea.Msg) (timeRangeModel, tea.Cmd) {
 			switch m.currentFocus() {
 			case "list":
 				m.list_model, cmd = m.list_model.Update(key)
+				duration := m.list_model.SelectedItem().(timeDurationItem).duration
+				m.SetEnd(time.Now())
+				m.SetStart(m.end.Add(duration))
 			case "start":
 				m.start_model, cmd = m.start_model.Update(key)
 			case "end":
