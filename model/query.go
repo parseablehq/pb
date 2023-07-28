@@ -23,9 +23,11 @@ import (
 const datetime_width = 26
 
 var (
-	baseStyle    = lipgloss.NewStyle().BorderForeground(lipgloss.AdaptiveColor{Light: "236", Dark: "248"})
-	headerStyle  = lipgloss.NewStyle().Inherit(baseStyle).Foreground(lipgloss.AdaptiveColor{Light: "#023047", Dark: "#90E0EF"}).Bold(true)
-	tableStyle   = lipgloss.NewStyle().Inherit(baseStyle).Align(lipgloss.Left)
+	baseStyle   = lipgloss.NewStyle().BorderForeground(lipgloss.AdaptiveColor{Light: "236", Dark: "248"})
+	headerStyle = lipgloss.NewStyle().Inherit(baseStyle).Foreground(lipgloss.AdaptiveColor{Light: "#023047", Dark: "#90E0EF"}).Bold(true)
+	tableStyle  = lipgloss.NewStyle().Inherit(baseStyle).Align(lipgloss.Left)
+	focusColor  = lipgloss.AdaptiveColor{Light: "#5a189a", Dark: "#e0aaff"}
+
 	customBorder = table.Border{
 		Top:    "─",
 		Left:   "│",
@@ -296,18 +298,28 @@ func (m QueryModel) View() string {
 	var query_style = input_style.Copy()
 	var time_style = input_style.Copy()
 	var execute_style = input_style.Copy().Height(2).Align(lipgloss.Center)
+	var table_style = input_style.Copy().Border(lipgloss.RoundedBorder(), false)
+
+	var patchStyleFocus = func(style *lipgloss.Style) {
+		border := lipgloss.RoundedBorder()
+		border.TopLeft = "╓"
+		border.Left = "║"
+		border.BottomLeft = "╙ "
+
+		style.BorderStyle(border).BorderForeground(focusColor)
+	}
 
 	focused := navigation_map[m.focus.y][m.focus.x]
 
 	switch focused {
 	case "query":
-		query_style.BorderStyle(lipgloss.ThickBorder())
+		patchStyleFocus(&query_style)
 	case "time":
-		time_style.BorderStyle(lipgloss.ThickBorder())
+		patchStyleFocus(&time_style)
 	case "execute":
-		execute_style.BorderStyle(lipgloss.ThickBorder())
+		patchStyleFocus(&execute_style)
 	case "table":
-		m.table = m.table.WithBaseStyle(tableStyle.BorderStyle(lipgloss.ThickBorder()))
+		table_style.Border(lipgloss.NormalBorder(), false, false, false, true).BorderForeground(focusColor)
 	}
 
 	m.table.WithMaxTotalWidth(m.width - 10)
@@ -331,9 +343,13 @@ func (m QueryModel) View() string {
 
 	tableHeight := m.height - inputHeight - statusHeight
 
-	m.table = m.table.WithMaxTotalWidth(m.width)
+	if focused == "table" {
+		m.table = m.table.WithMaxTotalWidth(m.width - 2)
+	} else {
+		m.table = m.table.WithMaxTotalWidth(m.width)
+	}
 
-	render := fmt.Sprintf("%s\n%s\n%s", inputs, lipgloss.PlaceVertical(tableHeight, lipgloss.Top, m.table.View()), m.status.View())
+	render := fmt.Sprintf("%s\n%s\n%s", inputs, lipgloss.PlaceVertical(tableHeight, lipgloss.Top, table_style.Render(m.table.View())), m.status.View())
 
 	if m.mode == active && focused == "time" {
 		return outer.Render(lipgloss.Place(m.width-4, m.height-4, lipgloss.Center, lipgloss.Center, m.time_range.View()))
@@ -453,14 +469,17 @@ func fetchData(client *http.Client, profile *config.Profile, query string, start
 func (m *QueryModel) UpdateTable(data FetchData) {
 	columns := make([]table.Column, len(data.schema))
 	columns[0] = table.NewColumn("p_timestamp", "p_timestamp", 24)
+	columnIndex := 1
 
-	for i := 0; i < len(data.schema); i++ {
-		title := data.schema[i]
-		if title == "p_timestamp" {
+	for _, title := range data.schema {
+		switch title {
+		case "p_timestamp", "p_metadata", "p_tag":
 			continue
+		default:
+			width := inferWidthForColumns(title, &data.data, 100, 10) + 3
+			columns[columnIndex] = table.NewColumn(title, title, width)
+			columnIndex += 1
 		}
-		width := inferWidthForColumns(title, &data.data, 100, 10) + 3
-		columns[i] = table.NewColumn(title, title, width)
 	}
 
 	rows := make([]table.Row, len(data.data))
