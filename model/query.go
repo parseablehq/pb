@@ -13,7 +13,6 @@ import (
 	"cli/config"
 
 	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	table "github.com/evertras/bubble-table/table"
@@ -106,13 +105,6 @@ func NewQueryModel(profile config.Profile, stream string) QueryModel {
 	query.Focus()
 
 	var w, h, _ = term.GetSize(int(os.Stdout.Fd()))
-
-	currentTime := time.Now().UTC()
-	startTime := currentTime.Add(-5 * time.Minute)
-	time_start := DateInput()
-	time_start.SetValue(startTime.Format(time.RFC3339))
-	time_end := DateInput()
-	time_end.SetValue(currentTime.Format(time.RFC3339))
 
 	columns := []table.Column{
 		table.NewColumn("Id", "Id", 5),
@@ -524,15 +516,6 @@ func inferWidthForColumns(column string, data *[]map[string]interface{}, max_rec
 		}
 	}
 
-	return
-}
-
-func DateInput() (x textinput.Model) {
-	x = textinput.New()
-	x.TextStyle.Background(baseStyle.GetBackground())
-	x.PlaceholderStyle.Background(baseStyle.GetBackground())
-	x.Prompt = ""
-	x.Width = datetime_width
 	return
 }
 
