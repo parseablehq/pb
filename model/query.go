@@ -23,11 +23,7 @@ import (
 const datetime_width = 26
 
 var (
-	backgroundColor = lipgloss.Color("#050F10")
-	baseStyle       = lipgloss.NewStyle().
-			Background(backgroundColor).
-			MarginBackground(backgroundColor).
-			BorderBackground(backgroundColor)
+	baseStyle    = lipgloss.NewStyle().BorderForeground(lipgloss.AdaptiveColor{Light: "236", Dark: "248"})
 	customBorder = table.Border{
 		Top:    "─",
 		Left:   "│",
@@ -46,6 +42,10 @@ var (
 		InnerJunction:  "╫",
 
 		InnerDivider: "║",
+	}
+	textarea_style = textarea.Style{
+		Base: baseStyle,
+		Text: baseStyle,
 	}
 )
 
@@ -92,9 +92,10 @@ type QueryModel struct {
 func NewQueryModel(profile config.Profile, stream string) QueryModel {
 	query := textarea.New()
 	query.ShowLineNumbers = false
-	query.SetHeight(1)
+	query.SetHeight(2)
 	query.SetWidth(50)
-
+	query.FocusedStyle = textarea_style
+	query.BlurredStyle = textarea_style
 	query.Placeholder = "select * from app"
 	query.InsertString("select * from app")
 	query.Focus()
