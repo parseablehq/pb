@@ -6,11 +6,27 @@ import (
 )
 
 var (
-	titleStyle  = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#CDB4DBAA", Dark: "#023047AA"})
-	hostStyle   = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#FFAFCCAA", Dark: "#219EBCCC"})
-	streamStyle = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#CDB4DBAA", Dark: "#C1121FAA"})
-	infoStyle   = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#9381FFAA", Dark: "#051923AA"})
-	errorStyle  = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "#D8115922", Dark: "#D81159AA"})
+	commonStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#000000"})
+
+	titleStyle = commonStyle.Copy().
+			Background(lipgloss.AdaptiveColor{Light: "#134074", Dark: "#FFADAD"}).
+			Padding(0, 1)
+
+	hostStyle = commonStyle.Copy().
+			Background(lipgloss.AdaptiveColor{Light: "#13315C", Dark: "#FFD6A5"}).
+			Padding(0, 1)
+
+	streamStyle = commonStyle.Copy().
+			Background(lipgloss.AdaptiveColor{Light: "#0B2545", Dark: "#FDFFB6"}).
+			Padding(0, 1)
+
+	infoStyle = commonStyle.Copy().
+			Background(lipgloss.AdaptiveColor{Light: "#212529", Dark: "#CAFFBF"}).
+			AlignHorizontal(lipgloss.Right)
+
+	errorStyle = commonStyle.Copy().
+			Background(lipgloss.AdaptiveColor{Light: "#5A2A27", Dark: "#D4A373"}).
+			AlignHorizontal(lipgloss.Right)
 )
 
 type StatusBar struct {
@@ -58,7 +74,7 @@ func (m StatusBar) View() string {
 	left_width := lipgloss.Width(left)
 	right_width := m.width - left_width
 
-	right = right_style.AlignHorizontal(lipgloss.Right).Width(right_width).Render(right)
+	right = right_style.Width(right_width).Render(right)
 
 	return lipgloss.JoinHorizontal(lipgloss.Bottom, left, right)
 }

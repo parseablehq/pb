@@ -326,9 +326,7 @@ func (m QueryModel) View() string {
 	)
 
 	inputHeight := lipgloss.Height(inputs)
-
 	statusHeight := 1
-
 	tableHeight := m.height - inputHeight - statusHeight
 
 	if focused == "table" {
@@ -336,6 +334,8 @@ func (m QueryModel) View() string {
 	} else {
 		m.table = m.table.WithMaxTotalWidth(m.width)
 	}
+
+	m.status.width = m.width
 
 	render := fmt.Sprintf("%s\n%s\n%s", inputs, lipgloss.PlaceVertical(tableHeight, lipgloss.Top, table_style.Render(m.table.View())), m.status.View())
 
