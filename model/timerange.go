@@ -255,12 +255,14 @@ func (m timeRangeModel) Update(msg tea.Msg) (timeRangeModel, tea.Cmd) {
 func (m timeRangeModel) View() string {
 	var input_style = lipgloss.NewStyle().
 		Inherit(baseStyle).
-		Border(lipgloss.RoundedBorder(), true).
 		Margin(0)
 
-	var list_style = input_style.Copy()
-	var start_style = input_style.Copy()
-	var end_style = input_style.Copy()
+	var list_style = input_style.Copy().
+		Border(lipgloss.RoundedBorder(), true).
+		Padding(2)
+
+	var start_style = input_style.Copy().Border(lipgloss.NormalBorder(), false, false, true, false)
+	var end_style = start_style.Copy()
 
 	focused := m.currentFocus()
 
@@ -268,13 +270,13 @@ func (m timeRangeModel) View() string {
 	case "list":
 		list_style.BorderStyle(lipgloss.ThickBorder())
 	case "start":
-		start_style.BorderStyle(lipgloss.ThickBorder())
+		start_style.Border(lipgloss.NormalBorder(), true)
 	case "end":
-		end_style.BorderStyle(lipgloss.ThickBorder())
+		end_style.Border(lipgloss.NormalBorder(), true)
 	}
 
-	right := lipgloss.JoinVertical(lipgloss.Bottom, start_style.Render(m.start_model.View()), end_style.Render(m.end_model.View()))
-	page := lipgloss.JoinHorizontal(lipgloss.Left, list_style.Render(m.list_model.View()), right)
+	right := lipgloss.JoinVertical(lipgloss.Left, start_style.MarginBottom(3).Render(m.start_model.View()), end_style.Render(m.end_model.View()))
+	page := lipgloss.JoinHorizontal(lipgloss.Center, list_style.MarginRight(2).Render(m.list_model.View()), right)
 
 	return page
 }
