@@ -24,6 +24,8 @@ const datetime_width = 26
 
 var (
 	baseStyle    = lipgloss.NewStyle().BorderForeground(lipgloss.AdaptiveColor{Light: "236", Dark: "248"})
+	headerStyle  = lipgloss.NewStyle().Inherit(baseStyle).Foreground(lipgloss.AdaptiveColor{Light: "#023047", Dark: "#90E0EF"}).Bold(true)
+	tableStyle   = lipgloss.NewStyle().Inherit(baseStyle).Align(lipgloss.Left)
 	customBorder = table.Border{
 		Top:    "─",
 		Left:   "│",
@@ -80,13 +82,14 @@ type QueryModel struct {
 	query      textarea.Model
 	time_range timeRangeModel
 	table      table.Model
+	mode       Mode
+	profile    config.Profile
+	stream     string
+	status     StatusBar
 	focus      struct {
 		x uint
 		y uint
 	}
-	mode    Mode
-	profile config.Profile
-	stream  string
 }
 
 func NewQueryModel(profile config.Profile, stream string) QueryModel {
@@ -121,19 +124,13 @@ func NewQueryModel(profile config.Profile, stream string) QueryModel {
 
 	table := table.New(columns).
 		WithRows(rows).
-		HeaderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true)).
+		HeaderStyle(headerStyle).
 		SelectableRows(false).
 		Border(customBorder).
 		Focused(true).
 		WithKeyMap(keys).
-		WithPageSize(20).
-		WithBaseStyle(
-			lipgloss.NewStyle().
-				Inherit(baseStyle).
-				BorderForeground(lipgloss.Color("#a38")).
-				Foreground(lipgloss.Color("#aaa")).
-				Align(lipgloss.Left),
-		).
+		WithPageSize(30).
+		WithBaseStyle(tableStyle).
 		WithMissingDataIndicatorStyled(table.StyledCell{
 			Style: lipgloss.NewStyle().Foreground(lipgloss.Color("#faa")),
 			Data:  "╌",
@@ -145,13 +142,14 @@ func NewQueryModel(profile config.Profile, stream string) QueryModel {
 		query:      query,
 		time_range: NewTimeRangeModel(),
 		table:      table,
+		mode:       navigation,
+		profile:    profile,
+		stream:     stream,
+		status:     NewStatusBar(profile.Url, stream, w),
 		focus: struct {
 			x uint
 			y uint
 		}{0, 0},
-		mode:    navigation,
-		profile: profile,
-		stream:  stream,
 	}
 }
 
@@ -261,7 +259,10 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case FetchData:
 		if msg.status == FetchOk {
 			m.UpdateTable(msg)
+		} else {
+			m.status.Error = "failed to query"
 		}
+
 		m.mode = navigation
 		return m, nil
 
@@ -285,10 +286,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m QueryModel) View() string {
 	var outer = lipgloss.NewStyle().Inherit(baseStyle).
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("228")).
-		UnsetMaxWidth().
-		UnsetMaxHeight().Width(m.width - 2).Height(m.height - 2)
+		UnsetMaxHeight().Width(m.width).Height(m.height)
 
 	var input_style = lipgloss.NewStyle().
 		Inherit(baseStyle).
@@ -297,7 +295,7 @@ func (m QueryModel) View() string {
 
 	var query_style = input_style.Copy()
 	var time_style = input_style.Copy()
-	var execute_style = input_style.Copy()
+	var execute_style = input_style.Copy().Height(2).Align(lipgloss.Center)
 
 	focused := navigation_map[m.focus.y][m.focus.x]
 
@@ -309,7 +307,7 @@ func (m QueryModel) View() string {
 	case "execute":
 		execute_style.BorderStyle(lipgloss.ThickBorder())
 	case "table":
-		m.table.WithBaseStyle(lipgloss.NewStyle().BorderBackground(lipgloss.Color("#EEE")))
+		m.table = m.table.WithBaseStyle(tableStyle.BorderStyle(lipgloss.ThickBorder()))
 	}
 
 	m.table.WithMaxTotalWidth(m.width - 10)
@@ -327,7 +325,15 @@ func (m QueryModel) View() string {
 		execute_style.Render(button),
 	)
 
-	render := fmt.Sprintf("Parseable View %s %s\n%s\n%s", m.profile.Url, m.stream, inputs, m.table.View())
+	inputHeight := lipgloss.Height(inputs)
+
+	statusHeight := 1
+
+	tableHeight := m.height - inputHeight - statusHeight
+
+	m.table = m.table.WithMaxTotalWidth(m.width)
+
+	render := fmt.Sprintf("%s\n%s\n%s", inputs, lipgloss.PlaceVertical(tableHeight, lipgloss.Top, m.table.View()), m.status.View())
 
 	if m.mode == active && focused == "time" {
 		return outer.Render(lipgloss.Place(m.width-4, m.height-4, lipgloss.Center, lipgloss.Center, m.time_range.View()))
