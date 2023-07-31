@@ -10,18 +10,18 @@ import (
 
 var global_profile config.Profile
 
+// Root command
 var cli = &cobra.Command{
 	Use:   "pb",
-	Short: "pb",
-	Long:  "pb",
+	Short: "cli tool to connect with Parseable",
 }
 
+// Profile subcommand
 var profile = &cobra.Command{
 	Use: "profile",
 }
 
 func main() {
-
 	profile.AddCommand(AddProfileCmd)
 	profile.AddCommand(DeleteProfileCmd)
 	profile.AddCommand(ListProfileCmd)
