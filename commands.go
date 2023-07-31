@@ -6,142 +6,151 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/alecthomas/kong"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/spf13/cobra"
 )
 
-type AddProfileCmd struct {
-	Name     string `arg required type:"string"`
-	Url      string `arg required type:"string"`
-	Username string `arg optional type:"string"`
-	Password string `arg optional type:"string"`
+var AddProfileCmd = &cobra.Command{
+	Use: "add name url <username?> <password?>",
+	Args: func(cmd *cobra.Command, args []string) error {
+		if err := cobra.MinimumNArgs(2)(cmd, args); err != nil {
+			return err
+		}
+		if err := cobra.MaximumNArgs(4)(cmd, args); err != nil {
+			return err
+		}
+		return nil
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		url := args[1]
+
+		var username string
+		var password string
+
+		if len(args) < 4 {
+			_m, err := tea.NewProgram(model.NewPromptModel()).Run()
+			if err != nil {
+				fmt.Printf("Alas, there's been an error: %v", err)
+				os.Exit(1)
+			}
+			m := _m.(model.ProfilePrompt)
+
+			username, password = m.Values()
+		} else {
+			username = args[3]
+			password = args[4]
+		}
+
+		profile := config.Profile{
+			Url:      url,
+			Username: username,
+			Password: password,
+		}
+
+		file_config, err := config.ReadConfigFromFile("config.toml")
+
+		if err != nil {
+			// create new file
+			new_config := config.Config{
+				Profiles: map[string]config.Profile{
+					name: profile,
+				},
+				Default_profile: name,
+			}
+			err = config.WriteConfigToFile(&new_config, "config.toml")
+			global_profile = profile
+			return err
+		} else {
+			if file_config.Profiles == nil {
+				file_config.Profiles = make(map[string]config.Profile)
+			}
+			file_config.Profiles[name] = profile
+			if file_config.Default_profile == "" {
+				file_config.Default_profile = name
+			}
+			config.WriteConfigToFile(file_config, "config.toml")
+		}
+
+		return nil
+	},
 }
 
-func (cmd *AddProfileCmd) Run(ctx *kong.Context) error {
-	username := cmd.Username
-	password := cmd.Password
-
-	if username == "" || password == "" {
-		_m, err := tea.NewProgram(model.NewPromptModel()).Run()
+var DeleteProfileCmd = &cobra.Command{
+	Use:  "delete name",
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		file_config, err := config.ReadConfigFromFile("config.toml")
 		if err != nil {
+			return nil
+		} else {
+			_, exists := file_config.Profiles[name]
+			if exists {
+				delete(file_config.Profiles, name)
+			}
+		}
+
+		if len(file_config.Profiles) == 0 {
+			file_config.Default_profile = ""
+		}
+
+		config.WriteConfigToFile(file_config, "config.toml")
+		return nil
+	},
+}
+
+var DefaultProfileCmd = &cobra.Command{
+	Use:  "default name",
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		file_config, err := config.ReadConfigFromFile("config.toml")
+		if err != nil {
+			return nil
+		} else {
+			_, exists := file_config.Profiles[name]
+			if exists {
+				file_config.Default_profile = name
+			}
+		}
+
+		config.WriteConfigToFile(file_config, "config.toml")
+		return nil
+	},
+}
+
+var ListProfileCmd = &cobra.Command{
+	Use: "list",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		file_config, err := config.ReadConfigFromFile("config.toml")
+		if err != nil {
+			return nil
+		} else {
+			for key, value := range file_config.Profiles {
+				fmt.Println(key, value.Url, value.Username)
+			}
+		}
+		return nil
+	},
+}
+
+var QueryProfileCmd = &cobra.Command{
+	Use:  "query name",
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		stream := args[0]
+
+		if global_profile.Url == "" {
+			fmt.Println("No Profile Set. Use profile add command to create new profile to use")
+			return nil
+		}
+
+		p := tea.NewProgram(model.NewQueryModel(global_profile, stream), tea.WithAltScreen())
+		if _, err := p.Run(); err != nil {
 			fmt.Printf("Alas, there's been an error: %v", err)
 			os.Exit(1)
 		}
-		m := _m.(model.ProfilePrompt)
-
-		username, password = m.Values()
-	}
-
-	// If prompt is terminated without valid input then do nothing
-	if username == "" || password == "" {
 		return nil
-	}
-
-	profile := config.Profile{
-		Url:      cmd.Url,
-		Username: username,
-		Password: password,
-	}
-
-	file_config, err := config.ReadConfigFromFile("config.toml")
-
-	if err != nil {
-		// create new file
-		new_config := config.Config{
-			Profiles: map[string]config.Profile{
-				cmd.Name: profile,
-			},
-			Default_profile: cmd.Name,
-		}
-		config.WriteConfigToFile(&new_config, "config.toml")
-		global_profile = profile
-		return nil
-	} else {
-		if file_config.Profiles == nil {
-			file_config.Profiles = make(map[string]config.Profile)
-		}
-		file_config.Profiles[cmd.Name] = profile
-		if file_config.Default_profile == "" {
-			file_config.Default_profile = cmd.Name
-		}
-		config.WriteConfigToFile(file_config, "config.toml")
-	}
-
-	return nil
-}
-
-type DeleteProfileCmd struct {
-	Name string `arg required type:"string"`
-}
-
-func (cmd *DeleteProfileCmd) Run(ctx *kong.Context) error {
-	file_config, err := config.ReadConfigFromFile("config.toml")
-	if err != nil {
-		return nil
-	} else {
-		_, exists := file_config.Profiles[cmd.Name]
-		if exists {
-			delete(file_config.Profiles, cmd.Name)
-		}
-	}
-
-	if len(file_config.Profiles) == 0 {
-		file_config.Default_profile = ""
-	}
-
-	config.WriteConfigToFile(file_config, "config.toml")
-	return nil
-}
-
-type DefaultProfileCmd struct {
-	Name string `arg required type:"string"`
-}
-
-func (cmd *DefaultProfileCmd) Run(ctx *kong.Context) error {
-	file_config, err := config.ReadConfigFromFile("config.toml")
-	if err != nil {
-		return nil
-	} else {
-		_, exists := file_config.Profiles[cmd.Name]
-		if exists {
-			file_config.Default_profile = cmd.Name
-		}
-	}
-
-	config.WriteConfigToFile(file_config, "config.toml")
-	return nil
-}
-
-type ListProfileCmd struct {
-}
-
-func (cmd *ListProfileCmd) Run(ctx *kong.Context) error {
-	file_config, err := config.ReadConfigFromFile("config.toml")
-	if err != nil {
-		return nil
-	} else {
-		for key, value := range file_config.Profiles {
-			fmt.Println(key, value.Url, value.Username)
-		}
-	}
-	return nil
-}
-
-type QueryCmd struct {
-	Stream string `arg required type:"string"`
-}
-
-func (cmd *QueryCmd) Run(ctx *kong.Context) error {
-
-	if global_profile.Url == "" {
-		fmt.Println("No Profile Set. Use profile add command to create new profile to use")
-		return nil
-	}
-
-	p := tea.NewProgram(model.NewQueryModel(global_profile, cmd.Stream), tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
-		fmt.Printf("Alas, there's been an error: %v", err)
-		os.Exit(1)
-	}
-	return nil
+	},
 }

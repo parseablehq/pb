@@ -2,29 +2,43 @@ package main
 
 import (
 	"cli/config"
+	"fmt"
+	"os"
 
-	"github.com/alecthomas/kong"
+	"github.com/spf13/cobra"
 )
 
 var global_profile config.Profile
 
-var CLI struct {
-	Profile struct {
-		Add     AddProfileCmd     `cmd`
-		Delete  DeleteProfileCmd  `cmd`
-		List    ListProfileCmd    `cmd`
-		Default DefaultProfileCmd `cmd`
-	} `cmd`
-	Query QueryCmd `cmd`
+var cli = &cobra.Command{
+	Use:   "pb",
+	Short: "pb",
+	Long:  "pb",
+}
+
+var profile = &cobra.Command{
+	Use: "profile",
 }
 
 func main() {
-	ctx := kong.Parse(&CLI)
+
+	profile.AddCommand(AddProfileCmd)
+	profile.AddCommand(DeleteProfileCmd)
+	profile.AddCommand(ListProfileCmd)
+	profile.AddCommand(DefaultProfileCmd)
+
+	cli.AddCommand(profile)
+	cli.AddCommand(QueryProfileCmd)
+	cli.CompletionOptions.HiddenDefaultCmd = true
+
 	config, e := config.ReadConfigFromFile("config.toml")
 	if e == nil {
 		profile := config.Profiles[config.Default_profile]
 		global_profile = profile
 	}
-	err := ctx.Run(ctx)
-	ctx.FatalIfErrorf(err)
+	err := cli.Execute()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 }
