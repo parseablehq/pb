@@ -3,11 +3,13 @@ package main
 import (
 	"cli/config"
 	"cli/model"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 
@@ -119,6 +121,10 @@ var DefaultProfileCmd = &cobra.Command{
 			_, exists := file_config.Profiles[name]
 			if exists {
 				file_config.Default_profile = name
+			} else {
+				name = lipgloss.NewStyle().Bold(true).Render(name)
+				err := fmt.Sprintf("profile %s does not exist", name)
+				return errors.New(err)
 			}
 		}
 
@@ -144,9 +150,8 @@ var ListProfileCmd = &cobra.Command{
 }
 
 var QueryProfileCmd = &cobra.Command{
-	Use:   "query name",
+	Use:   "query",
 	Short: "Open Query TUI",
-	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		config, err := config.ReadConfigFromFile()
 		if err != nil {
