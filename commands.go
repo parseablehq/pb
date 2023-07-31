@@ -152,6 +152,7 @@ var ListProfileCmd = &cobra.Command{
 var QueryProfileCmd = &cobra.Command{
 	Use:   "query",
 	Short: "Open Query TUI",
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		config, err := config.ReadConfigFromFile()
 		if err != nil {
