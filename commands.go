@@ -14,6 +14,7 @@ import (
 var AddProfileCmd = &cobra.Command{
 	Use:     "add name url <username?> <password?>",
 	Example: "add local_logs http://0.0.0.0:8000 admin admin",
+	Short:   "Add a new profile",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if err := cobra.MinimumNArgs(2)(cmd, args); err != nil {
 			return err
@@ -81,8 +82,9 @@ var AddProfileCmd = &cobra.Command{
 }
 
 var DeleteProfileCmd = &cobra.Command{
-	Use:  "delete name",
-	Args: cobra.ExactArgs(1),
+	Use:   "delete name",
+	Args:  cobra.ExactArgs(1),
+	Short: "Delete a profile",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		file_config, err := config.ReadConfigFromFile()
@@ -105,8 +107,9 @@ var DeleteProfileCmd = &cobra.Command{
 }
 
 var DefaultProfileCmd = &cobra.Command{
-	Use:  "default name",
-	Args: cobra.ExactArgs(1),
+	Use:   "default name",
+	Args:  cobra.ExactArgs(1),
+	Short: "Set default profile to use",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		file_config, err := config.ReadConfigFromFile()
@@ -125,7 +128,8 @@ var DefaultProfileCmd = &cobra.Command{
 }
 
 var ListProfileCmd = &cobra.Command{
-	Use: "list",
+	Use:   "list",
+	Short: "List all added profiles",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		file_config, err := config.ReadConfigFromFile()
 		if err != nil {
@@ -140,8 +144,9 @@ var ListProfileCmd = &cobra.Command{
 }
 
 var QueryProfileCmd = &cobra.Command{
-	Use:  "query name",
-	Args: cobra.ExactArgs(1),
+	Use:   "query name",
+	Short: "Open Query TUI",
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		config, err := config.ReadConfigFromFile()
 		if err != nil {

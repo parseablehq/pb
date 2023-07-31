@@ -15,7 +15,8 @@ var cli = &cobra.Command{
 
 // Profile subcommand
 var profile = &cobra.Command{
-	Use: "profile",
+	Use:   "profile",
+	Short: "Manage profiles",
 }
 
 func main() {
