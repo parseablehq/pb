@@ -44,8 +44,8 @@ var AddProfileCmd = &cobra.Command{
 
 			username, password = m.Values()
 		} else {
-			username = args[3]
-			password = args[4]
+			username = args[2]
+			password = args[3]
 		}
 
 		profile := config.Profile{
