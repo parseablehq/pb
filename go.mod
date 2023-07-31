@@ -19,7 +19,6 @@ require (
 	github.com/evertras/bubble-table v0.15.2
 	github.com/pelletier/go-toml/v2 v2.0.9
 	github.com/sahilm/fuzzy v0.1.0 // indirect
-	github.com/shibukawa/configdir v0.0.0-20170330084843-e180dbdc8da0
 )
 
 require (

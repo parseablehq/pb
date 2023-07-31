@@ -4,6 +4,7 @@ import (
 	"cli/config"
 	"cli/model"
 	"fmt"
+	"net/url"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,7 +12,8 @@ import (
 )
 
 var AddProfileCmd = &cobra.Command{
-	Use: "add name url <username?> <password?>",
+	Use:     "add name url <username?> <password?>",
+	Example: "add local_logs http://0.0.0.0:8000 admin admin",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if err := cobra.MinimumNArgs(2)(cmd, args); err != nil {
 			return err
@@ -23,7 +25,10 @@ var AddProfileCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		url := args[1]
+		url, err := url.Parse(args[1])
+		if err != nil {
+			return err
+		}
 
 		var username string
 		var password string
@@ -43,12 +48,12 @@ var AddProfileCmd = &cobra.Command{
 		}
 
 		profile := config.Profile{
-			Url:      url,
+			Url:      url.String(),
 			Username: username,
 			Password: password,
 		}
 
-		file_config, err := config.ReadConfigFromFile("config.toml")
+		file_config, err := config.ReadConfigFromFile()
 
 		if err != nil {
 			// create new file
@@ -58,8 +63,7 @@ var AddProfileCmd = &cobra.Command{
 				},
 				Default_profile: name,
 			}
-			err = config.WriteConfigToFile(&new_config, "config.toml")
-			global_profile = profile
+			err = config.WriteConfigToFile(&new_config)
 			return err
 		} else {
 			if file_config.Profiles == nil {
@@ -69,7 +73,7 @@ var AddProfileCmd = &cobra.Command{
 			if file_config.Default_profile == "" {
 				file_config.Default_profile = name
 			}
-			config.WriteConfigToFile(file_config, "config.toml")
+			config.WriteConfigToFile(file_config)
 		}
 
 		return nil
@@ -81,7 +85,7 @@ var DeleteProfileCmd = &cobra.Command{
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		file_config, err := config.ReadConfigFromFile("config.toml")
+		file_config, err := config.ReadConfigFromFile()
 		if err != nil {
 			return nil
 		} else {
@@ -95,7 +99,7 @@ var DeleteProfileCmd = &cobra.Command{
 			file_config.Default_profile = ""
 		}
 
-		config.WriteConfigToFile(file_config, "config.toml")
+		config.WriteConfigToFile(file_config)
 		return nil
 	},
 }
@@ -105,7 +109,7 @@ var DefaultProfileCmd = &cobra.Command{
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		file_config, err := config.ReadConfigFromFile("config.toml")
+		file_config, err := config.ReadConfigFromFile()
 		if err != nil {
 			return nil
 		} else {
@@ -115,7 +119,7 @@ var DefaultProfileCmd = &cobra.Command{
 			}
 		}
 
-		config.WriteConfigToFile(file_config, "config.toml")
+		config.WriteConfigToFile(file_config)
 		return nil
 	},
 }
@@ -123,7 +127,7 @@ var DefaultProfileCmd = &cobra.Command{
 var ListProfileCmd = &cobra.Command{
 	Use: "list",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		file_config, err := config.ReadConfigFromFile("config.toml")
+		file_config, err := config.ReadConfigFromFile()
 		if err != nil {
 			return nil
 		} else {
@@ -139,14 +143,19 @@ var QueryProfileCmd = &cobra.Command{
 	Use:  "query name",
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		config, err := config.ReadConfigFromFile()
+		if err != nil {
+			return err
+		}
+
 		stream := args[0]
 
-		if global_profile.Url == "" {
+		if config.Default_profile == "" {
 			fmt.Println("No Profile Set. Use profile add command to create new profile to use")
 			return nil
 		}
 
-		p := tea.NewProgram(model.NewQueryModel(global_profile, stream), tea.WithAltScreen())
+		p := tea.NewProgram(model.NewQueryModel(config.Profiles[config.Default_profile], stream), tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Alas, there's been an error: %v", err)
 			os.Exit(1)

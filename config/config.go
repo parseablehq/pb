@@ -1,11 +1,25 @@
 package config
 
 import (
-	"errors"
+	"fmt"
+	"os"
+	"path"
 
 	toml "github.com/pelletier/go-toml/v2"
-	"github.com/shibukawa/configdir"
 )
+
+var (
+	ConfigFilename = "config.toml"
+	ConfigAppName  = "parseable"
+)
+
+func ConfigPath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return path.Join(dir, ConfigAppName, ConfigFilename), nil
+}
 
 type Config struct {
 	Profiles        map[string]Profile
@@ -18,29 +32,37 @@ type Profile struct {
 	Password string
 }
 
-func ConfigDir() configdir.ConfigDir {
-	return configdir.New("parseable", "pb")
-}
-
-func WriteConfigToFile(config *Config, filename string) error {
+func WriteConfigToFile(config *Config) error {
 	tomlData, _ := toml.Marshal(config)
-
-	// Stores to user folder
-	folders := ConfigDir().QueryFolders(configdir.Global)
-	err := folders[0].WriteFile("config.toml", tomlData)
-
+	filePath, err := ConfigPath()
+	if err != nil {
+		return err
+	}
+	// Open or create the file for writing (it will truncate the file if it already exists
+	file, err := os.Create(filePath)
+	if err != nil {
+		fmt.Println("Error creating the file:", err)
+		return err
+	}
+	defer file.Close()
+	// Write the data into the file
+	_, err = file.Write(tomlData)
+	if err != nil {
+		fmt.Println("Error writing to the file:", err)
+		return err
+	}
 	return err
 }
 
-func ReadConfigFromFile(filename string) (*Config, error) {
-	var config Config
-
-	folder := ConfigDir().QueryFolderContainsFile("config.toml")
-	if folder != nil {
-		data, _ := folder.ReadFile("config.toml")
-		toml.Unmarshal(data, &config)
-		return &config, nil
-	} else {
-		return nil, errors.New("Config file not found")
+func ReadConfigFromFile() (config *Config, err error) {
+	filePath, err := ConfigPath()
+	if err != nil {
+		return
 	}
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return
+	}
+	toml.Unmarshal(data, &config)
+	return
 }

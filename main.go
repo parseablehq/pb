@@ -1,14 +1,11 @@
 package main
 
 import (
-	"cli/config"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 )
-
-var global_profile config.Profile
 
 // Root command
 var cli = &cobra.Command{
@@ -31,11 +28,6 @@ func main() {
 	cli.AddCommand(QueryProfileCmd)
 	cli.CompletionOptions.HiddenDefaultCmd = true
 
-	config, e := config.ReadConfigFromFile("config.toml")
-	if e == nil {
-		profile := config.Profiles[config.Default_profile]
-		global_profile = profile
-	}
 	err := cli.Execute()
 	if err != nil {
 		fmt.Println(err)
