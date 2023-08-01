@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 )
 
@@ -95,8 +96,8 @@ var StatStreamCmd = &cobra.Command{
 			}
 
 			fmt.Printf("event_count: %d\n", ingestion_count)
-			fmt.Printf("ingestion_size: %d\n", ingestion_size)
-			fmt.Printf("storage_size: %d\n", storage_size)
+			fmt.Printf("ingestion_size: %s\n", humanize.Bytes(uint64(ingestion_size)))
+			fmt.Printf("storage_size: %s\n", humanize.Bytes(uint64(storage_size)))
 
 		} else {
 			body := string(bytes)
