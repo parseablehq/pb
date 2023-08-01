@@ -100,8 +100,9 @@ func NewQueryModel(profile config.Profile, stream string) QueryModel {
 	query.SetWidth(50)
 	query.FocusedStyle = textarea_style
 	query.BlurredStyle = textarea_style
-	query.Placeholder = "select * from app"
-	query.InsertString("select * from app")
+	default_text := fmt.Sprintf("select * from %s", stream)
+	query.Placeholder = default_text
+	query.InsertString(default_text)
 	query.Focus()
 
 	var w, h, _ = term.GetSize(int(os.Stdout.Fd()))
@@ -464,7 +465,7 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 		case "p_timestamp", "p_metadata", "p_tags":
 			continue
 		default:
-			width := inferWidthForColumns(title, &data.data, 100, 10) + 3
+			width := inferWidthForColumns(title, &data.data, 100, 80) + 3
 			columns[columnIndex] = table.NewColumn(title, title, width)
 			columnIndex += 1
 		}
