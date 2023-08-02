@@ -92,18 +92,20 @@ var DeleteProfileCmd = &cobra.Command{
 		file_config, err := config.ReadConfigFromFile()
 		if err != nil {
 			return nil
-		} else {
-			_, exists := file_config.Profiles[name]
-			if exists {
-				delete(file_config.Profiles, name)
+		}
+
+		_, exists := file_config.Profiles[name]
+		if exists {
+			delete(file_config.Profiles, name)
+			if len(file_config.Profiles) == 0 {
+				file_config.Default_profile = ""
 			}
+			config.WriteConfigToFile(file_config)
+			fmt.Printf("Deleted profile %s\n", name)
+		} else {
+			fmt.Printf("No profile found with the name: %s", name)
 		}
 
-		if len(file_config.Profiles) == 0 {
-			file_config.Default_profile = ""
-		}
-
-		config.WriteConfigToFile(file_config)
 		return nil
 	},
 }
