@@ -1,10 +1,10 @@
-package main
+package cmd
 
 import (
-	"cli/config"
 	"io"
 	"net/http"
 	"net/url"
+	"pb/pkg/config"
 	"time"
 )
 

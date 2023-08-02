@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"cli/config"
+	"pb/pkg/config"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"

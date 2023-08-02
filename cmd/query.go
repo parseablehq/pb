@@ -1,9 +1,9 @@
-package main
+package cmd
 
 import (
-	"cli/model"
 	"fmt"
 	"os"
+	"pb/pkg/model"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"

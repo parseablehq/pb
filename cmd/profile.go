@@ -1,12 +1,12 @@
-package main
+package cmd
 
 import (
-	"cli/config"
-	"cli/model"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
+	"pb/pkg/config"
+	"pb/pkg/model"
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
