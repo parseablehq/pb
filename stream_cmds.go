@@ -45,7 +45,7 @@ var CreateStreamCmd = &cobra.Command{
 		}
 
 		if resp.StatusCode == 200 {
-			fmt.Printf("Created stream %s\n", name)
+			fmt.Printf("Created stream %s\n", styleBold.Render(name))
 		} else {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -127,7 +127,7 @@ var DeleteStreamCmd = &cobra.Command{
 		}
 
 		if resp.StatusCode == 200 {
-			fmt.Printf("Removed stream %s", name)
+			fmt.Printf("Removed stream %s", styleBold.Render(name))
 		} else {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {

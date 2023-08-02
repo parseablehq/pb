@@ -62,7 +62,7 @@ var DeleteUserCmd = &cobra.Command{
 		}
 
 		if resp.StatusCode == 200 {
-			fmt.Printf("Removed user %s", name)
+			fmt.Printf("Removed user %s", styleBold.Render(name))
 		} else {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {

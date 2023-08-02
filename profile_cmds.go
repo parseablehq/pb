@@ -147,9 +147,9 @@ var ListProfileCmd = &cobra.Command{
 		}
 
 		cols := []table.Column{
-			{Title: "Profile", Width: 7},
-			{Title: "Url", Width: 5},
-			{Title: "Username", Width: 8},
+			{Title: "PROFILE", Width: 7},
+			{Title: "URL", Width: 5},
+			{Title: "USER", Width: 8},
 		}
 
 		rows := make([]table.Row, len(file_config.Profiles))
