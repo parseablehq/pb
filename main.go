@@ -1,33 +1,28 @@
+// Copyright (c) 2023 Cloudnatively Services Pvt Ltd
+//
+// This file is part of MinIO Object Storage stack
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 package main
 
 import (
-	"cli/config"
-	"errors"
 	"os"
+	"pb/cmd"
 
 	"github.com/spf13/cobra"
 )
-
-var DefaultProfile config.Profile
-
-// Check if a profile exists.
-// This is required by mostly all commands except profile
-func PreRunDefaultProfile(cmd *cobra.Command, args []string) error {
-	conf, err := config.ReadConfigFromFile()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return errors.New("No config found to run this command. Add a profile using pb profile command")
-		} else {
-			return err
-		}
-	}
-	if conf.Profiles == nil || conf.Default_profile == "" {
-		return errors.New("no profile is configured to run this command. please create one using profile command")
-	}
-
-	DefaultProfile = conf.Profiles[conf.Default_profile]
-	return nil
-}
 
 // Root command
 var cli = &cobra.Command{
@@ -44,32 +39,32 @@ var profile = &cobra.Command{
 var user = &cobra.Command{
 	Use:               "user",
 	Short:             "Manage users",
-	PersistentPreRunE: PreRunDefaultProfile,
+	PersistentPreRunE: cmd.PreRunDefaultProfile,
 }
 
 var stream = &cobra.Command{
 	Use:               "stream",
 	Short:             "Manage stream",
-	PersistentPreRunE: PreRunDefaultProfile,
+	PersistentPreRunE: cmd.PreRunDefaultProfile,
 }
 
 func main() {
-	profile.AddCommand(AddProfileCmd)
-	profile.AddCommand(DeleteProfileCmd)
-	profile.AddCommand(ListProfileCmd)
-	profile.AddCommand(DefaultProfileCmd)
+	profile.AddCommand(cmd.AddProfileCmd)
+	profile.AddCommand(cmd.DeleteProfileCmd)
+	profile.AddCommand(cmd.ListProfileCmd)
+	profile.AddCommand(cmd.DefaultProfileCmd)
 
-	user.AddCommand(AddUserCmd)
-	user.AddCommand(DeleteUserCmd)
-	user.AddCommand(ListUserCmd)
+	user.AddCommand(cmd.AddUserCmd)
+	user.AddCommand(cmd.DeleteUserCmd)
+	user.AddCommand(cmd.ListUserCmd)
 
-	stream.AddCommand(CreateStreamCmd)
-	stream.AddCommand(ListStreamCmd)
-	stream.AddCommand(DeleteStreamCmd)
-	stream.AddCommand(StatStreamCmd)
+	stream.AddCommand(cmd.CreateStreamCmd)
+	stream.AddCommand(cmd.ListStreamCmd)
+	stream.AddCommand(cmd.DeleteStreamCmd)
+	stream.AddCommand(cmd.StatStreamCmd)
 
 	cli.AddCommand(profile)
-	cli.AddCommand(QueryProfileCmd)
+	cli.AddCommand(cmd.QueryProfileCmd)
 	cli.AddCommand(stream)
 	cli.AddCommand(user)
 

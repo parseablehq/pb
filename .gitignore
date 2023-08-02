@@ -22,3 +22,6 @@ go.work
 
 .vscode/
 config.toml
+
+# build
+pb
