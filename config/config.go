@@ -3,7 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
-	"path"
+	path "path/filepath"
 
 	toml "github.com/pelletier/go-toml/v2"
 )
@@ -39,6 +39,11 @@ func WriteConfigToFile(config *Config) error {
 		return err
 	}
 	// Open or create the file for writing (it will truncate the file if it already exists
+	err = os.MkdirAll(path.Dir(filePath), os.ModePerm)
+	if err != nil {
+		return err
+	}
+
 	file, err := os.Create(filePath)
 	if err != nil {
 		fmt.Println("Error creating the file:", err)
