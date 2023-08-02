@@ -61,8 +61,8 @@ var CreateStreamCmd = &cobra.Command{
 }
 
 var StatStreamCmd = &cobra.Command{
-	Use:     "stats name",
-	Example: "stats backend_logs",
+	Use:     "info name",
+	Example: "info backend_logs",
 	Short:   "Get statistics for a stream",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
