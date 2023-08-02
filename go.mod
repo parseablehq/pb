@@ -5,8 +5,8 @@ go 1.20
 require (
 	github.com/charmbracelet/bubbles v0.16.1
 	github.com/charmbracelet/bubbletea v0.24.2
-	golang.org/x/term v0.10.0
 	github.com/dustin/go-humanize v1.0.1
+	golang.org/x/term v0.10.0
 )
 
 require (
