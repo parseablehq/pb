@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -101,9 +102,9 @@ var DeleteProfileCmd = &cobra.Command{
 				file_config.Default_profile = ""
 			}
 			config.WriteConfigToFile(file_config)
-			fmt.Printf("Deleted profile %s\n", name)
+			fmt.Printf("Deleted profile %s\n", styleBold.Render(name))
 		} else {
-			fmt.Printf("No profile found with the name: %s", name)
+			fmt.Printf("No profile found with the name: %s", styleBold.Render(name))
 		}
 
 		return nil
@@ -125,12 +126,13 @@ var DefaultProfileCmd = &cobra.Command{
 				file_config.Default_profile = name
 			} else {
 				name = lipgloss.NewStyle().Bold(true).Render(name)
-				err := fmt.Sprintf("profile %s does not exist", name)
+				err := fmt.Sprintf("profile %s does not exist", styleBold.Render(name))
 				return errors.New(err)
 			}
 		}
 
 		config.WriteConfigToFile(file_config)
+		fmt.Printf("%s is now set as default profile", styleBold.Render(name))
 		return nil
 	},
 }
@@ -142,11 +144,50 @@ var ListProfileCmd = &cobra.Command{
 		file_config, err := config.ReadConfigFromFile()
 		if err != nil {
 			return nil
-		} else {
-			for key, value := range file_config.Profiles {
-				fmt.Println(key, value.Url, value.Username)
-			}
 		}
+
+		cols := []table.Column{
+			{Title: "Profile", Width: 7},
+			{Title: "Url", Width: 5},
+			{Title: "Username", Width: 8},
+		}
+
+		rows := make([]table.Row, len(file_config.Profiles))
+		row_idx := 0
+		selected_row := 0
+		for key, value := range file_config.Profiles {
+			if file_config.Default_profile == key {
+				selected_row = row_idx
+			}
+
+			rows[row_idx] = table.Row{key, value.Url, value.Username}
+			row_idx += 1
+
+			// update max width for table
+			cols[0].Width = Max(cols[0].Width, len(key))
+			cols[1].Width = Max(cols[1].Width, len(value.Url))
+			cols[2].Width = Max(cols[2].Width, len(value.Password))
+		}
+
+		tbl := table.New(
+			table.WithColumns(cols),
+			table.WithRows(rows),
+			table.WithHeight(len(rows)),
+			table.WithStyles(listingTableStyle()),
+		)
+
+		tbl.SetCursor(selected_row)
+
+		fmt.Println(tbl.View())
+
 		return nil
 	},
+}
+
+func Max(a int, b int) int {
+	if a >= b {
+		return a
+	} else {
+		return b
+	}
 }
