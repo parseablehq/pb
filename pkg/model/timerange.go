@@ -166,9 +166,13 @@ func (m *timeRangeModel) currentFocus() string {
 	return rangeNavigationMap[m.focus]
 }
 
-func NewTimeRangeModel() timeRangeModel {
+func NewTimeRangeModel(duration uint) timeRangeModel {
 	end_time := time.Now()
 	start_time := end_time.Add(TenMinute)
+
+	if duration != 0 {
+		start_time = end_time.Add(-(time.Duration(duration) * time.Minute))
+	}
 
 	list := list.New(timeDurations, timeDurationItemDelegate{}, 20, 10)
 	list.SetShowPagination(false)

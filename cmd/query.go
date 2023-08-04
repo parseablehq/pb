@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"pb/pkg/model"
+	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -29,11 +30,15 @@ import (
 var QueryProfileCmd = &cobra.Command{
 	Use:     "query name",
 	Short:   "Open Query TUI",
-	Args:    cobra.ExactArgs(1),
+	Args:    cobra.ExactArgs(2),
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		stream := args[0]
-		p := tea.NewProgram(model.NewQueryModel(DefaultProfile, stream), tea.WithAltScreen())
+		duration, err := strconv.Atoi(args[1])
+		if err != nil {
+			return err
+		}
+		p := tea.NewProgram(model.NewQueryModel(DefaultProfile, stream, uint(duration)), tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Alas, there's been an error: %v", err)
 			os.Exit(1)
