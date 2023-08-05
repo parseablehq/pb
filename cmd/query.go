@@ -28,7 +28,8 @@ import (
 )
 
 var QueryProfileCmd = &cobra.Command{
-	Use:     "query name",
+	Use:     "query name minutes",
+	Example: "query local_logs 20",
 	Short:   "Open Query TUI",
 	Args:    cobra.ExactArgs(2),
 	PreRunE: PreRunDefaultProfile,
