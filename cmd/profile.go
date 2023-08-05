@@ -25,11 +25,34 @@ import (
 	"pb/pkg/config"
 	"pb/pkg/model"
 
-	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
+
+type ProfileListItem struct {
+	title, url, user string
+}
+
+func (item *ProfileListItem) Render(highlight bool) string {
+	if highlight {
+		render := fmt.Sprintf(
+			"%s\n%s\n%s",
+			selectedStyle.Render(item.title),
+			selectedStyleAlt.Render(fmt.Sprintf("url: %s", item.url)),
+			selectedStyleAlt.Render(fmt.Sprintf("user: %s", item.user)),
+		)
+		return selectedItemOuter.Render(render)
+	} else {
+		render := fmt.Sprintf(
+			"%s\n%s\n%s",
+			lipgloss.NewStyle().Render(item.title),
+			inactiveStyle.Render(fmt.Sprintf("url: %s", item.url)),
+			inactiveStyle.Render(fmt.Sprintf("user: %s", item.user)),
+		)
+		return itemOuter.Render(render)
+	}
+}
 
 var AddProfileCmd = &cobra.Command{
 	Use:     "add name url <username?> <password?>",
@@ -162,41 +185,15 @@ var ListProfileCmd = &cobra.Command{
 		if err != nil {
 			return nil
 		}
-
-		cols := []table.Column{
-			{Title: "PROFILE", Width: 7},
-			{Title: "URL", Width: 5},
-			{Title: "USER", Width: 8},
-		}
-
-		rows := make([]table.Row, len(file_config.Profiles))
-		row_idx := 0
-		selected_row := 0
+		row := 0
 		for key, value := range file_config.Profiles {
-			if file_config.Default_profile == key {
-				selected_row = row_idx
+			item := ProfileListItem{key, value.Url, value.Username}
+			fmt.Println(item.Render(file_config.Default_profile == key))
+			row += 1
+			if row != len(file_config.Profiles) {
+				fmt.Println()
 			}
-
-			rows[row_idx] = table.Row{key, value.Url, value.Username}
-			row_idx += 1
-
-			// update max width for table
-			cols[0].Width = Max(cols[0].Width, len(key))
-			cols[1].Width = Max(cols[1].Width, len(value.Url))
-			cols[2].Width = Max(cols[2].Width, len(value.Password))
 		}
-
-		tbl := table.New(
-			table.WithColumns(cols),
-			table.WithRows(rows),
-			table.WithHeight(len(rows)),
-			table.WithStyles(listingTableStyle()),
-		)
-
-		tbl.SetCursor(selected_row)
-
-		fmt.Println(tbl.View())
-
 		return nil
 	},
 }
