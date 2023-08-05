@@ -46,9 +46,9 @@ func (item *ProfileListItem) Render(highlight bool) string {
 	} else {
 		render := fmt.Sprintf(
 			"%s\n%s\n%s",
-			lipgloss.NewStyle().Render(item.title),
-			inactiveStyle.Render(fmt.Sprintf("url: %s", item.url)),
-			inactiveStyle.Render(fmt.Sprintf("user: %s", item.user)),
+			inactiveStyle.Render(item.title),
+			inactiveStyleAlt.Render(fmt.Sprintf("url: %s", item.url)),
+			inactiveStyleAlt.Render(fmt.Sprintf("user: %s", item.user)),
 		)
 		return itemOuter.Render(render)
 	}

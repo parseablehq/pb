@@ -23,13 +23,19 @@ import (
 
 // styling for cli outputs
 var (
-	adaptiveYellow = lipgloss.AdaptiveColor{Light: "4", Dark: "11"}
+	FocusPrimary  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
+	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
 
-	inactiveStyle    = lipgloss.NewStyle().Faint(true)
-	selectedStyle    = lipgloss.NewStyle().Foreground(adaptiveYellow).Bold(true)
-	selectedStyleAlt = lipgloss.NewStyle().Foreground(adaptiveYellow)
+	standardPrimary  = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
+	standardSecondry = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
 
-	selectedItemOuter = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).PaddingLeft(1).BorderForeground(adaptiveYellow)
+	inactiveStyle    = lipgloss.NewStyle().Foreground(standardPrimary)
+	inactiveStyleAlt = lipgloss.NewStyle().Foreground(standardSecondry)
+
+	selectedStyle    = lipgloss.NewStyle().Foreground(FocusPrimary).Bold(true)
+	selectedStyleAlt = lipgloss.NewStyle().Foreground(FocusSecondry)
+
+	selectedItemOuter = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).PaddingLeft(1).BorderForeground(FocusPrimary)
 	itemOuter         = lipgloss.NewStyle().PaddingLeft(1)
 
 	styleBold = lipgloss.NewStyle().Bold(true)
