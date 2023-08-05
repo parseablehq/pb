@@ -101,11 +101,10 @@ func NewQueryModel(profile config.Profile, stream string, duration uint) QueryMo
 	rows := make([]table.Row, 0)
 
 	keys := table.DefaultKeyMap()
-	keys.RowDown.SetKeys("j", "down", "s")
-	keys.RowUp.SetKeys("k", "up", "w")
 
 	table := table.New(columns).
 		WithRows(rows).
+		Filtered(true).
 		HeaderStyle(headerStyle).
 		SelectableRows(false).
 		Border(customBorder).
@@ -145,6 +144,8 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height, _ = term.GetSize(int(os.Stdout.Fd()))
 		m.help.Width = m.width
+		m.status.width = m.width
+		m.table = m.table.WithMaxTotalWidth(m.width)
 		return m, nil
 
 	case FetchData:
@@ -179,16 +180,24 @@ func (m QueryModel) View() string {
 	m.table.WithMaxTotalWidth(m.width - 10)
 
 	statusHeight := 1
-	tableHeight := m.height - statusHeight - 4
-	m.status.width = m.width
-	m.help.ShowAll = true
+	HelpHeight := 5
+
+	tableView := m.table.View()
+	tableHeight := lipgloss.Height(tableView)
+
+	if (tableHeight + HelpHeight + statusHeight) > m.height {
+		m.help.ShowAll = false
+		HelpHeight = 2
+	} else {
+		m.help.ShowAll = true
+	}
+
+	tableBoxHeight := m.height - statusHeight - HelpHeight
+
 	m.help.Styles.FullDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	help := m.help.View(m.table.KeyMap())
+	help := m.help.View(tableKeys)
 
-	f, _ := tea.LogToFile("debug.log", help)
-	defer f.Close()
-
-	render := fmt.Sprintf("%s\n%s\n%s", lipgloss.PlaceVertical(tableHeight, lipgloss.Top, m.table.View()), help, m.status.View())
+	render := fmt.Sprintf("%s\n%s\n\n%s", lipgloss.PlaceVertical(tableBoxHeight, lipgloss.Top, tableView), help, m.status.View())
 
 	return outer.Render(render)
 
@@ -302,7 +311,7 @@ func fetchData(client *http.Client, profile *config.Profile, query string, start
 }
 
 func (m *QueryModel) UpdateTable(data FetchData) {
-	columns := make([]table.Column, len(data.schema))
+	columns := make([]table.Column, len(data.schema)-2)
 	columns[0] = table.NewColumn("p_timestamp", "p_timestamp", 24)
 	columnIndex := 1
 
@@ -312,7 +321,7 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 			continue
 		default:
 			width := inferWidthForColumns(title, &data.data, 100, 80) + 3
-			columns[columnIndex] = table.NewColumn(title, title, width)
+			columns[columnIndex] = table.NewColumn(title, title, width).WithFiltered(true)
 			columnIndex += 1
 		}
 	}
