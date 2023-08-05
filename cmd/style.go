@@ -18,20 +18,26 @@
 package cmd
 
 import (
-	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
 )
 
 // styling for cli outputs
 var (
-	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "4", Dark: "11"}).Bold(true)
+	FocusPrimary  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
+	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
+
+	standardPrimary  = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
+	standardSecondry = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
+
+	standardStyle     = lipgloss.NewStyle().Foreground(standardPrimary)
+	standardStyleBold = lipgloss.NewStyle().Foreground(standardPrimary).Bold(true)
+	standardStyleAlt  = lipgloss.NewStyle().Foreground(standardSecondry)
+
+	selectedStyle    = lipgloss.NewStyle().Foreground(FocusPrimary).Bold(true)
+	selectedStyleAlt = lipgloss.NewStyle().Foreground(FocusSecondry)
+
+	selectedItemOuter = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).PaddingLeft(1).BorderForeground(FocusPrimary)
+	itemOuter         = lipgloss.NewStyle().PaddingLeft(1)
+
 	styleBold = lipgloss.NewStyle().Bold(true)
 )
-
-func listingTableStyle() table.Styles {
-	s := table.DefaultStyles()
-	s.Header = s.Header.Border(lipgloss.NormalBorder(), false, false, true, false)
-	s.Selected = selectedStyle
-	return s
-}

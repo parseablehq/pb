@@ -29,7 +29,7 @@ import (
 
 	"pb/pkg/config"
 
-	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/help"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	table "github.com/evertras/bubble-table/table"
@@ -42,7 +42,6 @@ var (
 	baseStyle   = lipgloss.NewStyle().BorderForeground(lipgloss.AdaptiveColor{Light: "236", Dark: "248"})
 	headerStyle = lipgloss.NewStyle().Inherit(baseStyle).Foreground(lipgloss.AdaptiveColor{Light: "#023047", Dark: "#90E0EF"}).Bold(true)
 	tableStyle  = lipgloss.NewStyle().Inherit(baseStyle).Align(lipgloss.Left)
-	focusColor  = lipgloss.AdaptiveColor{Light: "#5a189a", Dark: "#e0aaff"}
 
 	customBorder = table.Border{
 		Top:    "─",
@@ -63,16 +62,7 @@ var (
 
 		InnerDivider: "║",
 	}
-	textarea_style = textarea.Style{
-		Base: baseStyle,
-		Text: baseStyle,
-	}
 )
-
-var navigation_map [][]string = [][]string{
-	{"query", "time", "execute"},
-	{"table"},
-}
 
 type Mode int
 type FetchResult int
@@ -84,12 +74,6 @@ type FetchData struct {
 }
 
 const (
-	navigation Mode = iota
-	active
-	inactive
-)
-
-const (
 	FetchOk FetchResult = iota
 	FetchErr
 )
@@ -97,31 +81,17 @@ const (
 type QueryModel struct {
 	width      int
 	height     int
-	query      textarea.Model
+	query      string
 	time_range timeRangeModel
 	table      table.Model
-	mode       Mode
 	profile    config.Profile
 	stream     string
+	help       help.Model
 	status     StatusBar
-	focus      struct {
-		x uint
-		y uint
-	}
 }
 
-func NewQueryModel(profile config.Profile, stream string) QueryModel {
-	query := textarea.New()
-	query.ShowLineNumbers = false
-	query.SetHeight(2)
-	query.SetWidth(50)
-	query.FocusedStyle = textarea_style
-	query.BlurredStyle = textarea_style
-	default_text := fmt.Sprintf("select * from %s", stream)
-	query.Placeholder = default_text
-	query.InsertString(default_text)
-	query.Focus()
-
+func NewQueryModel(profile config.Profile, stream string, duration uint) QueryModel {
+	query := fmt.Sprintf("select * from %s", stream)
 	var w, h, _ = term.GetSize(int(os.Stdout.Fd()))
 
 	columns := []table.Column{
@@ -131,11 +101,10 @@ func NewQueryModel(profile config.Profile, stream string) QueryModel {
 	rows := make([]table.Row, 0)
 
 	keys := table.DefaultKeyMap()
-	keys.RowDown.SetKeys("j", "down", "s")
-	keys.RowUp.SetKeys("k", "up", "w")
 
 	table := table.New(columns).
 		WithRows(rows).
+		Filtered(true).
 		HeaderStyle(headerStyle).
 		SelectableRows(false).
 		Border(customBorder).
@@ -152,106 +121,18 @@ func NewQueryModel(profile config.Profile, stream string) QueryModel {
 		width:      w,
 		height:     h,
 		query:      query,
-		time_range: NewTimeRangeModel(),
+		time_range: NewTimeRangeModel(duration),
 		table:      table,
-		mode:       navigation,
 		profile:    profile,
 		stream:     stream,
+		help:       help.New(),
 		status:     NewStatusBar(profile.Url, stream, w),
-		focus: struct {
-			x uint
-			y uint
-		}{0, 0},
 	}
-}
-
-func (m *QueryModel) currentFocus() string {
-	return navigation_map[m.focus.y][m.focus.x]
-}
-
-func (m *QueryModel) Blur() {
-	switch m.currentFocus() {
-	case "query":
-		m.query.Blur()
-	case "table":
-		m.table.Focused(false)
-	default:
-		return
-	}
-}
-
-func (m *QueryModel) Focus(id string) {
-	switch id {
-	case "query":
-		m.query.Focus()
-	case "table":
-		m.table.Focused(true)
-	}
-}
-
-func (m *QueryModel) Navigate(key tea.KeyMsg) {
-	switch key.String() {
-	case "enter":
-		m.mode = active
-		m.Focus(m.currentFocus())
-
-	case "up", "w":
-		if m.focus.y > 0 {
-			m.focus.y -= 1
-			m.focus.x = 0
-		}
-	case "down", "s":
-		if m.focus.y < uint(len(navigation_map))-1 {
-			m.focus.y += 1
-			m.focus.x = 0
-		}
-	case "left", "a":
-		if m.focus.x > 0 {
-			m.focus.x -= 1
-		}
-	case "right", "d":
-		if m.focus.x < uint(len(navigation_map[m.focus.y]))-1 {
-			m.focus.x += 1
-		}
-	default:
-		return
-	}
-}
-
-func (m QueryModel) HandleKeyPress(key tea.KeyMsg) (QueryModel, tea.Cmd) {
-	var cmd tea.Cmd
-
-	if key.Type == tea.KeyEsc {
-		m.mode = navigation
-		m.Blur()
-		return m, nil
-	}
-
-	if m.mode == navigation {
-		if key.Type == tea.KeyEnter && m.currentFocus() == "execute" {
-			m.mode = inactive
-			cmd = NewFetchTask(m.profile, m.stream, m.query.Value(), m.time_range.StartValueUtc(), m.time_range.EndValueUtc())
-		} else {
-			m.Navigate(key)
-		}
-	} else {
-		focused := navigation_map[m.focus.y][m.focus.x]
-		switch focused {
-		case "query":
-			m.query, cmd = m.query.Update(key)
-		case "time":
-			m.time_range, cmd = m.time_range.Update(key)
-		case "table":
-			m.table, cmd = m.table.Update(key)
-		}
-	}
-
-	return m, cmd
 }
 
 func (m QueryModel) Init() tea.Cmd {
 	// Just return `nil`, which means "no I/O right now, please."
-	return nil
+	return NewFetchTask(m.profile, m.stream, m.query, m.time_range.StartValueUtc(), m.time_range.EndValueUtc())
 }
 
 func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -262,6 +143,9 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width, m.height, _ = term.GetSize(int(os.Stdout.Fd()))
+		m.help.Width = m.width
+		m.status.width = m.width
+		m.table = m.table.WithMaxTotalWidth(m.width)
 		return m, nil
 
 	case FetchData:
@@ -271,10 +155,9 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status.Error = "failed to query"
 		}
 
-		m.mode = navigation
 		return m, nil
 
-		// Is it a key press?
+	// Is it a key press?
 	case tea.KeyMsg:
 		switch msg.Type {
 		// These keys should exit the program.
@@ -282,10 +165,8 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		default:
-			if m.mode != inactive {
-				m, cmd = m.HandleKeyPress(msg)
-				cmds = append(cmds, cmd)
-			}
+			m.table, cmd = m.table.Update(msg)
+			cmds = append(cmds, cmd)
 		}
 	}
 
@@ -296,72 +177,29 @@ func (m QueryModel) View() string {
 	var outer = lipgloss.NewStyle().Inherit(baseStyle).
 		UnsetMaxHeight().Width(m.width).Height(m.height)
 
-	var input_style = lipgloss.NewStyle().
-		Inherit(baseStyle).
-		Border(lipgloss.RoundedBorder(), true).
-		Margin(0)
-
-	var query_style = input_style.Copy()
-	var time_style = input_style.Copy()
-	var execute_style = input_style.Copy().Height(2).Align(lipgloss.Center)
-	var table_style = input_style.Copy().Border(lipgloss.RoundedBorder(), false)
-
-	var patchStyleFocus = func(style *lipgloss.Style) {
-		border := lipgloss.RoundedBorder()
-		border.TopLeft = "╓"
-		border.Left = "║"
-		border.BottomLeft = "╙ "
-
-		style.BorderStyle(border).BorderForeground(focusColor)
-	}
-
-	focused := navigation_map[m.focus.y][m.focus.x]
-
-	switch focused {
-	case "query":
-		patchStyleFocus(&query_style)
-	case "time":
-		patchStyleFocus(&time_style)
-	case "execute":
-		patchStyleFocus(&execute_style)
-	case "table":
-		table_style.Border(lipgloss.NormalBorder(), false, false, false, true).BorderForeground(focusColor)
-	}
-
 	m.table.WithMaxTotalWidth(m.width - 10)
 
-	button := "execute"
-
-	if m.mode == inactive {
-		button = "loading"
-	}
-
-	var inputs = lipgloss.JoinHorizontal(
-		lipgloss.Bottom,
-		query_style.Render(m.query.View()),
-		time_style.Render(fmt.Sprintf("%s\n%s", m.time_range.StartValue(), m.time_range.EndValue())),
-		execute_style.Render(button),
-	)
-
-	inputHeight := lipgloss.Height(inputs)
 	statusHeight := 1
-	tableHeight := m.height - inputHeight - statusHeight
+	HelpHeight := 5
 
-	if focused == "table" {
-		m.table = m.table.WithMaxTotalWidth(m.width - 2)
+	tableView := m.table.View()
+	tableHeight := lipgloss.Height(tableView)
+
+	if (tableHeight + HelpHeight + statusHeight) > m.height {
+		m.help.ShowAll = false
+		HelpHeight = 2
 	} else {
-		m.table = m.table.WithMaxTotalWidth(m.width)
+		m.help.ShowAll = true
 	}
 
-	m.status.width = m.width
+	tableBoxHeight := m.height - statusHeight - HelpHeight
 
-	render := fmt.Sprintf("%s\n%s\n%s", inputs, lipgloss.PlaceVertical(tableHeight, lipgloss.Top, table_style.Render(m.table.View())), m.status.View())
+	m.help.Styles.FullDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	help := m.help.View(tableKeys)
 
-	if m.mode == active && focused == "time" {
-		return outer.Render(lipgloss.Place(m.width-4, m.height-4, lipgloss.Center, lipgloss.Center, m.time_range.View()))
-	} else {
-		return outer.Render(render)
-	}
+	render := fmt.Sprintf("%s\n%s\n\n%s", lipgloss.PlaceVertical(tableBoxHeight, lipgloss.Top, tableView), help, m.status.View())
+
+	return outer.Render(render)
 
 }
 
@@ -473,7 +311,7 @@ func fetchData(client *http.Client, profile *config.Profile, query string, start
 }
 
 func (m *QueryModel) UpdateTable(data FetchData) {
-	columns := make([]table.Column, len(data.schema))
+	columns := make([]table.Column, len(data.schema)-2)
 	columns[0] = table.NewColumn("p_timestamp", "p_timestamp", 24)
 	columnIndex := 1
 
@@ -483,7 +321,7 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 			continue
 		default:
 			width := inferWidthForColumns(title, &data.data, 100, 80) + 3
-			columns[columnIndex] = table.NewColumn(title, title, width)
+			columns[columnIndex] = table.NewColumn(title, title, width).WithFiltered(true)
 			columnIndex += 1
 		}
 	}

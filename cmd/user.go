@@ -21,9 +21,43 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"pb/pkg/config"
+	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 )
+
+type UserRoleData struct {
+	Privilege string `json:"privilege"`
+	Resource  struct {
+		Stream string `json:"stream"`
+		Tag    string `json:"tag"`
+	} `json:"resource"`
+}
+
+func (user *UserRoleData) Render() string {
+	var s strings.Builder
+	s.WriteString(standardStyle.Render(user.Privilege))
+
+	if user.Resource.Stream != "" {
+		s.WriteString(" - ")
+		s.WriteString(standardStyleAlt.Render(user.Resource.Stream))
+	}
+	if user.Resource.Tag != "" {
+		s.WriteString(" ( ")
+		s.WriteString(standardStyleAlt.Render(user.Resource.Tag))
+		s.WriteString(" )")
+	}
+
+	return s.String()
+}
+
+type FetchUserRoleRes struct {
+	data []UserRoleData
+	err  error
+}
 
 var AddUserCmd = &cobra.Command{
 	Use:     "add name",
@@ -117,14 +151,38 @@ var ListUserCmd = &cobra.Command{
 		defer resp.Body.Close()
 
 		if resp.StatusCode == 200 {
-			items := []string{}
-			err = json.Unmarshal(bytes, &items)
+			users := []string{}
+			err = json.Unmarshal(bytes, &users)
 			if err != nil {
 				return err
 			}
-			for _, item := range items {
-				fmt.Println(item)
+
+			client = DefaultClient()
+			role_responses := make([]FetchUserRoleRes, len(users))
+
+			wsg := sync.WaitGroup{}
+			wsg.Add(len(users))
+			for idx, user := range users {
+				idx := idx
+				user := user
+				go func() {
+					role_responses[idx] = fetchUserRoles(&client.client, &DefaultProfile, user)
+					wsg.Done()
+				}()
 			}
+			wsg.Wait()
+			fmt.Println()
+			for idx, user := range users {
+				roles := role_responses[idx]
+				fmt.Println(standardStyleBold.Bold(true).Render(user))
+				if roles.err == nil {
+					for _, role := range roles.data {
+						fmt.Printf("  %s\n", role.Render())
+					}
+				}
+				println()
+			}
+
 		} else {
 			body := string(bytes)
 			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
@@ -132,4 +190,25 @@ var ListUserCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+func fetchUserRoles(client *http.Client, profile *config.Profile, user string) (res FetchUserRoleRes) {
+	endpoint := fmt.Sprintf("%s/%s", profile.Url, fmt.Sprintf("api/v1/user/%s/role", user))
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		return
+	}
+	req.SetBasicAuth(profile.Username, profile.Password)
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	res.err = json.Unmarshal(body, &res.data)
+	return
 }
