@@ -185,14 +185,17 @@ var ListProfileCmd = &cobra.Command{
 		if err != nil {
 			return nil
 		}
+
+		if len(file_config.Profiles) != 0 {
+			println()
+		}
+
 		row := 0
 		for key, value := range file_config.Profiles {
 			item := ProfileListItem{key, value.Url, value.Username}
 			fmt.Println(item.Render(file_config.Default_profile == key))
 			row += 1
-			if row != len(file_config.Profiles) {
-				fmt.Println()
-			}
+			fmt.Println()
 		}
 		return nil
 	},
