@@ -29,8 +29,9 @@ var (
 	standardPrimary  = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
 	standardSecondry = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
 
-	inactiveStyle    = lipgloss.NewStyle().Foreground(standardPrimary)
-	inactiveStyleAlt = lipgloss.NewStyle().Foreground(standardSecondry)
+	standardStyle     = lipgloss.NewStyle().Foreground(standardPrimary)
+	standardStyleBold = lipgloss.NewStyle().Foreground(standardPrimary).Bold(true)
+	standardStyleAlt  = lipgloss.NewStyle().Foreground(standardSecondry)
 
 	selectedStyle    = lipgloss.NewStyle().Foreground(FocusPrimary).Bold(true)
 	selectedStyleAlt = lipgloss.NewStyle().Foreground(FocusSecondry)

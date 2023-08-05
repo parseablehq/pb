@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"pb/pkg/config"
+	"strings"
 	"sync"
 
 	"github.com/spf13/cobra"
@@ -34,6 +35,23 @@ type UserRoleData struct {
 		Stream string `json:"stream"`
 		Tag    string `json:"tag"`
 	} `json:"resource"`
+}
+
+func (user *UserRoleData) Render() string {
+	var s strings.Builder
+	s.WriteString(standardStyle.Render(user.Privilege))
+
+	if user.Resource.Stream != "" {
+		s.WriteString(" - ")
+		s.WriteString(standardStyleAlt.Render(user.Resource.Stream))
+	}
+	if user.Resource.Tag != "" {
+		s.WriteString(" ( ")
+		s.WriteString(standardStyleAlt.Render(user.Resource.Tag))
+		s.WriteString(" )")
+	}
+
+	return s.String()
 }
 
 type FetchUserRoleRes struct {
@@ -153,12 +171,13 @@ var ListUserCmd = &cobra.Command{
 				}()
 			}
 			wsg.Wait()
+			fmt.Println()
 			for idx, user := range users {
 				roles := role_responses[idx]
-				fmt.Println(user)
+				fmt.Println(standardStyleBold.Bold(true).Render(user))
 				if roles.err == nil {
 					for _, role := range roles.data {
-						fmt.Printf("  %s @ %s %s\n", role.Privilege, role.Resource.Stream, role.Resource.Tag)
+						fmt.Printf("  %s\n", role.Render())
 					}
 				}
 				println()
