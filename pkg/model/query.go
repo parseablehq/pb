@@ -100,8 +100,6 @@ func NewQueryModel(profile config.Profile, stream string, duration uint) QueryMo
 
 	rows := make([]table.Row, 0)
 
-	keys := table.DefaultKeyMap()
-
 	table := table.New(columns).
 		WithRows(rows).
 		Filtered(true).
@@ -109,7 +107,7 @@ func NewQueryModel(profile config.Profile, stream string, duration uint) QueryMo
 		SelectableRows(false).
 		Border(customBorder).
 		Focused(true).
-		WithKeyMap(keys).
+		WithKeyMap(tableKeyBinds).
 		WithPageSize(30).
 		WithBaseStyle(tableStyle).
 		WithMissingDataIndicatorStyled(table.StyledCell{
@@ -195,7 +193,7 @@ func (m QueryModel) View() string {
 	tableBoxHeight := m.height - statusHeight - HelpHeight
 
 	m.help.Styles.FullDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	help := m.help.View(tableKeys)
+	help := m.help.View(tableHelpBinds)
 
 	render := fmt.Sprintf("%s\n%s\n\n%s", lipgloss.PlaceVertical(tableBoxHeight, lipgloss.Top, tableView), help, m.status.View())
 
