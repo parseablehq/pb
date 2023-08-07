@@ -23,7 +23,7 @@ import (
 	"net/url"
 	"os"
 	"pb/pkg/config"
-	"pb/pkg/model"
+	"pb/pkg/model/credential"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -79,12 +79,12 @@ var AddProfileCmd = &cobra.Command{
 		var password string
 
 		if len(args) < 4 {
-			_m, err := tea.NewProgram(model.NewPromptModel()).Run()
+			_m, err := tea.NewProgram(credential.New()).Run()
 			if err != nil {
 				fmt.Printf("Alas, there's been an error: %v", err)
 				os.Exit(1)
 			}
-			m := _m.(model.ProfilePrompt)
+			m := _m.(credential.Model)
 
 			username, password = m.Values()
 		} else {

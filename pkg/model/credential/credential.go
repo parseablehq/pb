@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package model
+package credential
 
 import (
 	"fmt"
@@ -35,12 +35,12 @@ var (
 	invalidButton = fmt.Sprintf("[ %s ]", blurredStyle.Render("X"))
 )
 
-type ProfilePrompt struct {
+type Model struct {
 	focusIndex int
 	inputs     []textinput.Model
 }
 
-func (m *ProfilePrompt) Values() (string, string) {
+func (m *Model) Values() (string, string) {
 	if validInputs(&m.inputs) {
 		return m.inputs[0].Value(), m.inputs[1].Value()
 	} else {
@@ -60,8 +60,8 @@ func validInputs(inputs *[]textinput.Model) bool {
 	return valid
 }
 
-func NewPromptModel() ProfilePrompt {
-	m := ProfilePrompt{
+func New() Model {
+	m := Model{
 		inputs: make([]textinput.Model, 2),
 	}
 
@@ -91,11 +91,11 @@ func NewPromptModel() ProfilePrompt {
 	return m
 }
 
-func (m ProfilePrompt) Init() tea.Cmd {
+func (m Model) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (m ProfilePrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -146,7 +146,7 @@ func (m ProfilePrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *ProfilePrompt) updateInputs(msg tea.Msg) tea.Cmd {
+func (m *Model) updateInputs(msg tea.Msg) tea.Cmd {
 	cmds := make([]tea.Cmd, len(m.inputs))
 	// Only text inputs with Focus() set will respond, so it's safe to simply
 	// update all of them here without any further logic.
@@ -157,7 +157,7 @@ func (m *ProfilePrompt) updateInputs(msg tea.Msg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (m ProfilePrompt) View() string {
+func (m Model) View() string {
 	var b strings.Builder
 
 	for i := range m.inputs {
