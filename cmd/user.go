@@ -60,8 +60,8 @@ type FetchUserRoleRes struct {
 }
 
 var AddUserCmd = &cobra.Command{
-	Use:     "add name",
-	Example: "add bob",
+	Use:     "add user-name",
+	Example: "  pb user add bob",
 	Short:   "Add a new user",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -94,9 +94,10 @@ var AddUserCmd = &cobra.Command{
 	},
 }
 
-var DeleteUserCmd = &cobra.Command{
-	Use:     "remove name",
-	Example: "remove bob",
+var RemoveUserCmd = &cobra.Command{
+	Use:     "remove user-name",
+	Aliases: []string{"rm"},
+	Example: "  pb user remove bob",
 	Short:   "Delete a user",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -130,8 +131,9 @@ var DeleteUserCmd = &cobra.Command{
 }
 
 var ListUserCmd = &cobra.Command{
-	Use:   "list",
-	Short: "list users",
+	Use:     "list",
+	Short:   "List all users",
+	Example: "  pb user list",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client := DefaultClient()
 		req, err := client.NewRequest("GET", "user", nil)
