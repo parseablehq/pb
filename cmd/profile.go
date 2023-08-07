@@ -55,9 +55,10 @@ func (item *ProfileListItem) Render(highlight bool) string {
 }
 
 var AddProfileCmd = &cobra.Command{
-	Use:     "add name url <username?> <password?>",
-	Example: "add local_logs http://0.0.0.0:8000 admin admin",
+	Use:     "add profile-name url <username?> <password?>",
+	Example: "  pb profile add local_parseable http://0.0.0.0:8000 admin admin",
 	Short:   "Add a new profile",
+	Long:    "Add a new profile to the config file",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if err := cobra.MinimumNArgs(2)(cmd, args); err != nil {
 			return err
@@ -124,10 +125,12 @@ var AddProfileCmd = &cobra.Command{
 	},
 }
 
-var DeleteProfileCmd = &cobra.Command{
-	Use:   "delete name",
-	Args:  cobra.ExactArgs(1),
-	Short: "Delete a profile",
+var RemoveProfileCmd = &cobra.Command{
+	Use:     "remove profile-name",
+	Aliases: []string{"rm"},
+	Example: "  pb profile remove local_parseable",
+	Args:    cobra.ExactArgs(1),
+	Short:   "Delete a profile",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		file_config, err := config.ReadConfigFromFile()
@@ -152,9 +155,10 @@ var DeleteProfileCmd = &cobra.Command{
 }
 
 var DefaultProfileCmd = &cobra.Command{
-	Use:   "default name",
-	Args:  cobra.ExactArgs(1),
-	Short: "Set default profile to use",
+	Use:     "default profile-name",
+	Args:    cobra.ExactArgs(1),
+	Short:   "Set default profile to use with all commands",
+	Example: "  pb profile default local_parseable",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		file_config, err := config.ReadConfigFromFile()
@@ -178,8 +182,9 @@ var DefaultProfileCmd = &cobra.Command{
 }
 
 var ListProfileCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List all added profiles",
+	Use:     "list profiles",
+	Short:   "List all added profiles",
+	Example: "  pb profile list",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		file_config, err := config.ReadConfigFromFile()
 		if err != nil {

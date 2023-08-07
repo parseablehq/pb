@@ -81,9 +81,9 @@ type StreamAlertData struct {
 	Version string `json:"version"`
 }
 
-var CreateStreamCmd = &cobra.Command{
-	Use:     "create name",
-	Example: "add backend_logs",
+var AddStreamCmd = &cobra.Command{
+	Use:     "add stream-name",
+	Example: "  pb stream add backend_logs",
 	Short:   "Create a new stream",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -116,8 +116,8 @@ var CreateStreamCmd = &cobra.Command{
 }
 
 var StatStreamCmd = &cobra.Command{
-	Use:     "info name",
-	Example: "info backend_logs",
+	Use:     "info stream-name",
+	Example: "  pb stream info backend_logs",
 	Short:   "Get statistics for a stream",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -191,9 +191,10 @@ var StatStreamCmd = &cobra.Command{
 	},
 }
 
-var DeleteStreamCmd = &cobra.Command{
-	Use:     "delete name",
-	Example: "delete backend_logs",
+var RemoveStreamCmd = &cobra.Command{
+	Use:     "remove stream-name",
+	Aliases: []string{"rm"},
+	Example: " pb stream remove backend_logs",
 	Short:   "Delete a stream",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -227,8 +228,9 @@ var DeleteStreamCmd = &cobra.Command{
 }
 
 var ListStreamCmd = &cobra.Command{
-	Use:   "list",
-	Short: "list streams",
+	Use:     "list",
+	Short:   "List all streams",
+	Example: " pb stream list",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client := DefaultClient()
 		req, err := client.NewRequest("GET", "logstream", nil)

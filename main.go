@@ -18,53 +18,94 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"pb/cmd"
+	"pb/pkg/model"
+	"strconv"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
+)
+
+var (
+	durationFlag      = "duration"
+	durationFlagShort = "d"
+	defaultDuration   = "10"
 )
 
 // Root command
 var cli = &cobra.Command{
 	Use:   "pb",
-	Short: "cli tool to connect with Parseable",
+	Short: "\nParseable command line tool",
+	Long:  "\npb is a command line tool for Parseable",
 }
 
-// Profile subcommand
 var profile = &cobra.Command{
 	Use:   "profile",
 	Short: "Manage profiles",
+	Long:  "\nprofile command is used to manage multiple instances of Parseable. Each profile can have a different set of credentials and URL",
 }
 
 var user = &cobra.Command{
 	Use:               "user",
 	Short:             "Manage users",
+	Long:              "\nuser command is used to manage users. Users can be added, deleted and listed",
 	PersistentPreRunE: cmd.PreRunDefaultProfile,
 }
 
 var stream = &cobra.Command{
 	Use:               "stream",
-	Short:             "Manage stream",
+	Short:             "Manage streams",
+	Long:              "\nstream command is used to manage streams. Streams can be created, deleted and listed",
 	PersistentPreRunE: cmd.PreRunDefaultProfile,
+}
+
+var query = &cobra.Command{
+	Use:     "query [stream-name] --duration 10",
+	Example: "  pb query frontend --duration 10",
+	Short:   "Open SQL query prompt",
+	Long:    "\nquery command is used to open a prompt to query a stream. The stream name and duration in minutes are required arguments",
+	Args:    cobra.ExactArgs(1),
+	PreRunE: cmd.PreRunDefaultProfile,
+	RunE: func(command *cobra.Command, args []string) error {
+		stream := args[0]
+		duration, _ := command.Flags().GetString(durationFlag)
+		if duration == "" {
+			duration = defaultDuration
+		}
+		durationInt, err := strconv.Atoi(duration)
+		if err != nil {
+			return err
+		}
+		p := tea.NewProgram(model.NewQueryModel(cmd.DefaultProfile, stream, uint(durationInt)), tea.WithAltScreen())
+		if _, err := p.Run(); err != nil {
+			fmt.Printf("there's been an error: %v", err)
+			os.Exit(1)
+		}
+		return nil
+	},
 }
 
 func main() {
 	profile.AddCommand(cmd.AddProfileCmd)
-	profile.AddCommand(cmd.DeleteProfileCmd)
+	profile.AddCommand(cmd.RemoveProfileCmd)
 	profile.AddCommand(cmd.ListProfileCmd)
 	profile.AddCommand(cmd.DefaultProfileCmd)
 
 	user.AddCommand(cmd.AddUserCmd)
-	user.AddCommand(cmd.DeleteUserCmd)
+	user.AddCommand(cmd.RemoveUserCmd)
 	user.AddCommand(cmd.ListUserCmd)
 
-	stream.AddCommand(cmd.CreateStreamCmd)
+	stream.AddCommand(cmd.AddStreamCmd)
+	stream.AddCommand(cmd.RemoveStreamCmd)
 	stream.AddCommand(cmd.ListStreamCmd)
-	stream.AddCommand(cmd.DeleteStreamCmd)
 	stream.AddCommand(cmd.StatStreamCmd)
 
+	query.PersistentFlags().StringP(durationFlag, durationFlagShort, defaultDuration, "specify the duration in minutes for which queries should be executed. Defaults to 10")
+
 	cli.AddCommand(profile)
-	cli.AddCommand(cmd.QueryProfileCmd)
+	cli.AddCommand(query)
 	cli.AddCommand(stream)
 	cli.AddCommand(user)
 

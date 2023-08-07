@@ -33,28 +33,28 @@ func (k TableKeyMap) FullHelp() [][]key.Binding {
 
 var tableKeys = TableKeyMap{
 	Up: key.NewBinding(
-		key.WithKeys("up", "k"),
-		key.WithHelp("↑/k", "move up"),
+		key.WithKeys("up", "w"),
+		key.WithHelp("↑/w", "scroll up"),
 	),
 	Down: key.NewBinding(
-		key.WithKeys("down", "j"),
-		key.WithHelp("↓/j", "move down"),
+		key.WithKeys("down", "s"),
+		key.WithHelp("↓/s", "scroll down"),
 	),
 	PageUp: key.NewBinding(
-		key.WithKeys("right", "l", "pgdown"),
-		key.WithHelp("→/l", "prev page"),
+		key.WithKeys("shift+up", "shift+w", "pgup"),
+		key.WithHelp("shift ↑/w", "prev page"),
 	),
 	PageDown: key.NewBinding(
-		key.WithKeys("left", "h", "pgup"),
-		key.WithHelp("←/h", "next page"),
+		key.WithKeys("shift+down", "shift+s", "pgdown"),
+		key.WithHelp("shift ↓/s", "next page"),
 	),
 	ScrollLeft: key.NewBinding(
-		key.WithKeys("shift+left", "shift+h"),
-		key.WithHelp("shift ←/h", "scroll left"),
+		key.WithKeys("left", "a"),
+		key.WithHelp("←/a", "scroll left"),
 	),
 	ScrollRight: key.NewBinding(
-		key.WithKeys("shift+right", "shift+l"),
-		key.WithHelp("shift →/l", "scroll right"),
+		key.WithKeys("right", "d"),
+		key.WithHelp("→/d", "scroll right"),
 	),
 	Filter: key.NewBinding(
 		key.WithKeys("/"),
