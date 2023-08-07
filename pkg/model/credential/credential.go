@@ -18,7 +18,7 @@
 package credential
 
 import (
-	"fmt"
+	"pb/pkg/model/button"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -27,17 +27,15 @@ import (
 )
 
 var (
-	focusedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-	blurredStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("120"))
-	noStyle       = lipgloss.NewStyle()
-	focusedButton = fmt.Sprintf("[ %s ]", focusedStyle.Render("Submit"))
-	blurredButton = fmt.Sprintf("[ %s ]", blurredStyle.Render("Submit"))
-	invalidButton = fmt.Sprintf("[ %s ]", blurredStyle.Render("X"))
+	focusedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	blurredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("120"))
+	noStyle      = lipgloss.NewStyle()
 )
 
 type Model struct {
 	focusIndex int
 	inputs     []textinput.Model
+	button     button.Model
 }
 
 func (m *Model) Values() (string, string) {
@@ -88,6 +86,13 @@ func New() Model {
 		m.inputs[i] = t
 	}
 
+	button := button.New("Submit")
+	button.FocusStyle = focusedStyle
+	button.BlurredStyle = blurredStyle
+	button.Invalid = true
+
+	m.button = button
+
 	return m
 }
 
@@ -97,6 +102,11 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case button.Pressed:
+		if validInputs(&m.inputs) {
+			return m, tea.Quit
+		}
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc":
@@ -105,7 +115,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab", "shift+tab", "enter", "up", "down":
 			s := msg.String()
 
-			if s == "enter" && m.focusIndex == len(m.inputs) && validInputs(&m.inputs) {
+			if s == "enter" && m.focusIndex == 2 && !m.button.Invalid {
 				return m, tea.Quit
 			}
 
@@ -115,14 +125,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusIndex++
 			}
 
-			if m.focusIndex > len(m.inputs) {
+			if m.focusIndex >= 3 {
 				m.focusIndex = 0
 			} else if m.focusIndex < 0 {
-				m.focusIndex = len(m.inputs)
+				m.focusIndex = 2
 			}
 
 			cmds := make([]tea.Cmd, len(m.inputs))
-			for i := 0; i <= len(m.inputs)-1; i++ {
+			for i := 0; i < 2; i++ {
 				if i == m.focusIndex {
 					// Set focused state
 					cmds[i] = m.inputs[i].Focus()
@@ -136,6 +146,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inputs[i].TextStyle = noStyle
 			}
 
+			if m.focusIndex == 2 {
+				m.button.Focus()
+			} else {
+				m.button.Blur()
+			}
+
 			return m, tea.Batch(cmds...)
 		}
 	}
@@ -143,17 +159,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle character input and blinking
 	cmd := m.updateInputs(msg)
 
+	if validInputs(&m.inputs) {
+		m.button.Invalid = false
+	}
+
 	return m, cmd
 }
 
 func (m *Model) updateInputs(msg tea.Msg) tea.Cmd {
-	cmds := make([]tea.Cmd, len(m.inputs))
+	cmds := make([]tea.Cmd, len(m.inputs)+1)
 	// Only text inputs with Focus() set will respond, so it's safe to simply
 	// update all of them here without any further logic.
 	for i := range m.inputs {
 		m.inputs[i], cmds[i] = m.inputs[i].Update(msg)
 	}
-
+	m.button, cmds[2] = m.button.Update(msg)
 	return tea.Batch(cmds...)
 }
 
@@ -162,21 +182,8 @@ func (m Model) View() string {
 
 	for i := range m.inputs {
 		b.WriteString(m.inputs[i].View())
-		if i < len(m.inputs)-1 {
-			b.WriteRune('\n')
-		}
+		b.WriteRune('\n')
 	}
-
-	button := &blurredButton
-	if m.focusIndex == len(m.inputs) {
-		button = &focusedButton
-	}
-
-	if !validInputs(&m.inputs) {
-		button = &invalidButton
-	}
-
-	fmt.Fprintf(&b, "\n%s", *button)
-
+	b.WriteString(m.button.View())
 	return b.String()
 }
