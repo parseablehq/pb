@@ -10,18 +10,18 @@ import (
 type Pressed bool
 
 type Model struct {
-	text          string
-	focusStyle    lipgloss.Style
-	blurredStyle  lipgloss.Style
-	focus         bool
-	invalid_state bool
+	text         string
+	FocusStyle   lipgloss.Style
+	BlurredStyle lipgloss.Style
+	focus        bool
+	Invalid      bool
 }
 
 func New(text string) Model {
 	return Model{
 		text:         text,
-		focusStyle:   lipgloss.NewStyle(),
-		blurredStyle: lipgloss.NewStyle(),
+		FocusStyle:   lipgloss.NewStyle(),
+		BlurredStyle: lipgloss.NewStyle(),
 	}
 }
 
@@ -32,6 +32,10 @@ func (m *Model) Focus() tea.Cmd {
 
 func (m *Model) Blur() {
 	m.focus = false
+}
+
+func (m *Model) Focused() bool {
+	return m.focus
 }
 
 func (m Model) Init() tea.Cmd {
@@ -59,7 +63,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	var b strings.Builder
 	var text string
-	if m.invalid_state {
+	if m.Invalid {
 		text = "X"
 	} else {
 		text = m.text
@@ -67,9 +71,9 @@ func (m Model) View() string {
 
 	b.WriteString("[ ")
 	if m.focus {
-		text = m.focusStyle.Render(text)
+		text = m.FocusStyle.Render(text)
 	} else {
-		text = m.blurredStyle.Render(text)
+		text = m.BlurredStyle.Render(text)
 	}
 	b.WriteString(text)
 	b.WriteString(" ]")

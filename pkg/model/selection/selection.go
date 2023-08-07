@@ -42,6 +42,10 @@ func (m *Model) Blur() {
 	m.focus = false
 }
 
+func (m *Model) Focused() bool {
+	return m.focus
+}
+
 func (m *Model) Value() string {
 	return m.items[m.focusIndex]
 }
