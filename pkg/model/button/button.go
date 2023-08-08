@@ -51,7 +51,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyEnter:
-			return m, func() tea.Msg { return Pressed(true) }
+			if m.Invalid {
+				return m, nil
+			} else {
+				return m, func() tea.Msg { return Pressed(true) }
+			}
 		default:
 			return m, nil
 		}

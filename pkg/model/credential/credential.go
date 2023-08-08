@@ -27,8 +27,14 @@ import (
 )
 
 var (
-	focusedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-	blurredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("120"))
+	FocusPrimary  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
+	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
+
+	StandardPrimary  = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
+	StandardSecondry = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
+
+	focusedStyle = lipgloss.NewStyle().Foreground(FocusPrimary)
+	blurredStyle = lipgloss.NewStyle().Foreground(StandardSecondry)
 	noStyle      = lipgloss.NewStyle()
 )
 

@@ -38,12 +38,12 @@ var (
 	FocusPrimary  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
 	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
 
-	standardPrimary  = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
-	standardSecondry = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
+	StandardPrimary  = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
+	StandardSecondry = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
 
 	focusedStyle           = lipgloss.NewStyle().Foreground(FocusSecondry)
-	blurredStyle           = lipgloss.NewStyle().Foreground(standardPrimary)
-	selectionFocusStyle    = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true).BorderForeground(standardSecondry)
+	blurredStyle           = lipgloss.NewStyle().Foreground(StandardPrimary)
+	selectionFocusStyle    = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true).BorderForeground(StandardSecondry)
 	selectionFocusStyleAlt = lipgloss.NewStyle().Border(lipgloss.DoubleBorder(), true).BorderForeground(FocusPrimary)
 	selectionBlurStyle     = lipgloss.NewStyle().Height(3).AlignVertical(lipgloss.Center).MarginLeft(1).MarginRight(1)
 )
@@ -56,6 +56,16 @@ type Model struct {
 	Tag        textinput.Model
 	button     button.Model
 	Success    bool
+}
+
+func (m *Model) Valid() bool {
+	switch m.Selection.Value() {
+	case "admin", "editor", "none":
+		return true
+	case "writer", "reader":
+		return !(strings.Contains(m.Stream.Value(), " ") || m.Stream.Value() == "")
+	}
+	return true
 }
 
 func (m *Model) FocusSelected() {
@@ -125,20 +135,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Success = true
 		return m, tea.Quit
 	case tea.KeyMsg:
-		if m.Selection.Value() == "none" && msg.Type == tea.KeyEnter {
-			m.Success = true
-			return m, tea.Quit
+		// special cases for enter key
+		if msg.Type == tea.KeyEnter {
+			if m.Selection.Value() == "none" {
+				m.Success = true
+				return m, tea.Quit
+			}
+			if m.button.Focused() && !m.button.Invalid {
+				m.button, cmd = m.button.Update(msg)
+				return m, cmd
+			}
 		}
+
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
-		case tea.KeyDown:
+		case tea.KeyDown, tea.KeyTab, tea.KeyEnter:
 			m.focusIndex += 1
 			if m.focusIndex >= len(*m.navMap) {
 				m.focusIndex = 0
 			}
 			m.FocusSelected()
-		case tea.KeyUp:
+		case tea.KeyUp, tea.KeyShiftTab:
 			m.focusIndex -= 1
 			if m.focusIndex < 0 {
 				m.focusIndex = len(*m.navMap) - 1
@@ -165,6 +183,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "button":
 				m.button, cmd = m.button.Update(msg)
 			}
+			m.button.Invalid = !m.Valid()
 		}
 	}
 	return m, cmd
