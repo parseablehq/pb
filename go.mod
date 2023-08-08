@@ -7,6 +7,7 @@ require (
 	github.com/charmbracelet/bubbletea v0.24.2
 	github.com/dustin/go-humanize v1.0.1
 	golang.org/x/term v0.10.0
+	golang.org/x/exp v0.0.0-20230807204917-050eac23e9de
 )
 
 require (

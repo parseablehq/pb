@@ -15,12 +15,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package role
+package selection
 
 import (
-	"strings"
-
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -29,8 +26,8 @@ type Model struct {
 	items        []string
 	focusIndex   int
 	focus        bool
-	focusStyle   lipgloss.Style
-	blurredStyle lipgloss.Style
+	FocusStyle   lipgloss.Style
+	BlurredStyle lipgloss.Style
 }
 
 func (m *Model) Focus() tea.Cmd {
@@ -50,21 +47,11 @@ func (m *Model) Value() string {
 	return m.items[m.focusIndex]
 }
 
-func validInputs(inputs *[]textinput.Model) bool {
-	valid := true
-	stream := (*inputs)[0].Value()
-
-	if strings.Contains(stream, " ") || stream == "" {
-		valid = false
-	}
-
-	return valid
-}
-
-func New() Model {
+func New(items []string) Model {
 	m := Model{
 		focusIndex: 0,
 		focus:      false,
+		items:      items,
 	}
 
 	return m
@@ -74,7 +61,7 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	if !m.focus {
 		return m, nil
 	}
@@ -87,7 +74,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusIndex -= 1
 			}
 		case tea.KeyRight:
-			if m.focusIndex < 3 {
+			if m.focusIndex < len(m.items)-1 {
 				m.focusIndex += 1
 			}
 		}
@@ -97,15 +84,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	var b strings.Builder
+	render := make([]string, len(m.items))
 
 	for idx, item := range m.items {
 		if idx == m.focusIndex {
-			b.WriteString(m.focusStyle.Render(item))
+			render[idx] = m.FocusStyle.Render(item)
 		} else {
-			b.WriteString(m.blurredStyle.Render(item))
+			render[idx] = m.BlurredStyle.Render(item)
 		}
 	}
 
-	return b.String()
+	return lipgloss.JoinHorizontal(lipgloss.Center, render...)
 }

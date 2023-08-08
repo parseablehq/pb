@@ -18,37 +18,44 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"pb/pkg/config"
+	"os"
+	"pb/pkg/model/role"
 	"strings"
 	"sync"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
+	"golang.org/x/exp/slices"
 )
 
+type RoleResource struct {
+	Stream string `json:"stream,omitempty"`
+	Tag    string `json:"tag,omitempty"`
+}
+
 type UserRoleData struct {
-	Privilege string `json:"privilege"`
-	Resource  struct {
-		Stream string `json:"stream"`
-		Tag    string `json:"tag"`
-	} `json:"resource"`
+	Privilege string        `json:"privilege"`
+	Resource  *RoleResource `json:"resource,omitempty"`
 }
 
 func (user *UserRoleData) Render() string {
 	var s strings.Builder
 	s.WriteString(standardStyle.Render(user.Privilege))
 
-	if user.Resource.Stream != "" {
-		s.WriteString(" - ")
-		s.WriteString(standardStyleAlt.Render(user.Resource.Stream))
-	}
-	if user.Resource.Tag != "" {
-		s.WriteString(" ( ")
-		s.WriteString(standardStyleAlt.Render(user.Resource.Tag))
-		s.WriteString(" )")
+	if user.Resource != nil {
+		if user.Resource.Stream != "" {
+			s.WriteString(" - ")
+			s.WriteString(standardStyleAlt.Render(user.Resource.Stream))
+		}
+		if user.Resource.Tag != "" {
+			s.WriteString(" ( ")
+			s.WriteString(standardStyleAlt.Render(user.Resource.Tag))
+			s.WriteString(" )")
+		}
 	}
 
 	return s.String()
@@ -66,8 +73,58 @@ var AddUserCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
+
+		var users []string
 		client := DefaultClient()
-		req, err := client.NewRequest("PUT", "user/"+name, nil)
+		if err := fetchUsers(&client, &users); err != nil {
+			return err
+		}
+
+		if slices.Contains(users, name) {
+			fmt.Println("user already exists")
+			return nil
+		}
+
+		_m, err := tea.NewProgram(role.New()).Run()
+		if err != nil {
+			fmt.Printf("Alas, there's been an error: %v", err)
+			os.Exit(1)
+		}
+		m := _m.(role.Model)
+
+		privilege := m.Selection.Value()
+		stream := m.Stream.Value()
+		tag := m.Tag.Value()
+
+		if !m.Success {
+			fmt.Println("aborted by user")
+			return nil
+		}
+
+		var putBody io.Reader
+
+		// set role
+		if privilege != "none" {
+			roleData := UserRoleData{
+				Privilege: privilege,
+			}
+			switch privilege {
+			case "writer":
+				roleData.Resource = &RoleResource{
+					Stream: stream,
+				}
+			case "reader":
+				roleData.Resource = &RoleResource{
+					Stream: stream,
+				}
+				if tag != "" {
+					roleData.Resource.Tag = tag
+				}
+			}
+			roleDataJson, _ := json.Marshal([]UserRoleData{roleData})
+			putBody = bytes.NewBuffer(roleDataJson)
+		}
+		req, err := client.NewRequest("PUT", "user/"+name, putBody)
 		if err != nil {
 			return err
 		}
@@ -114,7 +171,7 @@ var RemoveUserCmd = &cobra.Command{
 		}
 
 		if resp.StatusCode == 200 {
-			fmt.Printf("Removed user %s", styleBold.Render(name))
+			fmt.Printf("Removed user %s\n", styleBold.Render(name))
 		} else {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -135,73 +192,82 @@ var ListUserCmd = &cobra.Command{
 	Short:   "List all users",
 	Example: "  pb user list",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var users []string
 		client := DefaultClient()
-		req, err := client.NewRequest("GET", "user", nil)
+		err := fetchUsers(&client, &users)
 		if err != nil {
 			return err
 		}
 
-		resp, err := client.client.Do(req)
-		if err != nil {
-			return err
+		role_responses := make([]FetchUserRoleRes, len(users))
+		wsg := sync.WaitGroup{}
+		wsg.Add(len(users))
+
+		for idx, user := range users {
+			idx := idx
+			user := user
+			client := &client
+			go func() {
+				role_responses[idx] = fetchUserRoles(client, user)
+				wsg.Done()
+			}()
 		}
 
-		bytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode == 200 {
-			users := []string{}
-			err = json.Unmarshal(bytes, &users)
-			if err != nil {
-				return err
-			}
-
-			client = DefaultClient()
-			role_responses := make([]FetchUserRoleRes, len(users))
-
-			wsg := sync.WaitGroup{}
-			wsg.Add(len(users))
-			for idx, user := range users {
-				idx := idx
-				user := user
-				go func() {
-					role_responses[idx] = fetchUserRoles(&client.client, &DefaultProfile, user)
-					wsg.Done()
-				}()
-			}
-			wsg.Wait()
-			fmt.Println()
-			for idx, user := range users {
-				roles := role_responses[idx]
-				fmt.Println(standardStyleBold.Bold(true).Render(user))
-				if roles.err == nil {
-					for _, role := range roles.data {
-						fmt.Printf("  %s\n", role.Render())
-					}
+		wsg.Wait()
+		fmt.Println()
+		for idx, user := range users {
+			roles := role_responses[idx]
+			fmt.Println(standardStyleBold.Bold(true).Render(user))
+			if roles.err == nil {
+				for _, role := range roles.data {
+					fmt.Printf("  %s\n", role.Render())
 				}
-				println()
+			} else {
+				fmt.Println(roles.err)
 			}
-
-		} else {
-			body := string(bytes)
-			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
+			println()
 		}
 
 		return nil
 	},
 }
 
-func fetchUserRoles(client *http.Client, profile *config.Profile, user string) (res FetchUserRoleRes) {
-	endpoint := fmt.Sprintf("%s/%s", profile.Url, fmt.Sprintf("api/v1/user/%s/role", user))
-	req, err := http.NewRequest("GET", endpoint, nil)
+func fetchUsers(client *HttpClient, data *[]string) error {
+	req, err := client.NewRequest("GET", "user", nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	bytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 200 {
+		err = json.Unmarshal(bytes, data)
+		if err != nil {
+			return err
+		}
+	} else {
+		body := string(bytes)
+		return fmt.Errorf("request failed\nstatus code: %s\nresponse: %s", resp.Status, body)
+	}
+
+	return nil
+}
+
+func fetchUserRoles(client *HttpClient, user string) (res FetchUserRoleRes) {
+	req, err := client.NewRequest("GET", fmt.Sprintf("user/%s/role", user), nil)
 	if err != nil {
 		return
 	}
-	req.SetBasicAuth(profile.Username, profile.Password)
-	resp, err := client.Do(req)
+	resp, err := client.client.Do(req)
 	if err != nil {
 		return
 	}
