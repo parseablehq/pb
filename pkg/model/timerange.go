@@ -188,12 +188,12 @@ func NewTimeRangeModel(duration uint) timeRangeModel {
 	input_style := lipgloss.NewStyle().Bold(true).Faint(true).Width(6).Align(lipgloss.Center)
 
 	start := textinput.New()
-	start.Width = datetime_width
+	start.Width = datetimeWidth
 	start.Prompt = input_style.Render("start")
 	start.SetValue(start_time.Format(time.RFC3339))
 
 	end := textinput.New()
-	end.Width = datetime_width
+	end.Width = datetimeWidth
 	end.Prompt = input_style.Render("end")
 	end.SetValue(end_time.Format(time.RFC3339))
 

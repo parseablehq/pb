@@ -21,7 +21,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"os"
@@ -30,17 +29,30 @@ import (
 	"pb/pkg/config"
 
 	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	table "github.com/evertras/bubble-table/table"
+	"golang.org/x/exp/slices"
 	"golang.org/x/term"
 )
 
-const datetime_width = 26
+const (
+	datetimeWidth = 26
+	datetimeKey   = "p_timestamp"
+	tagKey        = "p_tags"
+	metadataKey   = "p_metadata"
+)
 
 var (
-	baseStyle   = lipgloss.NewStyle().BorderForeground(lipgloss.AdaptiveColor{Light: "236", Dark: "248"})
-	headerStyle = lipgloss.NewStyle().Inherit(baseStyle).Foreground(lipgloss.AdaptiveColor{Light: "#023047", Dark: "#90E0EF"}).Bold(true)
+	FocusPrimary  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
+	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
+
+	StandardPrimary  = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
+	StandardSecondry = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
+
+	baseStyle   = lipgloss.NewStyle().BorderForeground(StandardPrimary)
+	headerStyle = lipgloss.NewStyle().Inherit(baseStyle).Foreground(FocusSecondry).Bold(true)
 	tableStyle  = lipgloss.NewStyle().Inherit(baseStyle).Align(lipgloss.Left)
 
 	customBorder = table.Border{
@@ -78,16 +90,23 @@ const (
 	FetchErr
 )
 
+const (
+	OverlayNone uint = iota
+	OverlayTextArea
+	OverlayTimeRange
+)
+
 type QueryModel struct {
-	width      int
-	height     int
-	query      string
-	time_range timeRangeModel
-	table      table.Model
-	profile    config.Profile
-	stream     string
-	help       help.Model
-	status     StatusBar
+	width     int
+	height    int
+	query     string
+	timeRange timeRangeModel
+	queryText textarea.Model
+	table     table.Model
+	overlay   uint
+	profile   config.Profile
+	help      help.Model
+	status    StatusBar
 }
 
 func NewQueryModel(profile config.Profile, stream string, duration uint) QueryModel {
@@ -113,24 +132,34 @@ func NewQueryModel(profile config.Profile, stream string, duration uint) QueryMo
 		WithMissingDataIndicatorStyled(table.StyledCell{
 			Style: lipgloss.NewStyle().Foreground(lipgloss.Color("#faa")),
 			Data:  "╌",
-		}).WithMaxTotalWidth(100).WithHorizontalFreezeColumnCount(1)
+		}).WithMaxTotalWidth(100)
+
+	queryText := textarea.New()
+	queryText.MaxHeight = 4
+	queryText.MaxWidth = 50
+	queryText.KeyMap = textAreaKeyMap
+	queryText.Focus()
+
+	help := help.New()
+	help.Styles.FullDesc = lipgloss.NewStyle().Foreground(FocusSecondry)
 
 	return QueryModel{
-		width:      w,
-		height:     h,
-		query:      query,
-		time_range: NewTimeRangeModel(duration),
-		table:      table,
-		profile:    profile,
-		stream:     stream,
-		help:       help.New(),
-		status:     NewStatusBar(profile.Url, stream, w),
+		width:     w,
+		height:    h,
+		query:     query,
+		queryText: queryText,
+		timeRange: NewTimeRangeModel(duration),
+		table:     table,
+		overlay:   OverlayNone,
+		profile:   profile,
+		help:      help,
+		status:    NewStatusBar(profile.Url, stream, w),
 	}
 }
 
 func (m QueryModel) Init() tea.Cmd {
 	// Just return `nil`, which means "no I/O right now, please."
-	return NewFetchTask(m.profile, m.stream, m.query, m.time_range.StartValueUtc(), m.time_range.EndValueUtc())
+	return NewFetchTask(m.profile, m.query, m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
 }
 
 func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -157,13 +186,26 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Is it a key press?
 	case tea.KeyMsg:
-		switch msg.Type {
+		switch msg.String() {
 		// These keys should exit the program.
-		case tea.KeyCtrlC:
+		case "ctrl+c":
 			return m, tea.Quit
-
+		case "shift+tab":
+			m.overlay += 1
+			if m.overlay > OverlayTimeRange {
+				m.overlay = 0
+			}
+		case "ctrl+r":
+			return m, NewFetchTask(m.profile, m.query, m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
 		default:
-			m.table, cmd = m.table.Update(msg)
+			switch m.overlay {
+			case OverlayNone:
+				m.table, cmd = m.table.Update(msg)
+			case OverlayTextArea:
+				m.queryText, cmd = m.queryText.Update(msg)
+			case OverlayTimeRange:
+				m.timeRange, cmd = m.timeRange.Update(msg)
+			}
 			cmds = append(cmds, cmd)
 		}
 	}
@@ -177,41 +219,37 @@ func (m QueryModel) View() string {
 
 	m.table.WithMaxTotalWidth(m.width - 10)
 
-	statusHeight := 1
-	HelpHeight := 5
+	var mainView string
+	var helpView string
+	statusView := lipgloss.PlaceVertical(2, lipgloss.Bottom, m.status.View())
+	statusHeight := lipgloss.Height(statusView)
 
-	tableView := m.table.View()
-	tableHeight := lipgloss.Height(tableView)
-
-	if (tableHeight + HelpHeight + statusHeight) > m.height {
-		m.help.ShowAll = false
-		HelpHeight = 2
-	} else {
-		m.help.ShowAll = true
+	switch m.overlay {
+	case OverlayNone:
+		mainView = m.table.View()
+		helpView = m.help.FullHelpView(tableHelpBinds.FullHelp())
+	case OverlayTextArea:
+		mainView = m.queryText.View()
+		helpView = m.help.FullHelpView(TextAreaHelpKeys{}.FullHelp())
+	case OverlayTimeRange:
+		mainView = m.timeRange.View()
+		helpView = "tab to switch time range input, shift+tab to goto next page"
 	}
 
-	tableBoxHeight := m.height - statusHeight - HelpHeight
+	helpHeight := lipgloss.Height(helpView)
 
-	m.help.Styles.FullDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	help := m.help.View(tableHelpBinds)
-
-	render := fmt.Sprintf("%s\n%s\n\n%s", lipgloss.PlaceVertical(tableBoxHeight, lipgloss.Top, tableView), help, m.status.View())
+	tableBoxHeight := m.height - statusHeight - helpHeight
+	render := fmt.Sprintf("%s\n%s\n%s", lipgloss.PlaceVertical(tableBoxHeight, lipgloss.Top, mainView), helpView, statusView)
 
 	return outer.Render(render)
-
 }
 
-type Field struct {
-	Name string
+type QueryData struct {
+	Fields  []string                 `json:"fields"`
+	Records []map[string]interface{} `json:"records"`
 }
 
-type SchemaResp struct {
-	Fields []Field
-}
-
-type QueryData []map[string]interface{}
-
-func NewFetchTask(profile config.Profile, stream string, query string, start_time string, end_time string) func() tea.Msg {
+func NewFetchTask(profile config.Profile, query string, start_time string, end_time string) func() tea.Msg {
 	return func() tea.Msg {
 		res := FetchData{
 			status: FetchErr,
@@ -220,57 +258,21 @@ func NewFetchTask(profile config.Profile, stream string, query string, start_tim
 		}
 
 		client := &http.Client{
-			Timeout: time.Second * 30,
-		}
-
-		fields, status := fetchSchema(client, &profile, stream)
-		if status == FetchErr {
-			return res
-		} else {
-			res.schema = fields
+			Timeout: time.Second * 50,
 		}
 
 		data, status := fetchData(client, &profile, query, start_time, end_time)
 		if status == FetchErr {
 			return res
 		} else {
-			res.data = data
+			res.data = data.Records
+			res.schema = data.Fields
 		}
 
 		res.status = FetchOk
 
 		return res
 	}
-}
-
-func fetchSchema(client *http.Client, profile *config.Profile, stream string) (fields []string, res FetchResult) {
-	fields = []string{}
-	res = FetchErr
-
-	endpoint := fmt.Sprintf("%s/%s", profile.Url, fmt.Sprintf("api/v1/logstream/%s/schema", stream))
-	req, err := http.NewRequest("GET", endpoint, nil)
-	if err != nil {
-		return
-	}
-	req.SetBasicAuth(profile.Username, profile.Password)
-	resp, err := client.Do(req)
-	if err != nil {
-		return
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
-
-	var schema SchemaResp
-	json.Unmarshal(body, &schema)
-	for _, field := range schema.Fields {
-		fields = append(fields, field.Name)
-	}
-
-	res = FetchOk
-	return
 }
 
 func fetchData(client *http.Client, profile *config.Profile, query string, start_time string, end_time string) (data QueryData, res FetchResult) {
@@ -286,7 +288,7 @@ func fetchData(client *http.Client, profile *config.Profile, query string, start
 
 	final_query := fmt.Sprintf(query_template, query, start_time, end_time)
 
-	endpoint := fmt.Sprintf("%s/%s", profile.Url, "api/v1/query")
+	endpoint := fmt.Sprintf("%s/%s", profile.Url, "api/v1/query?fields=true")
 	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer([]byte(final_query)))
 	if err != nil {
 		return
@@ -309,16 +311,32 @@ func fetchData(client *http.Client, profile *config.Profile, query string, start
 }
 
 func (m *QueryModel) UpdateTable(data FetchData) {
-	columns := make([]table.Column, len(data.schema)-2)
-	columns[0] = table.NewColumn("p_timestamp", "p_timestamp", 24)
-	columnIndex := 1
+	// pin p_timestamp to left if available
+	contains_timestamp := slices.Contains(data.schema, datetimeKey)
+	contains_tags := slices.Contains(data.schema, tagKey)
+	contains_metadata := slices.Contains(data.schema, metadataKey)
+	columns := make([]table.Column, len(data.schema))
+	columnIndex := 0
+
+	if contains_timestamp {
+		columns[0] = table.NewColumn(datetimeKey, datetimeKey, datetimeWidth)
+		columnIndex += 1
+	}
+
+	if contains_tags {
+		columns[len(columns)-2] = table.NewColumn(tagKey, tagKey, inferWidthForColumns(tagKey, &data.data, 100, 80)).WithFiltered(true)
+	}
+
+	if contains_metadata {
+		columns[len(columns)-1] = table.NewColumn(metadataKey, metadataKey, inferWidthForColumns(metadataKey, &data.data, 100, 80)).WithFiltered(true)
+	}
 
 	for _, title := range data.schema {
 		switch title {
-		case "p_timestamp", "p_metadata", "p_tags":
+		case datetimeKey, tagKey, metadataKey:
 			continue
 		default:
-			width := inferWidthForColumns(title, &data.data, 100, 80) + 3
+			width := inferWidthForColumns(title, &data.data, 100, 100) + 1
 			columns[columnIndex] = table.NewColumn(title, title, width).WithFiltered(true)
 			columnIndex += 1
 		}
@@ -364,6 +382,10 @@ func inferWidthForColumns(column string, data *[]map[string]interface{}, max_rec
 				return
 			}
 		}
+	}
+
+	if len(column) > width {
+		width = len(column)
 	}
 
 	return
