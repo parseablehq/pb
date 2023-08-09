@@ -24,9 +24,11 @@ import (
 	"os"
 	"pb/pkg/config"
 	"pb/pkg/model/credential"
+	"pb/pkg/model/defaultprofile"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 )
 
@@ -156,27 +158,46 @@ var RemoveProfileCmd = &cobra.Command{
 
 var DefaultProfileCmd = &cobra.Command{
 	Use:     "default profile-name",
-	Args:    cobra.ExactArgs(1),
+	Args:    cobra.MaximumNArgs(1),
 	Short:   "Set default profile to use with all commands",
 	Example: "  pb profile default local_parseable",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
+		var name string
+
 		file_config, err := config.ReadConfigFromFile()
 		if err != nil {
 			return nil
+		}
+
+		if len(args) > 0 {
+			name = args[0]
 		} else {
-			_, exists := file_config.Profiles[name]
-			if exists {
-				file_config.Default_profile = name
+			model := defaultprofile.New(file_config.Profiles)
+			_m, err := tea.NewProgram(model).Run()
+			if err != nil {
+				fmt.Printf("Alas, there's been an error: %v", err)
+				os.Exit(1)
+			}
+			m := _m.(defaultprofile.Model)
+			termenv.DefaultOutput().ClearLines(lipgloss.Height(model.View()) - 1)
+			if m.Success {
+				name = m.Choice
 			} else {
-				name = lipgloss.NewStyle().Bold(true).Render(name)
-				err := fmt.Sprintf("profile %s does not exist", styleBold.Render(name))
-				return errors.New(err)
+				return nil
 			}
 		}
 
+		_, exists := file_config.Profiles[name]
+		if exists {
+			file_config.Default_profile = name
+		} else {
+			name = lipgloss.NewStyle().Bold(true).Render(name)
+			err := fmt.Sprintf("profile %s does not exist", styleBold.Render(name))
+			return errors.New(err)
+		}
+
 		config.WriteConfigToFile(file_config)
-		fmt.Printf("%s is now set as default profile", styleBold.Render(name))
+		fmt.Printf("%s is now set as default profile\n", styleBold.Render(name))
 		return nil
 	},
 }
