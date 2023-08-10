@@ -86,7 +86,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			value := string(newValue)
 			time, err := time.Parse(time.DateTime, value)
 			*time.Location() = *m.time.Location()
-			if err != nil {
+			if err == nil {
 				m.time = time
 				m.input.SetValue(value)
 			}

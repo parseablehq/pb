@@ -121,6 +121,7 @@ func NewTimeInputModel(duration uint) TimeInputModel {
 
 	start := datetime.New(input_style.Render("start"))
 	start.SetTime(startTime)
+	start.Focus()
 	end := datetime.New(input_style.Render("end"))
 	end.SetTime(endTime)
 
