@@ -280,7 +280,7 @@ func (m QueryModel) View() string {
 	var outer = lipgloss.NewStyle().Inherit(baseStyle).
 		UnsetMaxHeight().Width(m.width).Height(m.height)
 
-	m.table.WithMaxTotalWidth(m.width - 10)
+	m.table = m.table.WithMaxTotalWidth(m.width - 2)
 
 	var mainView string
 	var helpKeys [][]key.Binding
