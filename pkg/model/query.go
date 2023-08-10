@@ -203,6 +203,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.table, cmd = m.table.Update(msg)
 			case OverlayTextArea:
 				m.queryText, cmd = m.queryText.Update(msg)
+				m.query = m.queryText.Value()
 			case OverlayTimeRange:
 				m.timeRange, cmd = m.timeRange.Update(msg)
 			}
