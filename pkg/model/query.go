@@ -87,8 +87,7 @@ var (
 	}
 
 	additionalKeyBinds = []key.Binding{
-		key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift tab", "change to input/table view")),
-		key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl r", "run query")),
+		key.NewBinding(key.WithKeys("ctrl+enter"), key.WithHelp("ctrl enter", "(re) run query")),
 	}
 
 	QueryNavigationMap = []string{"query", "time", "table"}
