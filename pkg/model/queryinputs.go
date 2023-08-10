@@ -21,6 +21,7 @@ import (
 	"pb/pkg/model/datetime"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -41,6 +42,27 @@ var (
 				BorderForeground(FocusPrimary).
 				Padding(0)
 )
+
+type EndTimeKeyBind struct {
+	ResetTime key.Binding
+}
+
+func (k EndTimeKeyBind) ShortHelp() []key.Binding {
+	return []key.Binding{k.ResetTime}
+}
+
+func (k EndTimeKeyBind) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.ResetTime},
+	}
+}
+
+var EndHelpBinds = EndTimeKeyBind{
+	ResetTime: key.NewBinding(
+		key.WithKeys("ctrl+{"),
+		key.WithHelp("ctrl+{", "Change to current time"),
+	),
+}
 
 type QueryInputModel struct {
 	start datetime.Model
@@ -131,6 +153,21 @@ func NewQueryInputModel(duration uint) QueryInputModel {
 		list:  list,
 		focus: 0,
 	}
+}
+
+func (m QueryInputModel) FullHelp() [][]key.Binding {
+	switch m.currentFocus() {
+	case "text":
+		return TextAreaHelpKeys{}.FullHelp()
+	case "start":
+		return [][]key.Binding{}
+	case "end":
+		return EndHelpBinds.FullHelp()
+	case "list":
+		return [][]key.Binding{}
+	}
+
+	return [][]key.Binding{}
 }
 
 func (m QueryInputModel) Init() tea.Cmd {

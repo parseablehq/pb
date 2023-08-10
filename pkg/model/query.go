@@ -29,6 +29,7 @@ import (
 	"pb/pkg/config"
 
 	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	table "github.com/evertras/bubble-table/table"
@@ -72,6 +73,11 @@ var (
 		InnerJunction:  "╫",
 
 		InnerDivider: "║",
+	}
+
+	additionalKeyBinds = []key.Binding{
+		key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift tab", "change to input/table view")),
+		key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl r", "run query")),
 	}
 )
 
@@ -212,18 +218,25 @@ func (m QueryModel) View() string {
 	statusView := lipgloss.PlaceVertical(2, lipgloss.Bottom, m.status.View())
 	statusHeight := lipgloss.Height(statusView)
 
+	var helpKeys [][]key.Binding
 	switch m.overlay {
 	case OverlayNone:
 		mainView = m.table.View()
-		helpView = m.help.FullHelpView(tableHelpBinds.FullHelp())
+		helpKeys = tableHelpBinds.FullHelp()
 	case OverlayInputs:
 		mainView = m.inputs.View()
-		helpView = m.help.FullHelpView(TextAreaHelpKeys{}.FullHelp())
+		helpKeys = m.inputs.FullHelp()
 	}
+	helpKeys = append(helpKeys, additionalKeyBinds)
+	helpView = m.help.FullHelpView(helpKeys)
 
 	helpHeight := lipgloss.Height(helpView)
 	tableBoxHeight := m.height - statusHeight - helpHeight
-	render := fmt.Sprintf("%s\n%s\n%s", lipgloss.PlaceVertical(tableBoxHeight, lipgloss.Top, mainView), helpView, statusView)
+	render := fmt.Sprintf(
+		"%s\n%s\n%s",
+		lipgloss.PlaceVertical(tableBoxHeight, lipgloss.Top, mainView),
+		helpView,
+		statusView)
 
 	return outer.Render(render)
 }
