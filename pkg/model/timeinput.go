@@ -23,25 +23,13 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 var rangeNavigationMap = []string{
-	"text", "list", "start", "end",
+	"start", "list", "end",
 }
-
-var (
-	borderedStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder(), true).
-			BorderForeground(StandardPrimary).
-			Padding(0)
-	borderedFocusStyle = lipgloss.NewStyle().
-				Border(lipgloss.DoubleBorder(), true).
-				BorderForeground(FocusPrimary).
-				Padding(0)
-)
 
 type EndTimeKeyBind struct {
 	ResetTime key.Binding
@@ -64,38 +52,34 @@ var EndHelpBinds = EndTimeKeyBind{
 	),
 }
 
-type QueryInputModel struct {
+type TimeInputModel struct {
 	start datetime.Model
 	end   datetime.Model
 	list  list.Model
-	query textarea.Model
 	focus int
 }
 
-func (m *QueryInputModel) StartValueUtc() string {
+func (m *TimeInputModel) StartValueUtc() string {
 	return m.start.ValueUtc()
 }
 
-func (m *QueryInputModel) EndValueUtc() string {
+func (m *TimeInputModel) EndValueUtc() string {
 	return m.end.ValueUtc()
 }
 
-func (m *QueryInputModel) SetStart(t time.Time) {
+func (m *TimeInputModel) SetStart(t time.Time) {
 	m.start.SetTime(t)
 }
 
-func (m *QueryInputModel) SetEnd(t time.Time) {
+func (m *TimeInputModel) SetEnd(t time.Time) {
 	m.end.SetTime(t)
 }
 
-func (m *QueryInputModel) focusSelected() {
-	m.query.Blur()
+func (m *TimeInputModel) focusSelected() {
 	m.start.Blur()
 	m.end.Blur()
 
 	switch m.currentFocus() {
-	case "text":
-		m.query.Focus()
 	case "start":
 		m.start.Focus()
 	case "end":
@@ -103,7 +87,7 @@ func (m *QueryInputModel) focusSelected() {
 	}
 }
 
-func (m *QueryInputModel) Navigate(key tea.KeyMsg) {
+func (m *TimeInputModel) Navigate(key tea.KeyMsg) {
 	switch key.String() {
 	case "shift+tab":
 		if m.focus == 0 {
@@ -120,11 +104,11 @@ func (m *QueryInputModel) Navigate(key tea.KeyMsg) {
 	}
 }
 
-func (m *QueryInputModel) currentFocus() string {
+func (m *TimeInputModel) currentFocus() string {
 	return rangeNavigationMap[m.focus]
 }
 
-func NewQueryInputModel(duration uint) QueryInputModel {
+func NewTimeInputModel(duration uint) TimeInputModel {
 	endTime := time.Now()
 	startTime := endTime.Add(TenMinute)
 
@@ -140,25 +124,16 @@ func NewQueryInputModel(duration uint) QueryInputModel {
 	end := datetime.New(input_style.Render("end"))
 	end.SetTime(endTime)
 
-	query := textarea.New()
-	query.MaxHeight = 4
-	query.MaxWidth = 80
-	query.KeyMap = textAreaKeyMap
-	query.Focus()
-
-	return QueryInputModel{
+	return TimeInputModel{
 		start: start,
 		end:   end,
-		query: query,
 		list:  list,
 		focus: 0,
 	}
 }
 
-func (m QueryInputModel) FullHelp() [][]key.Binding {
+func (m TimeInputModel) FullHelp() [][]key.Binding {
 	switch m.currentFocus() {
-	case "text":
-		return TextAreaHelpKeys{}.FullHelp()
 	case "start":
 		return [][]key.Binding{}
 	case "end":
@@ -170,11 +145,11 @@ func (m QueryInputModel) FullHelp() [][]key.Binding {
 	return [][]key.Binding{}
 }
 
-func (m QueryInputModel) Init() tea.Cmd {
+func (m TimeInputModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m QueryInputModel) Update(msg tea.Msg) (QueryInputModel, tea.Cmd) {
+func (m TimeInputModel) Update(msg tea.Msg) (TimeInputModel, tea.Cmd) {
 	var cmd tea.Cmd
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
@@ -191,8 +166,6 @@ func (m QueryInputModel) Update(msg tea.Msg) (QueryInputModel, tea.Cmd) {
 		m.end.SetTime(time.Now())
 	default:
 		switch m.currentFocus() {
-		case "text":
-			m.query, cmd = m.query.Update(key)
 		case "list":
 			m.list, cmd = m.list.Update(key)
 			duration := m.list.SelectedItem().(timeDurationItem).duration
@@ -207,15 +180,13 @@ func (m QueryInputModel) Update(msg tea.Msg) (QueryInputModel, tea.Cmd) {
 	return m, cmd
 }
 
-func (m QueryInputModel) View() string {
+func (m TimeInputModel) View() string {
 	listStyle := &borderedStyle
 	startStyle := &borderedStyle
 	endStyle := &borderedStyle
-	queryStyle := &borderedStyle
 
 	switch m.currentFocus() {
-	case "text":
-		queryStyle = &borderedFocusStyle
+
 	case "list":
 		listStyle = &borderedFocusStyle
 	case "start":
@@ -224,14 +195,12 @@ func (m QueryInputModel) View() string {
 		endStyle = &borderedFocusStyle
 	}
 
-	left := lipgloss.JoinVertical(
+	page := lipgloss.JoinVertical(
 		lipgloss.Center,
-		queryStyle.Render(m.query.View()),
 		startStyle.Render(m.start.View()),
+		listStyle.Render(m.list.View()),
 		endStyle.Render(m.end.View()),
 	)
-
-	page := lipgloss.JoinHorizontal(lipgloss.Center, left, listStyle.Copy().Padding(1, 0).Render(m.list.View()))
 
 	return page
 }

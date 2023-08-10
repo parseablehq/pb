@@ -30,6 +30,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	table "github.com/evertras/bubble-table/table"
@@ -50,6 +51,16 @@ var (
 
 	StandardPrimary  = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
 	StandardSecondry = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
+
+	borderedStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder(), true).
+			BorderForeground(StandardPrimary).
+			Padding(0)
+
+	borderedFocusStyle = lipgloss.NewStyle().
+				Border(lipgloss.DoubleBorder(), true).
+				BorderForeground(FocusPrimary).
+				Padding(0)
 
 	baseStyle   = lipgloss.NewStyle().BorderForeground(StandardPrimary)
 	headerStyle = lipgloss.NewStyle().Inherit(baseStyle).Foreground(FocusSecondry).Bold(true)
@@ -79,6 +90,8 @@ var (
 		key.NewBinding(key.WithKeys("shift+tab"), key.WithHelp("shift tab", "change to input/table view")),
 		key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl r", "run query")),
 	}
+
+	QueryNavigationMap = []string{"query", "time", "table"}
 )
 
 type Mode int
@@ -101,22 +114,38 @@ const (
 )
 
 type QueryModel struct {
-	width   int
-	height  int
-	table   table.Model
-	inputs  QueryInputModel
-	overlay uint
-	profile config.Profile
-	help    help.Model
-	status  StatusBar
+	width     int
+	height    int
+	table     table.Model
+	query     textarea.Model
+	timerange TimeInputModel
+	profile   config.Profile
+	help      help.Model
+	status    StatusBar
+	overlay   uint
+	focused   int
+}
+
+func (m *QueryModel) focusSelected() {
+	m.query.Blur()
+	m.table.Focused(false)
+
+	switch m.currentFocus() {
+	case "query":
+		m.query.Focus()
+	case "table":
+		m.table.Focused(true)
+	}
+}
+
+func (m *QueryModel) currentFocus() string {
+	return QueryNavigationMap[m.focused]
 }
 
 func NewQueryModel(profile config.Profile, stream string, duration uint) QueryModel {
 	w, h, _ := term.GetSize(int(os.Stdout.Fd()))
-	query := fmt.Sprintf("select * from %s", stream)
 
-	inputs := NewQueryInputModel(duration)
-	inputs.query.SetValue(query)
+	inputs := NewTimeInputModel(duration)
 
 	columns := []table.Column{
 		table.NewColumn("Id", "Id", 5),
@@ -135,28 +164,36 @@ func NewQueryModel(profile config.Profile, stream string, duration uint) QueryMo
 		WithPageSize(30).
 		WithBaseStyle(tableStyle).
 		WithMissingDataIndicatorStyled(table.StyledCell{
-			Style: lipgloss.NewStyle().Foreground(lipgloss.Color("#faa")),
+			Style: lipgloss.NewStyle().Foreground(StandardSecondry),
 			Data:  "╌",
 		}).WithMaxTotalWidth(100)
+
+	query := textarea.New()
+	query.MaxHeight = 4
+	query.MaxWidth = 80
+	query.KeyMap = textAreaKeyMap
+	query.SetValue(fmt.Sprintf("select * from %s", stream))
+	query.Focus()
 
 	help := help.New()
 	help.Styles.FullDesc = lipgloss.NewStyle().Foreground(FocusSecondry)
 
 	return QueryModel{
-		width:   w,
-		height:  h,
-		table:   table,
-		inputs:  inputs,
-		overlay: OverlayNone,
-		profile: profile,
-		help:    help,
-		status:  NewStatusBar(profile.Url, stream, w),
+		width:     w,
+		height:    h,
+		table:     table,
+		query:     query,
+		timerange: inputs,
+		overlay:   OverlayNone,
+		profile:   profile,
+		help:      help,
+		status:    NewStatusBar(profile.Url, stream, w),
 	}
 }
 
 func (m QueryModel) Init() tea.Cmd {
 	// Just return `nil`, which means "no I/O right now, please."
-	return NewFetchTask(m.profile, m.inputs.query.Value(), m.inputs.StartValueUtc(), m.inputs.EndValueUtc())
+	return NewFetchTask(m.profile, m.query.Value(), m.timerange.StartValueUtc(), m.timerange.EndValueUtc())
 }
 
 func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -182,24 +219,54 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Is it a key press?
 	case tea.KeyMsg:
-		switch msg.String() {
-		// These keys should exit the program.
-		case "ctrl+c":
-			return m, tea.Quit
-		case "shift+tab":
-			m.overlay += 1
-			if m.overlay > OverlayInputs {
-				m.overlay = 0
+		// special behaviour on main page
+		if m.overlay == OverlayNone {
+			if msg.Type == tea.KeyEnter && m.currentFocus() == "time" {
+				m.overlay = OverlayInputs
+				return m, nil
 			}
-		case "ctrl+r":
-			return m, NewFetchTask(m.profile, m.inputs.query.Value(), m.inputs.StartValueUtc(), m.inputs.EndValueUtc())
+
+			if msg.Type == tea.KeyTab {
+				m.focused += 1
+				if m.focused > len(QueryNavigationMap)-1 {
+					m.focused = 0
+				}
+				m.focusSelected()
+				return m, nil
+			}
+		}
+
+		// special behaviour on time input page
+		if m.overlay == OverlayInputs {
+			if msg.Type == tea.KeyEnter {
+				m.overlay = OverlayNone
+				m.focusSelected()
+				return m, nil
+			}
+		}
+
+		// common keybind
+		if msg.Type == tea.KeyCtrlR {
+			m.overlay = OverlayNone
+			return m, NewFetchTask(m.profile, m.query.Value(), m.timerange.StartValueUtc(), m.timerange.EndValueUtc())
+		}
+
+		switch msg.Type {
+		// These keys should exit the program.
+		case tea.KeyCtrlC:
+			return m, tea.Quit
 		default:
 			switch m.overlay {
 			case OverlayNone:
-				m.table, cmd = m.table.Update(msg)
+				switch m.currentFocus() {
+				case "query":
+					m.query, cmd = m.query.Update(msg)
+				case "table":
+					m.table, cmd = m.table.Update(msg)
+				}
 				cmds = append(cmds, cmd)
 			case OverlayInputs:
-				m.inputs, cmd = m.inputs.Update(msg)
+				m.timerange, cmd = m.timerange.Update(msg)
 				cmds = append(cmds, cmd)
 			}
 		}
@@ -214,18 +281,34 @@ func (m QueryModel) View() string {
 	m.table.WithMaxTotalWidth(m.width - 10)
 
 	var mainView string
+	var helpKeys [][]key.Binding
 	var helpView string
+
 	statusView := lipgloss.PlaceVertical(2, lipgloss.Bottom, m.status.View())
 	statusHeight := lipgloss.Height(statusView)
 
-	var helpKeys [][]key.Binding
+	time := lipgloss.JoinVertical(lipgloss.Left, m.timerange.start.Value(), m.timerange.end.Value())
+
+	queryOuter, timeOuter, tableOuter := &borderedStyle, &borderedStyle, &borderedStyle
+	switch m.currentFocus() {
+	case "query":
+		queryOuter = &borderedFocusStyle
+	case "time":
+		timeOuter = &borderedFocusStyle
+	case "table":
+		tableOuter = &borderedFocusStyle
+	}
+
 	switch m.overlay {
 	case OverlayNone:
-		mainView = m.table.View()
+		mainView = lipgloss.JoinVertical(lipgloss.Left,
+			lipgloss.JoinHorizontal(lipgloss.Top, queryOuter.Render(m.query.View()), timeOuter.Render(time)),
+			tableOuter.Render(m.table.View()),
+		)
 		helpKeys = tableHelpBinds.FullHelp()
 	case OverlayInputs:
-		mainView = m.inputs.View()
-		helpKeys = m.inputs.FullHelp()
+		mainView = m.timerange.View()
+		helpKeys = m.timerange.FullHelp()
 	}
 	helpKeys = append(helpKeys, additionalKeyBinds)
 	helpView = m.help.FullHelpView(helpKeys)
