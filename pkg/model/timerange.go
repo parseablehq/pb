@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -52,13 +51,9 @@ var (
 		timeDurationItem{duration: OneWeek, repr: "1 Week"},
 	}
 
-	listItemRender         = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#3f9999", Dark: "#edf2fb"})
-	listSelectedItemRender = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#00171f", Dark: "#FFFFFF"})
+	listItemRender         = lipgloss.NewStyle().Foreground(StandardSecondry)
+	listSelectedItemRender = lipgloss.NewStyle().Foreground(FocusPrimary)
 )
-
-var rangeNavigationMap = []string{
-	"list", "start", "end",
-}
 
 type timeDurationItem struct {
 	duration time.Duration
@@ -88,92 +83,7 @@ func (d timeDurationItemDelegate) Render(w io.Writer, m list.Model, index int, l
 	fmt.Fprint(w, fn(i.repr))
 }
 
-type timeRangeModel struct {
-	start       time.Time
-	end         time.Time
-	list_model  list.Model
-	start_model textinput.Model
-	end_model   textinput.Model
-	focus       int
-}
-
-func (m *timeRangeModel) StartValue() string {
-	return m.start.Format(time.RFC3339)
-}
-
-func (m *timeRangeModel) EndValue() string {
-	return m.end.Format(time.RFC3339)
-}
-
-func (m *timeRangeModel) StartValueUtc() string {
-	return m.start.UTC().Format(time.RFC3339)
-}
-
-func (m *timeRangeModel) EndValueUtc() string {
-	return m.end.UTC().Format(time.RFC3339)
-}
-
-func (m *timeRangeModel) SetStart(t time.Time) {
-	m.start = t
-	m.start_model.SetValue(m.StartValue())
-}
-
-func (m *timeRangeModel) SetEnd(t time.Time) {
-	m.end = t
-	m.end_model.SetValue(m.EndValue())
-}
-
-func (m *timeRangeModel) focusSelected() {
-	switch m.currentFocus() {
-	case "list":
-		return
-	case "start":
-		m.start_model.Focus()
-	case "end":
-		m.end_model.Focus()
-	}
-}
-
-func (m *timeRangeModel) blurSelected() {
-	switch m.currentFocus() {
-	case "list":
-		return
-	case "start":
-		m.start_model.Blur()
-	case "end":
-		m.end_model.Blur()
-	}
-}
-
-func (m *timeRangeModel) Navigate(key tea.KeyMsg) {
-	switch key.String() {
-	case "shift+tab":
-		if m.focus == 0 {
-			m.focus = len(rangeNavigationMap)
-		}
-		m.focus -= 1
-	case "tab":
-		if m.focus == len(rangeNavigationMap)-1 {
-			m.focus = -1
-		}
-		m.focus += 1
-	default:
-		return
-	}
-}
-
-func (m *timeRangeModel) currentFocus() string {
-	return rangeNavigationMap[m.focus]
-}
-
-func NewTimeRangeModel(duration uint) timeRangeModel {
-	end_time := time.Now()
-	start_time := end_time.Add(TenMinute)
-
-	if duration != 0 {
-		start_time = end_time.Add(-(time.Duration(duration) * time.Minute))
-	}
-
+func NewTimeRangeModel() list.Model {
 	list := list.New(timeDurations, timeDurationItemDelegate{}, 20, 10)
 	list.SetShowPagination(false)
 	list.SetShowHelp(false)
@@ -185,84 +95,5 @@ func NewTimeRangeModel(duration uint) timeRangeModel {
 	list.Title = "Select Time Range"
 	list.SetShowStatusBar(false)
 
-	input_style := lipgloss.NewStyle().Bold(true).Faint(true).Width(6).Align(lipgloss.Center)
-
-	start := textinput.New()
-	start.Width = datetimeWidth
-	start.Prompt = input_style.Render("start")
-	start.SetValue(start_time.Format(time.RFC3339))
-
-	end := textinput.New()
-	end.Width = datetimeWidth
-	end.Prompt = input_style.Render("end")
-	end.SetValue(end_time.Format(time.RFC3339))
-
-	return timeRangeModel{
-		start:       start_time,
-		end:         end_time,
-		list_model:  list,
-		start_model: start,
-		end_model:   end,
-		focus:       0,
-	}
-}
-
-func (m timeRangeModel) Init() tea.Cmd {
-	return nil
-}
-
-func (m timeRangeModel) Update(msg tea.Msg) (timeRangeModel, tea.Cmd) {
-	var cmd tea.Cmd
-
-	switch key := msg.(type) {
-	case tea.KeyMsg:
-		if key.Type == tea.KeyShiftTab || key.Type == tea.KeyTab {
-			m.blurSelected()
-			m.Navigate(key)
-			m.focusSelected()
-		} else {
-			switch m.currentFocus() {
-			case "list":
-				m.list_model, cmd = m.list_model.Update(key)
-				duration := m.list_model.SelectedItem().(timeDurationItem).duration
-				m.SetEnd(time.Now())
-				m.SetStart(m.end.Add(duration))
-			case "start":
-				m.start_model, cmd = m.start_model.Update(key)
-			case "end":
-				m.end_model, cmd = m.end_model.Update(key)
-			}
-		}
-	}
-
-	return m, cmd
-}
-
-func (m timeRangeModel) View() string {
-	var input_style = lipgloss.NewStyle().
-		Inherit(baseStyle).
-		Margin(0)
-
-	var list_style = input_style.Copy().
-		Border(lipgloss.RoundedBorder(), true).
-		Padding(2)
-
-	var start_style = input_style.Copy().Border(lipgloss.NormalBorder(), false, false, true, false)
-	var end_style = start_style.Copy()
-
-	focused := m.currentFocus()
-
-	switch focused {
-	case "list":
-		list_style.BorderStyle(lipgloss.ThickBorder())
-	case "start":
-		start_style.Border(lipgloss.NormalBorder(), true)
-	case "end":
-		end_style.Border(lipgloss.NormalBorder(), true)
-	}
-
-	right := lipgloss.JoinVertical(lipgloss.Left, start_style.MarginBottom(3).Render(m.start_model.View()), end_style.Render(m.end_model.View()))
-	page := lipgloss.JoinHorizontal(lipgloss.Center, list_style.MarginRight(2).Render(m.list_model.View()), right)
-
-	return page
+	return list
 }

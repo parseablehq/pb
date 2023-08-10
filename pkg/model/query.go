@@ -29,7 +29,6 @@ import (
 	"pb/pkg/config"
 
 	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	table "github.com/evertras/bubble-table/table"
@@ -92,26 +91,26 @@ const (
 
 const (
 	OverlayNone uint = iota
-	OverlayTextArea
-	OverlayTimeRange
+	OverlayInputs
 )
 
 type QueryModel struct {
-	width     int
-	height    int
-	query     string
-	timeRange timeRangeModel
-	queryText textarea.Model
-	table     table.Model
-	overlay   uint
-	profile   config.Profile
-	help      help.Model
-	status    StatusBar
+	width   int
+	height  int
+	table   table.Model
+	inputs  QueryInputModel
+	overlay uint
+	profile config.Profile
+	help    help.Model
+	status  StatusBar
 }
 
 func NewQueryModel(profile config.Profile, stream string, duration uint) QueryModel {
+	w, h, _ := term.GetSize(int(os.Stdout.Fd()))
 	query := fmt.Sprintf("select * from %s", stream)
-	var w, h, _ = term.GetSize(int(os.Stdout.Fd()))
+
+	inputs := NewQueryInputModel(duration)
+	inputs.query.SetValue(query)
 
 	columns := []table.Column{
 		table.NewColumn("Id", "Id", 5),
@@ -134,32 +133,24 @@ func NewQueryModel(profile config.Profile, stream string, duration uint) QueryMo
 			Data:  "╌",
 		}).WithMaxTotalWidth(100)
 
-	queryText := textarea.New()
-	queryText.MaxHeight = 4
-	queryText.MaxWidth = 50
-	queryText.KeyMap = textAreaKeyMap
-	queryText.Focus()
-
 	help := help.New()
 	help.Styles.FullDesc = lipgloss.NewStyle().Foreground(FocusSecondry)
 
 	return QueryModel{
-		width:     w,
-		height:    h,
-		query:     query,
-		queryText: queryText,
-		timeRange: NewTimeRangeModel(duration),
-		table:     table,
-		overlay:   OverlayNone,
-		profile:   profile,
-		help:      help,
-		status:    NewStatusBar(profile.Url, stream, w),
+		width:   w,
+		height:  h,
+		table:   table,
+		inputs:  inputs,
+		overlay: OverlayNone,
+		profile: profile,
+		help:    help,
+		status:  NewStatusBar(profile.Url, stream, w),
 	}
 }
 
 func (m QueryModel) Init() tea.Cmd {
 	// Just return `nil`, which means "no I/O right now, please."
-	return NewFetchTask(m.profile, m.query, m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
+	return NewFetchTask(m.profile, m.inputs.query.Value(), m.inputs.StartValueUtc(), m.inputs.EndValueUtc())
 }
 
 func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -181,7 +172,6 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status.Error = "failed to query"
 		}
-
 		return m, nil
 
 	// Is it a key press?
@@ -192,25 +182,22 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "shift+tab":
 			m.overlay += 1
-			if m.overlay > OverlayTimeRange {
+			if m.overlay > OverlayInputs {
 				m.overlay = 0
 			}
 		case "ctrl+r":
-			return m, NewFetchTask(m.profile, m.query, m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
+			return m, NewFetchTask(m.profile, m.inputs.query.Value(), m.inputs.StartValueUtc(), m.inputs.EndValueUtc())
 		default:
 			switch m.overlay {
 			case OverlayNone:
 				m.table, cmd = m.table.Update(msg)
-			case OverlayTextArea:
-				m.queryText, cmd = m.queryText.Update(msg)
-				m.query = m.queryText.Value()
-			case OverlayTimeRange:
-				m.timeRange, cmd = m.timeRange.Update(msg)
+				cmds = append(cmds, cmd)
+			case OverlayInputs:
+				m.inputs, cmd = m.inputs.Update(msg)
+				cmds = append(cmds, cmd)
 			}
-			cmds = append(cmds, cmd)
 		}
 	}
-
 	return m, tea.Batch(cmds...)
 }
 
@@ -229,16 +216,12 @@ func (m QueryModel) View() string {
 	case OverlayNone:
 		mainView = m.table.View()
 		helpView = m.help.FullHelpView(tableHelpBinds.FullHelp())
-	case OverlayTextArea:
-		mainView = m.queryText.View()
+	case OverlayInputs:
+		mainView = m.inputs.View()
 		helpView = m.help.FullHelpView(TextAreaHelpKeys{}.FullHelp())
-	case OverlayTimeRange:
-		mainView = m.timeRange.View()
-		helpView = "tab to switch time range input, shift+tab to goto next page"
 	}
 
 	helpHeight := lipgloss.Height(helpView)
-
 	tableBoxHeight := m.height - statusHeight - helpHeight
 	render := fmt.Sprintf("%s\n%s\n%s", lipgloss.PlaceVertical(tableBoxHeight, lipgloss.Top, mainView), helpView, statusView)
 
