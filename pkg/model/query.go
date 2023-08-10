@@ -169,10 +169,13 @@ func NewQueryModel(profile config.Profile, stream string, duration uint) QueryMo
 		}).WithMaxTotalWidth(100)
 
 	query := textarea.New()
-	query.MaxHeight = 4
-	query.MaxWidth = 80
-	query.KeyMap = textAreaKeyMap
+	query.MaxHeight = 2
+	query.MaxWidth = 100
+	query.SetHeight(2)
+	query.SetWidth(50)
+	query.ShowLineNumbers = true
 	query.SetValue(fmt.Sprintf("select * from %s", stream))
+	query.KeyMap = textAreaKeyMap
 	query.Focus()
 
 	help := help.New()
@@ -305,7 +308,16 @@ func (m QueryModel) View() string {
 			lipgloss.JoinHorizontal(lipgloss.Top, queryOuter.Render(m.query.View()), timeOuter.Render(time)),
 			tableOuter.Render(m.table.View()),
 		)
-		helpKeys = tableHelpBinds.FullHelp()
+		switch m.currentFocus() {
+		case "query":
+			helpKeys = TextAreaHelpKeys{}.FullHelp()
+		case "time":
+			helpKeys = [][]key.Binding{
+				{key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select timerange"))},
+			}
+		case "table":
+			helpKeys = tableHelpBinds.FullHelp()
+		}
 	case OverlayInputs:
 		mainView = m.timerange.View()
 		helpKeys = m.timerange.FullHelp()
