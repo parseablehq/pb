@@ -144,6 +144,9 @@ var StatStreamCmd = &cobra.Command{
 		fmt.Printf("  Event Count:     %d\n", ingestion_count)
 		fmt.Printf("  Ingestion Size:  %s\n", humanize.Bytes(uint64(ingestion_size)))
 		fmt.Printf("  Storage Size:    %s\n", humanize.Bytes(uint64(storage_size)))
+		fmt.Printf(
+			"  Compression Ratio:    %.2f%s\n",
+			100-(float64(storage_size)/float64(ingestion_size))*100, "%")
 		fmt.Println()
 
 		if is_rentention_set {
