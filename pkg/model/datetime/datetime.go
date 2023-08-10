@@ -33,7 +33,7 @@ func (m *Model) Time() time.Time {
 
 func New(prompt string) Model {
 	input := textinput.New()
-	input.Width = 26
+	input.Width = 20
 	input.Prompt = prompt
 
 	return Model{

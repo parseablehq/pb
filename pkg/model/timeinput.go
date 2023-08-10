@@ -195,10 +195,11 @@ func (m TimeInputModel) View() string {
 		endStyle = &borderedFocusStyle
 	}
 
+	list := lipgloss.NewStyle().PaddingLeft(1).Render(m.list.View())
 	page := lipgloss.JoinVertical(
-		lipgloss.Center,
+		lipgloss.Left,
 		startStyle.Render(m.start.View()),
-		listStyle.Render(m.list.View()),
+		listStyle.Render(lipgloss.PlaceHorizontal(27, lipgloss.Left, list)),
 		endStyle.Render(m.end.View()),
 	)
 
