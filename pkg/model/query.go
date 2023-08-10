@@ -292,14 +292,17 @@ func (m QueryModel) View() string {
 
 	time := lipgloss.JoinVertical(lipgloss.Left, m.timerange.start.Value(), m.timerange.end.Value())
 
-	queryOuter, timeOuter, tableOuter := &borderedStyle, &borderedStyle, &borderedStyle
+	queryOuter, timeOuter := &borderedStyle, &borderedStyle
+	tableOuter := lipgloss.NewStyle()
+
 	switch m.currentFocus() {
 	case "query":
 		queryOuter = &borderedFocusStyle
 	case "time":
 		timeOuter = &borderedFocusStyle
 	case "table":
-		tableOuter = &borderedFocusStyle
+		tableOuter = tableOuter.Border(lipgloss.DoubleBorder(), false, false, false, true).
+			BorderForeground(FocusPrimary)
 	}
 
 	switch m.overlay {
