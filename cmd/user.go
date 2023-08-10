@@ -28,6 +28,7 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/slices"
 )
@@ -44,17 +45,19 @@ type UserRoleData struct {
 
 func (user *UserRoleData) Render() string {
 	var s strings.Builder
-	s.WriteString(standardStyle.Render(user.Privilege))
-
+	s.WriteString(standardStyle.Render("Privilege: "))
+	s.WriteString(standardStyleAlt.Render(user.Privilege))
+	s.WriteString("\n")
 	if user.Resource != nil {
 		if user.Resource.Stream != "" {
-			s.WriteString(" - ")
+			s.WriteString(standardStyle.Render("Stream:    "))
 			s.WriteString(standardStyleAlt.Render(user.Resource.Stream))
+			s.WriteString("\n")
 		}
 		if user.Resource.Tag != "" {
-			s.WriteString(" ( ")
+			s.WriteString(standardStyle.Render("Tag:       "))
 			s.WriteString(standardStyleAlt.Render(user.Resource.Tag))
-			s.WriteString(" )")
+			s.WriteString("\n")
 		}
 	}
 
@@ -217,15 +220,15 @@ var ListUserCmd = &cobra.Command{
 		fmt.Println()
 		for idx, user := range users {
 			roles := role_responses[idx]
+			fmt.Print("• ")
 			fmt.Println(standardStyleBold.Bold(true).Render(user))
 			if roles.err == nil {
 				for _, role := range roles.data {
-					fmt.Printf("  %s\n", role.Render())
+					fmt.Println(lipgloss.NewStyle().PaddingLeft(3).Render(role.Render()))
 				}
 			} else {
 				fmt.Println(roles.err)
 			}
-			println()
 		}
 
 		return nil
