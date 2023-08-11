@@ -18,6 +18,7 @@
 package model
 
 import (
+	"fmt"
 	"pb/pkg/model/datetime"
 	"time"
 
@@ -28,27 +29,33 @@ import (
 )
 
 var rangeNavigationMap = []string{
-	"start", "list", "end",
+	"list", "start", "end",
 }
 
 type EndTimeKeyBind struct {
 	ResetTime key.Binding
+	Ok        key.Binding
 }
 
 func (k EndTimeKeyBind) ShortHelp() []key.Binding {
-	return []key.Binding{k.ResetTime}
+	return []key.Binding{k.ResetTime, k.Ok}
 }
 
 func (k EndTimeKeyBind) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.ResetTime},
+		{k.Ok},
 	}
 }
 
 var EndHelpBinds = EndTimeKeyBind{
 	ResetTime: key.NewBinding(
 		key.WithKeys("ctrl+{"),
-		key.WithHelp("ctrl+{", "Change to current time"),
+		key.WithHelp("ctrl+{", "change end time to current time"),
+	),
+	Ok: key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "save and go back"),
 	),
 }
 
@@ -134,16 +141,7 @@ func NewTimeInputModel(duration uint) TimeInputModel {
 }
 
 func (m TimeInputModel) FullHelp() [][]key.Binding {
-	switch m.currentFocus() {
-	case "start":
-		return [][]key.Binding{}
-	case "end":
-		return EndHelpBinds.FullHelp()
-	case "list":
-		return [][]key.Binding{}
-	}
-
-	return [][]key.Binding{}
+	return EndHelpBinds.FullHelp()
 }
 
 func (m TimeInputModel) Init() tea.Cmd {
@@ -161,8 +159,7 @@ func (m TimeInputModel) Update(msg tea.Msg) (TimeInputModel, tea.Cmd) {
 	case tea.KeyShiftTab, tea.KeyTab:
 		m.Navigate(key)
 		m.focusSelected()
-	case tea.KeyCtrlR:
-		return m, func() tea.Msg { return OverlayNone }
+
 	case tea.KeyCtrlOpenBracket:
 		m.end.SetTime(time.Now())
 	default:
@@ -197,12 +194,16 @@ func (m TimeInputModel) View() string {
 	}
 
 	list := lipgloss.NewStyle().PaddingLeft(1).Render(m.list.View())
-	page := lipgloss.JoinVertical(
-		lipgloss.Left,
+
+	left := listStyle.Render(lipgloss.PlaceHorizontal(27, lipgloss.Left, list))
+	right := fmt.Sprintf("%s\n\n%s",
 		startStyle.Render(m.start.View()),
-		listStyle.Render(lipgloss.PlaceHorizontal(27, lipgloss.Left, list)),
 		endStyle.Render(m.end.View()),
 	)
+	center := baseStyle.Render("│\n│\n│\n│")
+	center = lipgloss.PlaceHorizontal(5, lipgloss.Center, center)
+
+	page := lipgloss.JoinHorizontal(lipgloss.Center, left, center, right)
 
 	return page
 }
