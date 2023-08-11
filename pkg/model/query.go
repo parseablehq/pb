@@ -169,10 +169,10 @@ func NewQueryModel(profile config.Profile, stream string, duration uint) QueryMo
 		}).WithMaxTotalWidth(100)
 
 	query := textarea.New()
-	query.MaxHeight = 2
-	query.MaxWidth = 100
+	query.MaxHeight = 0
+	query.MaxWidth = 0
 	query.SetHeight(2)
-	query.SetWidth(50)
+	query.SetWidth(70)
 	query.ShowLineNumbers = true
 	query.SetValue(fmt.Sprintf("select * from %s", stream))
 	query.KeyMap = textAreaKeyMap
@@ -210,6 +210,8 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.help.Width = m.width
 		m.status.width = m.width
 		m.table = m.table.WithMaxTotalWidth(m.width)
+		// width adjustment for time widget
+		m.query.SetWidth(int(m.width - 41))
 		return m, nil
 
 	case FetchData:
