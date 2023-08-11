@@ -87,7 +87,7 @@ var (
 	}
 
 	additionalKeyBinds = []key.Binding{
-		key.NewBinding(key.WithKeys("ctrl+enter"), key.WithHelp("ctrl enter", "(re) run query")),
+		key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl r", "(re) run query")),
 	}
 
 	QueryNavigationMap = []string{"query", "time", "table"}
@@ -219,7 +219,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	// Is it a key press?
+		// Is it a key press?
 	case tea.KeyMsg:
 		// special behaviour on main page
 		if m.overlay == OverlayNone {
