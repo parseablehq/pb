@@ -62,9 +62,10 @@ var (
 				BorderForeground(FocusPrimary).
 				Padding(0)
 
-	baseStyle   = lipgloss.NewStyle().BorderForeground(StandardPrimary)
-	headerStyle = lipgloss.NewStyle().Inherit(baseStyle).Foreground(FocusSecondry).Bold(true)
-	tableStyle  = lipgloss.NewStyle().Inherit(baseStyle).Align(lipgloss.Left)
+	baseStyle               = lipgloss.NewStyle().BorderForeground(StandardPrimary)
+	baseBoldUnderlinedStyle = lipgloss.NewStyle().BorderForeground(StandardPrimary).Bold(true)
+	headerStyle             = lipgloss.NewStyle().Inherit(baseStyle).Foreground(FocusSecondry).Bold(true)
+	tableStyle              = lipgloss.NewStyle().Inherit(baseStyle).Align(lipgloss.Left)
 
 	customBorder = table.Border{
 		Top:    "─",
@@ -289,7 +290,11 @@ func (m QueryModel) View() string {
 	statusView := lipgloss.PlaceVertical(2, lipgloss.Bottom, m.status.View())
 	statusHeight := lipgloss.Height(statusView)
 
-	time := lipgloss.JoinVertical(lipgloss.Left, m.timerange.start.Value(), m.timerange.end.Value())
+	time := lipgloss.JoinVertical(
+		lipgloss.Left,
+		fmt.Sprintf("%s %s ", baseBoldUnderlinedStyle.Render(" start "), m.timerange.start.Value()),
+		fmt.Sprintf("%s %s ", baseBoldUnderlinedStyle.Render("  end  "), m.timerange.end.Value()),
+	)
 
 	queryOuter, timeOuter := &borderedStyle, &borderedStyle
 	tableOuter := lipgloss.NewStyle()
