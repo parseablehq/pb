@@ -84,11 +84,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			newValue := []rune(oldValue)
 			newValue[pos] = msg.Runes[0]
 			value := string(newValue)
-			time, err := time.Parse(time.DateTime, value)
-			*time.Location() = *m.time.Location()
+			local, _ := time.LoadLocation("Local")
+			newTime, err := time.ParseInLocation(time.DateTime, value, local)
 			if err == nil {
-				m.time = time
-				m.input.SetValue(value)
+				m.time = newTime
+				m.SetTime(newTime)
 			}
 		}
 	}
