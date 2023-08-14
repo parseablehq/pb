@@ -1,6 +1,6 @@
 ## PB
 
-PB (short for ParseaBle) is a command line interface for [Parseable Server](https://github.com/parseablehq/parseable). PB allows you to manage Streams, Users, and Data on Parseable Server. You can use PB to manage multiple Parseable Server instances using Profiles.
+PB (short for Parseable) is a command line interface for [Parseable Server](https://github.com/parseablehq/parseable). PB allows you to manage Streams, Users, and Data on Parseable Server. You can use PB to manage multiple Parseable Server instances using Profiles.
 
 ### Installation
 
