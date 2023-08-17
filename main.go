@@ -30,8 +30,16 @@ import (
 )
 
 var (
+	// populated at build time
+	PBVersion string
+	PBCommit  string
+)
+
+var (
 	durationFlag      = "duration"
 	durationFlagShort = "d"
+	versionFlag       = "version"
+	versionFlagShort  = "v"
 	defaultDuration   = "10"
 )
 
@@ -48,6 +56,11 @@ var cli = &cobra.Command{
 	Use:   "pb",
 	Short: "\nParseable command line tool",
 	Long:  "\npb is a command line tool for Parseable",
+	Run: func(command *cobra.Command, args []string) {
+		if p, _ := command.Flags().GetBool(versionFlag); p {
+			cmd.PrintVersion(PBVersion, PBCommit)
+		}
+	},
 }
 
 var profile = &cobra.Command{
@@ -117,6 +130,14 @@ func main() {
 	cli.AddCommand(query)
 	cli.AddCommand(stream)
 	cli.AddCommand(user)
+
+	// Set as command
+	cmd.VersionCmd.Run = func(_ *cobra.Command, args []string) {
+		cmd.PrintVersion(PBVersion, PBCommit)
+	}
+	cli.AddCommand(cmd.VersionCmd)
+	//set as flag
+	cli.Flags().BoolP(versionFlag, versionFlagShort, false, "Print version")
 
 	cli.CompletionOptions.HiddenDefaultCmd = true
 
