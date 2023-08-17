@@ -1,6 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -19,9 +18,10 @@ package role
 
 import (
 	"fmt"
+	"strings"
+
 	"pb/pkg/model/button"
 	"pb/pkg/model/selection"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -151,13 +151,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
 		case tea.KeyDown, tea.KeyTab, tea.KeyEnter:
-			m.focusIndex += 1
+			m.focusIndex++
 			if m.focusIndex >= len(*m.navMap) {
 				m.focusIndex = 0
 			}
 			m.FocusSelected()
 		case tea.KeyUp, tea.KeyShiftTab:
-			m.focusIndex -= 1
+			m.focusIndex--
 			if m.focusIndex < 0 {
 				m.focusIndex = len(*m.navMap) - 1
 			}

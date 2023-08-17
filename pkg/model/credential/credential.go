@@ -1,6 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -18,8 +17,9 @@
 package credential
 
 import (
-	"pb/pkg/model/button"
 	"strings"
+
+	"pb/pkg/model/button"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,14 +27,15 @@ import (
 )
 
 var (
-	FocusPrimary  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
-	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
+	// FocusPrimary is the color used for the focused
+	FocusPrimary   = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
+	FocusSecondary = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
 
-	StandardPrimary  = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
-	StandardSecondry = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
+	StandardPrimary   = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
+	StandardSecondary = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
 
 	focusedStyle = lipgloss.NewStyle().Foreground(FocusPrimary)
-	blurredStyle = lipgloss.NewStyle().Foreground(StandardSecondry)
+	blurredStyle = lipgloss.NewStyle().Foreground(StandardSecondary)
 	noStyle      = lipgloss.NewStyle()
 )
 

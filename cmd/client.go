@@ -1,6 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -21,17 +20,18 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"pb/pkg/config"
 	"time"
+
+	"pb/pkg/config"
 )
 
-type HttpClient struct {
+type HTTPClient struct {
 	client  http.Client
 	profile *config.Profile
 }
 
-func DefaultClient() HttpClient {
-	return HttpClient{
+func DefaultClient() HTTPClient {
+	return HTTPClient{
 		client: http.Client{
 			Timeout: 60 * time.Second,
 		},
@@ -39,13 +39,13 @@ func DefaultClient() HttpClient {
 	}
 }
 
-func (client *HttpClient) baseApiUrl(path string) (x string) {
-	x, _ = url.JoinPath(client.profile.Url, "api/v1/", path)
+func (client *HTTPClient) baseAPIURL(path string) (x string) {
+	x, _ = url.JoinPath(client.profile.URL, "api/v1/", path)
 	return
 }
 
-func (client *HttpClient) NewRequest(method string, path string, body io.Reader) (req *http.Request, err error) {
-	req, err = http.NewRequest(method, client.baseApiUrl(path), body)
+func (client *HTTPClient) NewRequest(method string, path string, body io.Reader) (req *http.Request, err error) {
+	req, err = http.NewRequest(method, client.baseAPIURL(path), body)
 	if err != nil {
 		return
 	}

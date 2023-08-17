@@ -1,7 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
-//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -22,6 +20,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+
 	"pb/pkg/config"
 	"pb/pkg/model/credential"
 	"pb/pkg/model/defaultprofile"
@@ -32,6 +31,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// ProfileListItem is a struct to hold the profile list items
 type ProfileListItem struct {
 	title, url, user string
 }
@@ -45,15 +45,14 @@ func (item *ProfileListItem) Render(highlight bool) string {
 			selectedStyleAlt.Render(fmt.Sprintf("user: %s", item.user)),
 		)
 		return selectedItemOuter.Render(render)
-	} else {
-		render := fmt.Sprintf(
-			"%s\n%s\n%s",
-			standardStyle.Render(item.title),
-			standardStyleAlt.Render(fmt.Sprintf("url: %s", item.url)),
-			standardStyleAlt.Render(fmt.Sprintf("user: %s", item.user)),
-		)
-		return itemOuter.Render(render)
 	}
+	render := fmt.Sprintf(
+		"%s\n%s\n%s",
+		standardStyle.Render(item.title),
+		standardStyleAlt.Render(fmt.Sprintf("url: %s", item.url)),
+		standardStyleAlt.Render(fmt.Sprintf("user: %s", item.user)),
+	)
+	return itemOuter.Render(render)
 }
 
 var AddProfileCmd = &cobra.Command{
@@ -95,33 +94,31 @@ var AddProfileCmd = &cobra.Command{
 		}
 
 		profile := config.Profile{
-			Url:      url.String(),
+			URL:      url.String(),
 			Username: username,
 			Password: password,
 		}
 
 		file_config, err := config.ReadConfigFromFile()
-
 		if err != nil {
 			// create new file
 			new_config := config.Config{
 				Profiles: map[string]config.Profile{
 					name: profile,
 				},
-				Default_profile: name,
+				DefaultProfile: name,
 			}
 			err = config.WriteConfigToFile(&new_config)
 			return err
-		} else {
-			if file_config.Profiles == nil {
-				file_config.Profiles = make(map[string]config.Profile)
-			}
-			file_config.Profiles[name] = profile
-			if file_config.Default_profile == "" {
-				file_config.Default_profile = name
-			}
-			config.WriteConfigToFile(file_config)
 		}
+		if file_config.Profiles == nil {
+			file_config.Profiles = make(map[string]config.Profile)
+		}
+		file_config.Profiles[name] = profile
+		if file_config.DefaultProfile == "" {
+			file_config.DefaultProfile = name
+		}
+		config.WriteConfigToFile(file_config)
 
 		return nil
 	},
@@ -144,7 +141,7 @@ var RemoveProfileCmd = &cobra.Command{
 		if exists {
 			delete(file_config.Profiles, name)
 			if len(file_config.Profiles) == 0 {
-				file_config.Default_profile = ""
+				file_config.DefaultProfile = ""
 			}
 			config.WriteConfigToFile(file_config)
 			fmt.Printf("Deleted profile %s\n", styleBold.Render(name))
@@ -189,7 +186,7 @@ var DefaultProfileCmd = &cobra.Command{
 
 		_, exists := file_config.Profiles[name]
 		if exists {
-			file_config.Default_profile = name
+			file_config.DefaultProfile = name
 		} else {
 			name = lipgloss.NewStyle().Bold(true).Render(name)
 			err := fmt.Sprintf("profile %s does not exist", styleBold.Render(name))
@@ -218,9 +215,9 @@ var ListProfileCmd = &cobra.Command{
 
 		row := 0
 		for key, value := range file_config.Profiles {
-			item := ProfileListItem{key, value.Url, value.Username}
-			fmt.Println(item.Render(file_config.Default_profile == key))
-			row += 1
+			item := ProfileListItem{key, value.URL, value.Username}
+			fmt.Println(item.Render(file_config.DefaultProfile == key))
+			row++
 			fmt.Println()
 		}
 		return nil

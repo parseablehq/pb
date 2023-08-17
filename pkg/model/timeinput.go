@@ -1,6 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -19,8 +18,9 @@ package model
 
 import (
 	"fmt"
-	"pb/pkg/model/datetime"
 	"time"
+
+	"pb/pkg/model/datetime"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -100,12 +100,12 @@ func (m *TimeInputModel) Navigate(key tea.KeyMsg) {
 		if m.focus == 0 {
 			m.focus = len(rangeNavigationMap)
 		}
-		m.focus -= 1
+		m.focus--
 	case "tab":
 		if m.focus == len(rangeNavigationMap)-1 {
 			m.focus = -1
 		}
-		m.focus += 1
+		m.focus++
 	default:
 		return
 	}

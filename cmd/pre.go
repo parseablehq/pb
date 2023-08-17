@@ -1,6 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -20,6 +19,7 @@ package cmd
 import (
 	"errors"
 	"os"
+
 	"pb/pkg/config"
 
 	"github.com/spf13/cobra"
@@ -38,10 +38,10 @@ func PreRunDefaultProfile(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	}
-	if conf.Profiles == nil || conf.Default_profile == "" {
+	if conf.Profiles == nil || conf.DefaultProfile == "" {
 		return errors.New("no profile is configured to run this command. please create one using profile command")
 	}
 
-	DefaultProfile = conf.Profiles[conf.Default_profile]
+	DefaultProfile = conf.Profiles[conf.DefaultProfile]
 	return nil
 }

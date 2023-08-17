@@ -1,6 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -49,8 +48,8 @@ var (
 	FocusPrimary  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
 	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
 
-	StandardPrimary  = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
-	StandardSecondry = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
+	StandardPrimary   = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
+	StandardSecondary = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
 
 	borderedStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder(), true).
@@ -94,8 +93,10 @@ var (
 	QueryNavigationMap = []string{"query", "time", "table"}
 )
 
-type Mode int
-type FetchResult int
+type (
+	Mode        int
+	FetchResult int
+)
 
 type FetchData struct {
 	status FetchResult
@@ -118,7 +119,7 @@ type QueryModel struct {
 	height    int
 	table     table.Model
 	query     textarea.Model
-	timerange TimeInputModel
+	timeRange TimeInputModel
 	profile   config.Profile
 	help      help.Model
 	status    StatusBar
@@ -164,7 +165,7 @@ func NewQueryModel(profile config.Profile, stream string, duration uint) QueryMo
 		WithPageSize(30).
 		WithBaseStyle(tableStyle).
 		WithMissingDataIndicatorStyled(table.StyledCell{
-			Style: lipgloss.NewStyle().Foreground(StandardSecondry),
+			Style: lipgloss.NewStyle().Foreground(StandardSecondary),
 			Data:  "╌",
 		}).WithMaxTotalWidth(100)
 
@@ -186,17 +187,17 @@ func NewQueryModel(profile config.Profile, stream string, duration uint) QueryMo
 		height:    h,
 		table:     table,
 		query:     query,
-		timerange: inputs,
+		timeRange: inputs,
 		overlay:   OverlayNone,
 		profile:   profile,
 		help:      help,
-		status:    NewStatusBar(profile.Url, stream, w),
+		status:    NewStatusBar(profile.URL, stream, w),
 	}
 }
 
 func (m QueryModel) Init() tea.Cmd {
 	// Just return `nil`, which means "no I/O right now, please."
-	return NewFetchTask(m.profile, m.query.Value(), m.timerange.StartValueUtc(), m.timerange.EndValueUtc())
+	return NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
 }
 
 func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -224,7 +225,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Is it a key press?
 	case tea.KeyMsg:
-		// special behaviour on main page
+		// special behavior on main page
 		if m.overlay == OverlayNone {
 			if msg.Type == tea.KeyEnter && m.currentFocus() == "time" {
 				m.overlay = OverlayInputs
@@ -232,7 +233,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			if msg.Type == tea.KeyTab {
-				m.focused += 1
+				m.focused++
 				if m.focused > len(QueryNavigationMap)-1 {
 					m.focused = 0
 				}
@@ -241,7 +242,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// special behaviour on time input page
+		// special behavior on time input page
 		if m.overlay == OverlayInputs {
 			if msg.Type == tea.KeyEnter {
 				m.overlay = OverlayNone
@@ -253,7 +254,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// common keybind
 		if msg.Type == tea.KeyCtrlR {
 			m.overlay = OverlayNone
-			return m, NewFetchTask(m.profile, m.query.Value(), m.timerange.StartValueUtc(), m.timerange.EndValueUtc())
+			return m, NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
 		}
 
 		switch msg.Type {
@@ -271,7 +272,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				cmds = append(cmds, cmd)
 			case OverlayInputs:
-				m.timerange, cmd = m.timerange.Update(msg)
+				m.timeRange, cmd = m.timeRange.Update(msg)
 				cmds = append(cmds, cmd)
 			}
 		}
@@ -280,7 +281,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m QueryModel) View() string {
-	var outer = lipgloss.NewStyle().Inherit(baseStyle).
+	outer := lipgloss.NewStyle().Inherit(baseStyle).
 		UnsetMaxHeight().Width(m.width).Height(m.height)
 
 	m.table = m.table.WithMaxTotalWidth(m.width - 2)
@@ -294,8 +295,8 @@ func (m QueryModel) View() string {
 
 	time := lipgloss.JoinVertical(
 		lipgloss.Left,
-		fmt.Sprintf("%s %s ", baseBoldUnderlinedStyle.Render(" start "), m.timerange.start.Value()),
-		fmt.Sprintf("%s %s ", baseBoldUnderlinedStyle.Render("  end  "), m.timerange.end.Value()),
+		fmt.Sprintf("%s %s ", baseBoldUnderlinedStyle.Render(" start "), m.timeRange.start.Value()),
+		fmt.Sprintf("%s %s ", baseBoldUnderlinedStyle.Render("  end  "), m.timeRange.end.Value()),
 	)
 
 	queryOuter, timeOuter := &borderedStyle, &borderedStyle
@@ -322,14 +323,14 @@ func (m QueryModel) View() string {
 			helpKeys = TextAreaHelpKeys{}.FullHelp()
 		case "time":
 			helpKeys = [][]key.Binding{
-				{key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select timerange"))},
+				{key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select timeRange"))},
 			}
 		case "table":
 			helpKeys = tableHelpBinds.FullHelp()
 		}
 	case OverlayInputs:
-		mainView = m.timerange.View()
-		helpKeys = m.timerange.FullHelp()
+		mainView = m.timeRange.View()
+		helpKeys = m.timeRange.FullHelp()
 	}
 	helpKeys = append(helpKeys, additionalKeyBinds)
 	helpView = m.help.FullHelpView(helpKeys)
@@ -389,7 +390,7 @@ func fetchData(client *http.Client, profile *config.Profile, query string, start
 
 	final_query := fmt.Sprintf(query_template, query, start_time, end_time)
 
-	endpoint := fmt.Sprintf("%s/%s", profile.Url, "api/v1/query?fields=true")
+	endpoint := fmt.Sprintf("%s/%s", profile.URL, "api/v1/query?fields=true")
 	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer([]byte(final_query)))
 	if err != nil {
 		return
@@ -421,7 +422,7 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 
 	if contains_timestamp {
 		columns[0] = table.NewColumn(datetimeKey, datetimeKey, datetimeWidth)
-		columnIndex += 1
+		columnIndex++
 	}
 
 	if contains_tags {
@@ -439,7 +440,7 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 		default:
 			width := inferWidthForColumns(title, &data.data, 100, 100) + 1
 			columns[columnIndex] = table.NewColumn(title, title, width).WithFiltered(true)
-			columnIndex += 1
+			columnIndex++
 		}
 	}
 

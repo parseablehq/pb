@@ -1,7 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
-//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -23,9 +21,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"pb/pkg/model/role"
 	"strings"
 	"sync"
+
+	"pb/pkg/model/role"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -235,7 +234,7 @@ var ListUserCmd = &cobra.Command{
 	},
 }
 
-func fetchUsers(client *HttpClient, data *[]string) error {
+func fetchUsers(client *HTTPClient, data *[]string) error {
 	req, err := client.NewRequest("GET", "user", nil)
 	if err != nil {
 		return err
@@ -265,7 +264,7 @@ func fetchUsers(client *HttpClient, data *[]string) error {
 	return nil
 }
 
-func fetchUserRoles(client *HttpClient, user string) (res FetchUserRoleRes) {
+func fetchUserRoles(client *HTTPClient, user string) (res FetchUserRoleRes) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("user/%s/role", user), nil)
 	if err != nil {
 		return
