@@ -14,7 +14,7 @@ var VersionCmd = &cobra.Command{
 }
 
 func PrintVersion(version string, commit string) {
-	fmt.Printf("✨ %s \n\n", standardStyleAlt.Render("Parseable command line tool"))
-	fmt.Printf("%s %s\n", standardStyleBold.Render("Version: "), version)
-	fmt.Printf("%s %s\n\n", standardStyleBold.Render("Commit:  "), commit)
+	fmt.Printf("\n%s \n\n", standardStyleAlt.Render("pb version"))
+	fmt.Printf("%s %s\n", standardStyleBold.Render("version: "), version)
+	fmt.Printf("%s %s\n", standardStyleBold.Render("commit:  "), commit)
 }
