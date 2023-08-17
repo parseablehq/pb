@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"pb/cmd"
+	"pb/pkg/config"
 	"pb/pkg/model"
 	"strconv"
 
@@ -33,6 +34,14 @@ var (
 	durationFlagShort = "d"
 	defaultDuration   = "10"
 )
+
+func DefaultInitialProfile() config.Profile {
+	return config.Profile{
+		Url:      "https://demo.parseable.io",
+		Username: "admin",
+		Password: "admin",
+	}
+}
 
 // Root command
 var cli = &cobra.Command{
@@ -110,6 +119,15 @@ func main() {
 	cli.AddCommand(user)
 
 	cli.CompletionOptions.HiddenDefaultCmd = true
+
+	// create a default profile if file does not exist
+	if _, err := config.ReadConfigFromFile(); os.IsNotExist(err) {
+		conf := config.Config{
+			Profiles:        map[string]config.Profile{"demo": DefaultInitialProfile()},
+			Default_profile: "demo",
+		}
+		config.WriteConfigToFile(&conf)
+	}
 
 	err := cli.Execute()
 	if err != nil {
