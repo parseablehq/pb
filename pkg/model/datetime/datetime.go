@@ -9,28 +9,34 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// Model is the model for the datetime component
 type Model struct {
 	time  time.Time
 	input textinput.Model
 }
 
+// Value returns the current value of the datetime component
 func (m *Model) Value() string {
 	return m.time.Format(time.RFC3339)
 }
 
+// ValueUtc returns the current value of the datetime component in UTC
 func (m *Model) ValueUtc() string {
 	return m.time.UTC().Format(time.RFC3339)
 }
 
+// SetTime sets the value of the datetime component
 func (m *Model) SetTime(t time.Time) {
 	m.time = t
 	m.input.SetValue(m.time.Format(time.DateTime))
 }
 
+// Time returns the current time of the datetime component
 func (m *Model) Time() time.Time {
 	return m.time
 }
 
+// New creates a new datetime component
 func New(prompt string) Model {
 	input := textinput.New()
 	input.Width = 20
@@ -42,23 +48,28 @@ func New(prompt string) Model {
 	}
 }
 
+// Focus focuses the datetime component
 func (m *Model) Focus() tea.Cmd {
 	m.input.Focus()
 	return nil
 }
 
+// Blur blurs the datetime component
 func (m *Model) Blur() {
 	m.input.Blur()
 }
 
+// Focused returns true if the datetime component is focused
 func (m *Model) Focused() bool {
 	return m.input.Focused()
 }
 
+// Init initializes the datetime component
 func (m Model) Init() tea.Cmd {
 	return nil
 }
 
+// Update updates the datetime component
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 	if !m.Focused() {
@@ -96,6 +107,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+// View returns the view of the datetime component
 func (m Model) View() string {
 	return m.input.View()
 }

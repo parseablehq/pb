@@ -1,6 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -22,6 +21,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Model is the model for the selection component
 type Model struct {
 	items        []string
 	focusIndex   int
@@ -30,23 +30,28 @@ type Model struct {
 	BlurredStyle lipgloss.Style
 }
 
+// Focus focuses the selection component
 func (m *Model) Focus() tea.Cmd {
 	m.focus = true
 	return nil
 }
 
+// Blur blurs the selection component
 func (m *Model) Blur() {
 	m.focus = false
 }
 
+// Focused returns true if the selection component is focused
 func (m *Model) Focused() bool {
 	return m.focus
 }
 
+// Value returns the value of the selection component
 func (m *Model) Value() string {
 	return m.items[m.focusIndex]
 }
 
+// New creates a new selection component
 func New(items []string) Model {
 	m := Model{
 		focusIndex: 0,
@@ -57,10 +62,12 @@ func New(items []string) Model {
 	return m
 }
 
+// Init initializes the selection component
 func (m Model) Init() tea.Cmd {
 	return nil
 }
 
+// Update updates the selection component
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	if !m.focus {
 		return m, nil
@@ -71,11 +78,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyLeft:
 			if m.focusIndex > 0 {
-				m.focusIndex -= 1
+				m.focusIndex--
 			}
 		case tea.KeyRight:
 			if m.focusIndex < len(m.items)-1 {
-				m.focusIndex += 1
+				m.focusIndex++
 			}
 		}
 	}
@@ -83,6 +90,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+// View renders the selection component
 func (m Model) View() string {
 	render := make([]string, len(m.items))
 

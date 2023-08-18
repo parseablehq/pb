@@ -1,7 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
-//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -30,6 +28,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// StreamStatsData is the data structure for stream stats
 type StreamStatsData struct {
 	Ingestion struct {
 		Count  int    `json:"count"`
@@ -44,12 +43,14 @@ type StreamStatsData struct {
 	Time   time.Time `json:"time"`
 }
 
+// StreamRetentionData is the data structure for stream retention
 type StreamRetentionData []struct {
 	Description string `json:"description"`
 	Action      string `json:"action"`
 	Duration    string `json:"duration"`
 }
 
+// StreamAlertData is the data structure for stream alerts
 type StreamAlertData struct {
 	Alerts []struct {
 		Message string `json:"message"`
@@ -81,6 +82,7 @@ type StreamAlertData struct {
 	Version string `json:"version"`
 }
 
+// AddStreamCmd is the parent command for stream
 var AddStreamCmd = &cobra.Command{
 	Use:     "add stream-name",
 	Example: "  pb stream add backend_logs",
@@ -115,6 +117,7 @@ var AddStreamCmd = &cobra.Command{
 	},
 }
 
+// StatStreamCmd is the stat command for stream
 var StatStreamCmd = &cobra.Command{
 	Use:     "info stream-name",
 	Example: "  pb stream info backend_logs",
@@ -129,27 +132,27 @@ var StatStreamCmd = &cobra.Command{
 			return err
 		}
 
-		ingestion_count := stats.Ingestion.Count
-		ingestion_size, _ := strconv.Atoi(strings.TrimRight(stats.Ingestion.Size, " Bytes"))
-		storage_size, _ := strconv.Atoi(strings.TrimRight(stats.Storage.Size, " Bytes"))
+		ingestionCount := stats.Ingestion.Count
+		ingestionSize, _ := strconv.Atoi(strings.TrimRight(stats.Ingestion.Size, " Bytes"))
+		storageSize, _ := strconv.Atoi(strings.TrimRight(stats.Storage.Size, " Bytes"))
 
 		retention, err := fetchRetention(&client, name)
 		if err != nil {
 			return err
 		}
 
-		is_rentention_set := len(retention) > 0
+		isRententionSet := len(retention) > 0
 
 		fmt.Println(styleBold.Render("Info:"))
-		fmt.Printf("  Event Count:     %d\n", ingestion_count)
-		fmt.Printf("  Ingestion Size:  %s\n", humanize.Bytes(uint64(ingestion_size)))
-		fmt.Printf("  Storage Size:    %s\n", humanize.Bytes(uint64(storage_size)))
+		fmt.Printf("  Event Count:     %d\n", ingestionCount)
+		fmt.Printf("  Ingestion Size:  %s\n", humanize.Bytes(uint64(ingestionSize)))
+		fmt.Printf("  Storage Size:    %s\n", humanize.Bytes(uint64(storageSize)))
 		fmt.Printf(
 			"  Compression Ratio:    %.2f%s\n",
-			100-(float64(storage_size)/float64(ingestion_size))*100, "%")
+			100-(float64(storageSize)/float64(ingestionSize))*100, "%")
 		fmt.Println()
 
-		if is_rentention_set {
+		if isRententionSet {
 			fmt.Println(styleBold.Render("Retention:"))
 			for _, item := range retention {
 				fmt.Printf("  Action:    %s\n", styleBold.Render(item.Action))
@@ -160,26 +163,26 @@ var StatStreamCmd = &cobra.Command{
 			fmt.Println(styleBold.Render("No retention period set on stream\n"))
 		}
 
-		alerts_data, err := fetchAlerts(&client, name)
+		alertsData, err := fetchAlerts(&client, name)
 		if err != nil {
 			return err
 		}
-		alerts := alerts_data.Alerts
+		alerts := alertsData.Alerts
 
-		is_alerts_set := len(alerts) > 0
+		isAlertsSet := len(alerts) > 0
 
-		if is_alerts_set {
+		if isAlertsSet {
 			fmt.Println(styleBold.Render("Alerts:"))
 			for _, alert := range alerts {
 				fmt.Printf("  Alert:   %s\n", styleBold.Render(alert.Name))
-				rule_fmt := fmt.Sprintf(
+				ruleFmt := fmt.Sprintf(
 					"%s %s %s repeated %d times",
 					alert.Rule.Config.Column,
 					alert.Rule.Config.Operator,
 					fmt.Sprint(alert.Rule.Config.Value),
 					alert.Rule.Config.Repeats,
 				)
-				fmt.Printf("  Rule:    %s\n", rule_fmt)
+				fmt.Printf("  Rule:    %s\n", ruleFmt)
 				fmt.Printf("  Targets: ")
 				for _, target := range alert.Targets {
 					fmt.Printf("%s, ", target.Type)
@@ -269,7 +272,7 @@ var ListStreamCmd = &cobra.Command{
 	},
 }
 
-func fetchStats(client *HttpClient, name string) (data StreamStatsData, err error) {
+func fetchStats(client *HTTPClient, name string) (data StreamStatsData, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("logstream/%s/stats", name), nil)
 	if err != nil {
 		return
@@ -288,7 +291,6 @@ func fetchStats(client *HttpClient, name string) (data StreamStatsData, err erro
 
 	if resp.StatusCode == 200 {
 		err = json.Unmarshal(bytes, &data)
-		return
 	} else {
 		body := string(bytes)
 		body = fmt.Sprintf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
@@ -297,7 +299,7 @@ func fetchStats(client *HttpClient, name string) (data StreamStatsData, err erro
 	return
 }
 
-func fetchRetention(client *HttpClient, name string) (data StreamRetentionData, err error) {
+func fetchRetention(client *HTTPClient, name string) (data StreamRetentionData, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("logstream/%s/retention", name), nil)
 	if err != nil {
 		return
@@ -316,7 +318,6 @@ func fetchRetention(client *HttpClient, name string) (data StreamRetentionData, 
 
 	if resp.StatusCode == 200 {
 		err = json.Unmarshal(bytes, &data)
-		return
 	} else {
 		body := string(bytes)
 		body = fmt.Sprintf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
@@ -325,7 +326,7 @@ func fetchRetention(client *HttpClient, name string) (data StreamRetentionData, 
 	return
 }
 
-func fetchAlerts(client *HttpClient, name string) (data StreamAlertData, err error) {
+func fetchAlerts(client *HTTPClient, name string) (data StreamAlertData, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("logstream/%s/alert", name), nil)
 	if err != nil {
 		return
@@ -344,7 +345,6 @@ func fetchAlerts(client *HttpClient, name string) (data StreamAlertData, err err
 
 	if resp.StatusCode == 200 {
 		err = json.Unmarshal(bytes, &data)
-		return
 	} else {
 		body := string(bytes)
 		body = fmt.Sprintf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)

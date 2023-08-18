@@ -1,6 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -34,7 +33,10 @@ var (
 	navigationMapStream    = []string{"role", "stream", "button"}
 	navigationMap          = []string{"role", "button"}
 	navigationMapNone      = []string{"role"}
+)
 
+// Style for role selection widget
+var (
 	FocusPrimary  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
 	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
 
@@ -151,13 +153,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
 		case tea.KeyDown, tea.KeyTab, tea.KeyEnter:
-			m.focusIndex += 1
+			m.focusIndex++
 			if m.focusIndex >= len(*m.navMap) {
 				m.focusIndex = 0
 			}
 			m.FocusSelected()
 		case tea.KeyUp, tea.KeyShiftTab:
-			m.focusIndex -= 1
+			m.focusIndex--
 			if m.focusIndex < 0 {
 				m.focusIndex = len(*m.navMap) - 1
 			}

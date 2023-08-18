@@ -1,6 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -26,15 +25,16 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Default Style for this widget
 var (
-	FocusPrimary  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
-	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
+	FocusPrimary   = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
+	FocusSecondary = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
 
-	StandardPrimary  = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
-	StandardSecondry = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
+	StandardPrimary   = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
+	StandardSecondary = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
 
 	focusedStyle = lipgloss.NewStyle().Foreground(FocusPrimary)
-	blurredStyle = lipgloss.NewStyle().Foreground(StandardSecondry)
+	blurredStyle = lipgloss.NewStyle().Foreground(StandardSecondary)
 	noStyle      = lipgloss.NewStyle()
 )
 
@@ -47,9 +47,8 @@ type Model struct {
 func (m *Model) Values() (string, string) {
 	if validInputs(&m.inputs) {
 		return m.inputs[0].Value(), m.inputs[1].Value()
-	} else {
-		return "", ""
 	}
+	return "", ""
 }
 
 func validInputs(inputs *[]textinput.Model) bool {

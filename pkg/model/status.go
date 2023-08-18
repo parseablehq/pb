@@ -1,6 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -70,28 +69,28 @@ func (m StatusBar) Init() tea.Cmd {
 	return nil
 }
 
-func (m StatusBar) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m StatusBar) Update(_ tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
 func (m StatusBar) View() string {
 	var right string
-	var right_style lipgloss.Style
+	var rightStyle lipgloss.Style
 
 	if m.Error != "" {
 		right = m.Error
-		right_style = errorStyle
+		rightStyle = errorStyle
 	} else {
 		right = m.Info
-		right_style = infoStyle
+		rightStyle = infoStyle
 	}
 
 	left := lipgloss.JoinHorizontal(lipgloss.Bottom, titleStyle.Render(m.title), hostStyle.Render(m.host), streamStyle.Render(m.stream))
 
-	left_width := lipgloss.Width(left)
-	right_width := m.width - left_width
+	leftWidth := lipgloss.Width(left)
+	rightWidth := m.width - leftWidth
 
-	right = right_style.Width(right_width).Render(right)
+	right = rightStyle.Width(rightWidth).Render(right)
 
 	return lipgloss.JoinHorizontal(lipgloss.Bottom, left, right)
 }

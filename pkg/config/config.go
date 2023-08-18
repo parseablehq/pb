@@ -1,6 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -26,32 +25,36 @@ import (
 )
 
 var (
-	ConfigFilename = "config.toml"
-	ConfigAppName  = "parseable"
+	configFilename = "config.toml"
+	configAppName  = "parseable"
 )
 
-func ConfigPath() (string, error) {
+// Path returns user directory that can be used for the config file
+func Path() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return path.Join(dir, ConfigAppName, ConfigFilename), nil
+	return path.Join(dir, configAppName, configFilename), nil
 }
 
+// Config is the struct that holds the configuration
 type Config struct {
-	Profiles        map[string]Profile
-	Default_profile string
+	Profiles       map[string]Profile
+	DefaultProfile string
 }
 
+// Profile is the struct that holds the profile configuration
 type Profile struct {
-	Url      string
+	URL      string
 	Username string
 	Password string
 }
 
+// WriteConfigToFile writes the configuration to the config file
 func WriteConfigToFile(config *Config) error {
 	tomlData, _ := toml.Marshal(config)
-	filePath, err := ConfigPath()
+	filePath, err := Path()
 	if err != nil {
 		return err
 	}
@@ -76,8 +79,9 @@ func WriteConfigToFile(config *Config) error {
 	return err
 }
 
+// ReadConfigFromFile reads the configuration from the config file
 func ReadConfigFromFile() (config *Config, err error) {
-	filePath, err := ConfigPath()
+	filePath, err := Path()
 	if err != nil {
 		return
 	}

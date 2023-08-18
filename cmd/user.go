@@ -1,7 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
-//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -124,8 +122,8 @@ var AddUserCmd = &cobra.Command{
 					roleData.Resource.Tag = tag
 				}
 			}
-			roleDataJson, _ := json.Marshal([]UserRoleData{roleData})
-			putBody = bytes.NewBuffer(roleDataJson)
+			roleDataJSON, _ := json.Marshal([]UserRoleData{roleData})
+			putBody = bytes.NewBuffer(roleDataJSON)
 		}
 		req, err := client.NewRequest("PUT", "user/"+name, putBody)
 		if err != nil {
@@ -202,7 +200,7 @@ var ListUserCmd = &cobra.Command{
 			return err
 		}
 
-		role_responses := make([]FetchUserRoleRes, len(users))
+		roleResponses := make([]FetchUserRoleRes, len(users))
 		wsg := sync.WaitGroup{}
 		wsg.Add(len(users))
 
@@ -211,7 +209,7 @@ var ListUserCmd = &cobra.Command{
 			user := user
 			client := &client
 			go func() {
-				role_responses[idx] = fetchUserRoles(client, user)
+				roleResponses[idx] = fetchUserRoles(client, user)
 				wsg.Done()
 			}()
 		}
@@ -219,7 +217,7 @@ var ListUserCmd = &cobra.Command{
 		wsg.Wait()
 		fmt.Println()
 		for idx, user := range users {
-			roles := role_responses[idx]
+			roles := roleResponses[idx]
 			fmt.Print("• ")
 			fmt.Println(standardStyleBold.Bold(true).Render(user))
 			if roles.err == nil {
@@ -235,7 +233,7 @@ var ListUserCmd = &cobra.Command{
 	},
 }
 
-func fetchUsers(client *HttpClient, data *[]string) error {
+func fetchUsers(client *HTTPClient, data *[]string) error {
 	req, err := client.NewRequest("GET", "user", nil)
 	if err != nil {
 		return err
@@ -265,7 +263,7 @@ func fetchUsers(client *HttpClient, data *[]string) error {
 	return nil
 }
 
-func fetchUserRoles(client *HttpClient, user string) (res FetchUserRoleRes) {
+func fetchUserRoles(client *HTTPClient, user string) (res FetchUserRoleRes) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("user/%s/role", user), nil)
 	if err != nil {
 		return

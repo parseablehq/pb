@@ -1,7 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
-//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -28,18 +26,21 @@ import (
 )
 
 var (
-	FocusPrimary  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
+	// FocusPrimary is the primary focus color
+	FocusPrimary = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
+	// FocusSecondry is the secondry focus color
 	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
-
-	StandardPrimary  = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
-	StandardSecondry = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
+	// StandardPrimary is the primary standard color
+	StandardPrimary = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
+	// StandardSecondary is the secondary standard color
+	StandardSecondary = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
 
 	focusTitleStyle   = lipgloss.NewStyle().Foreground(FocusPrimary)
 	focusDescStyle    = lipgloss.NewStyle().Foreground(FocusSecondry)
 	focusedOuterStyle = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).BorderForeground(FocusPrimary)
 
 	standardTitleStyle = lipgloss.NewStyle().Foreground(StandardPrimary)
-	standardDescStyle  = lipgloss.NewStyle().Foreground(StandardSecondry)
+	standardDescStyle  = lipgloss.NewStyle().Foreground(StandardSecondary)
 )
 
 type item struct {
@@ -81,6 +82,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprint(w, render)
 }
 
+// Model for profile selection command
 type Model struct {
 	list    list.Model
 	Choice  string
@@ -92,7 +94,7 @@ func New(profiles map[string]config.Profile) Model {
 	for name, profile := range profiles {
 		i := item{
 			title: name,
-			url:   profile.Url,
+			url:   profile.URL,
 			user:  profile.Username,
 		}
 		items = append(items, i)

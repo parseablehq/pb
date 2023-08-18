@@ -1,6 +1,5 @@
 // Copyright (c) 2023 Cloudnatively Services Pvt Ltd
 //
-// This file is part of MinIO Object Storage stack
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -31,8 +30,8 @@ import (
 
 var (
 	// populated at build time
-	PBVersion string
-	PBCommit  string
+	version string
+	commit  string
 )
 
 var (
@@ -43,9 +42,9 @@ var (
 	defaultDuration   = "10"
 )
 
-func DefaultInitialProfile() config.Profile {
+func defaultInitialProfile() config.Profile {
 	return config.Profile{
-		Url:      "https://demo.parseable.io",
+		URL:      "https://demo.parseable.io",
 		Username: "admin",
 		Password: "admin",
 	}
@@ -58,7 +57,7 @@ var cli = &cobra.Command{
 	Long:  "\npb is a command line tool for Parseable",
 	Run: func(command *cobra.Command, args []string) {
 		if p, _ := command.Flags().GetBool(versionFlag); p {
-			cmd.PrintVersion(PBVersion, PBCommit)
+			cmd.PrintVersion(version, commit)
 		}
 	},
 }
@@ -133,10 +132,10 @@ func main() {
 
 	// Set as command
 	cmd.VersionCmd.Run = func(_ *cobra.Command, args []string) {
-		cmd.PrintVersion(PBVersion, PBCommit)
+		cmd.PrintVersion(version, commit)
 	}
 	cli.AddCommand(cmd.VersionCmd)
-	//set as flag
+	// set as flag
 	cli.Flags().BoolP(versionFlag, versionFlagShort, false, "Print version")
 
 	cli.CompletionOptions.HiddenDefaultCmd = true
@@ -144,8 +143,8 @@ func main() {
 	// create a default profile if file does not exist
 	if _, err := config.ReadConfigFromFile(); os.IsNotExist(err) {
 		conf := config.Config{
-			Profiles:        map[string]config.Profile{"demo": DefaultInitialProfile()},
-			Default_profile: "demo",
+			Profiles:       map[string]config.Profile{"demo": defaultInitialProfile()},
+			DefaultProfile: "demo",
 		}
 		config.WriteConfigToFile(&conf)
 	}
