@@ -19,11 +19,10 @@ package main
 import (
 	"fmt"
 	"os"
-	"strconv"
-
 	"pb/cmd"
 	"pb/pkg/config"
 	"pb/pkg/model"
+	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -31,8 +30,8 @@ import (
 
 var (
 	// populated at build time
-	PBVersion string
-	PBCommit  string
+	version string
+	commit  string
 )
 
 var (
@@ -43,7 +42,7 @@ var (
 	defaultDuration   = "10"
 )
 
-func DefaultInitialProfile() config.Profile {
+func defaultInitialProfile() config.Profile {
 	return config.Profile{
 		URL:      "https://demo.parseable.io",
 		Username: "admin",
@@ -58,7 +57,7 @@ var cli = &cobra.Command{
 	Long:  "\npb is a command line tool for Parseable",
 	Run: func(command *cobra.Command, args []string) {
 		if p, _ := command.Flags().GetBool(versionFlag); p {
-			cmd.PrintVersion(PBVersion, PBCommit)
+			cmd.PrintVersion(version, commit)
 		}
 	},
 }
@@ -133,7 +132,7 @@ func main() {
 
 	// Set as command
 	cmd.VersionCmd.Run = func(_ *cobra.Command, args []string) {
-		cmd.PrintVersion(PBVersion, PBCommit)
+		cmd.PrintVersion(version, commit)
 	}
 	cli.AddCommand(cmd.VersionCmd)
 	// set as flag
@@ -144,7 +143,7 @@ func main() {
 	// create a default profile if file does not exist
 	if _, err := config.ReadConfigFromFile(); os.IsNotExist(err) {
 		conf := config.Config{
-			Profiles:       map[string]config.Profile{"demo": DefaultInitialProfile()},
+			Profiles:       map[string]config.Profile{"demo": defaultInitialProfile()},
 			DefaultProfile: "demo",
 		}
 		config.WriteConfigToFile(&conf)

@@ -23,9 +23,8 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"time"
-
 	"pb/pkg/config"
+	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -44,6 +43,7 @@ const (
 	metadataKey   = "p_metadata"
 )
 
+// Style for this widget
 var (
 	FocusPrimary  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
 	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
@@ -65,7 +65,9 @@ var (
 	baseBoldUnderlinedStyle = lipgloss.NewStyle().BorderForeground(StandardPrimary).Bold(true)
 	headerStyle             = lipgloss.NewStyle().Inherit(baseStyle).Foreground(FocusSecondry).Bold(true)
 	tableStyle              = lipgloss.NewStyle().Inherit(baseStyle).Align(lipgloss.Left)
+)
 
+var (
 	customBorder = table.Border{
 		Top:    "─",
 		Left:   "│",
@@ -105,13 +107,13 @@ type FetchData struct {
 }
 
 const (
-	FetchOk FetchResult = iota
-	FetchErr
+	fetchOk FetchResult = iota
+	fetchErr
 )
 
 const (
-	OverlayNone uint = iota
-	OverlayInputs
+	overlayNone uint = iota
+	overlayInputs
 )
 
 type QueryModel struct {
@@ -188,7 +190,7 @@ func NewQueryModel(profile config.Profile, stream string, duration uint) QueryMo
 		table:     table,
 		query:     query,
 		timeRange: inputs,
-		overlay:   OverlayNone,
+		overlay:   overlayNone,
 		profile:   profile,
 		help:      help,
 		status:    NewStatusBar(profile.URL, stream, w),
@@ -216,7 +218,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case FetchData:
-		if msg.status == FetchOk {
+		if msg.status == fetchOk {
 			m.UpdateTable(msg)
 		} else {
 			m.status.Error = "failed to query"
@@ -226,9 +228,9 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Is it a key press?
 	case tea.KeyMsg:
 		// special behavior on main page
-		if m.overlay == OverlayNone {
+		if m.overlay == overlayNone {
 			if msg.Type == tea.KeyEnter && m.currentFocus() == "time" {
-				m.overlay = OverlayInputs
+				m.overlay = overlayInputs
 				return m, nil
 			}
 
@@ -243,9 +245,9 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// special behavior on time input page
-		if m.overlay == OverlayInputs {
+		if m.overlay == overlayInputs {
 			if msg.Type == tea.KeyEnter {
-				m.overlay = OverlayNone
+				m.overlay = overlayNone
 				m.focusSelected()
 				return m, nil
 			}
@@ -253,7 +255,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// common keybind
 		if msg.Type == tea.KeyCtrlR {
-			m.overlay = OverlayNone
+			m.overlay = overlayNone
 			return m, NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
 		}
 
@@ -263,7 +265,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		default:
 			switch m.overlay {
-			case OverlayNone:
+			case overlayNone:
 				switch m.currentFocus() {
 				case "query":
 					m.query, cmd = m.query.Update(msg)
@@ -271,7 +273,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.table, cmd = m.table.Update(msg)
 				}
 				cmds = append(cmds, cmd)
-			case OverlayInputs:
+			case overlayInputs:
 				m.timeRange, cmd = m.timeRange.Update(msg)
 				cmds = append(cmds, cmd)
 			}
@@ -313,7 +315,7 @@ func (m QueryModel) View() string {
 	}
 
 	switch m.overlay {
-	case OverlayNone:
+	case overlayNone:
 		mainView = lipgloss.JoinVertical(lipgloss.Left,
 			lipgloss.JoinHorizontal(lipgloss.Top, queryOuter.Render(m.query.View()), timeOuter.Render(time)),
 			tableOuter.Render(m.table.View()),
@@ -328,7 +330,7 @@ func (m QueryModel) View() string {
 		case "table":
 			helpKeys = tableHelpBinds.FullHelp()
 		}
-	case OverlayInputs:
+	case overlayInputs:
 		mainView = m.timeRange.View()
 		helpKeys = m.timeRange.FullHelp()
 	}
@@ -351,10 +353,10 @@ type QueryData struct {
 	Records []map[string]interface{} `json:"records"`
 }
 
-func NewFetchTask(profile config.Profile, query string, start_time string, end_time string) func() tea.Msg {
+func NewFetchTask(profile config.Profile, query string, startTime string, endTime string) func() tea.Msg {
 	return func() tea.Msg {
 		res := FetchData{
-			status: FetchErr,
+			status: fetchErr,
 			schema: []string{},
 			data:   []map[string]interface{}{},
 		}
@@ -363,35 +365,33 @@ func NewFetchTask(profile config.Profile, query string, start_time string, end_t
 			Timeout: time.Second * 50,
 		}
 
-		data, status := fetchData(client, &profile, query, start_time, end_time)
-		if status == FetchErr {
-			return res
-		} else {
+		data, status := fetchData(client, &profile, query, startTime, endTime)
+
+		if status == fetchOk {
 			res.data = data.Records
 			res.schema = data.Fields
+			res.status = fetchOk
 		}
-
-		res.status = FetchOk
 
 		return res
 	}
 }
 
-func fetchData(client *http.Client, profile *config.Profile, query string, start_time string, end_time string) (data QueryData, res FetchResult) {
+func fetchData(client *http.Client, profile *config.Profile, query string, startTime string, endTime string) (data QueryData, res FetchResult) {
 	data = QueryData{}
-	res = FetchErr
+	res = fetchErr
 
-	query_template := `{
+	queryTemplate := `{
     "query": "%s",
     "startTime": "%s",
     "endTime": "%s"
 	}
 	`
 
-	final_query := fmt.Sprintf(query_template, query, start_time, end_time)
+	finalQuery := fmt.Sprintf(queryTemplate, query, startTime, endTime)
 
 	endpoint := fmt.Sprintf("%s/%s", profile.URL, "api/v1/query?fields=true")
-	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer([]byte(final_query)))
+	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer([]byte(finalQuery)))
 	if err != nil {
 		return
 	}
@@ -408,28 +408,28 @@ func fetchData(client *http.Client, profile *config.Profile, query string, start
 		return
 	}
 
-	res = FetchOk
+	res = fetchOk
 	return
 }
 
 func (m *QueryModel) UpdateTable(data FetchData) {
 	// pin p_timestamp to left if available
-	contains_timestamp := slices.Contains(data.schema, datetimeKey)
-	contains_tags := slices.Contains(data.schema, tagKey)
-	contains_metadata := slices.Contains(data.schema, metadataKey)
+	containsTimestamp := slices.Contains(data.schema, datetimeKey)
+	containsTags := slices.Contains(data.schema, tagKey)
+	containsMetadata := slices.Contains(data.schema, metadataKey)
 	columns := make([]table.Column, len(data.schema))
 	columnIndex := 0
 
-	if contains_timestamp {
+	if containsTimestamp {
 		columns[0] = table.NewColumn(datetimeKey, datetimeKey, datetimeWidth)
 		columnIndex++
 	}
 
-	if contains_tags {
+	if containsTags {
 		columns[len(columns)-2] = table.NewColumn(tagKey, tagKey, inferWidthForColumns(tagKey, &data.data, 100, 80)).WithFiltered(true)
 	}
 
-	if contains_metadata {
+	if containsMetadata {
 		columns[len(columns)-1] = table.NewColumn(metadataKey, metadataKey, inferWidthForColumns(metadataKey, &data.data, 100, 80)).WithFiltered(true)
 	}
 
@@ -446,22 +446,22 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 
 	rows := make([]table.Row, len(data.data))
 	for i := 0; i < len(data.data); i++ {
-		row_json := data.data[i]
-		rows[i] = table.NewRow(row_json)
+		rowJSON := data.data[i]
+		rows[i] = table.NewRow(rowJSON)
 	}
 
 	m.table = m.table.WithColumns(columns)
 	m.table = m.table.WithRows(rows)
 }
 
-func inferWidthForColumns(column string, data *[]map[string]interface{}, max_records int, max_width int) (width int) {
+func inferWidthForColumns(column string, data *[]map[string]interface{}, maxRecords int, maxWidth int) (width int) {
 	width = 2
 	records := 0
 
-	if len(*data) < max_records {
+	if len(*data) < maxRecords {
 		records = len(*data)
 	} else {
-		records = max_records
+		records = maxRecords
 	}
 
 	for i := 0; i < records; i++ {
@@ -477,10 +477,10 @@ func inferWidthForColumns(column string, data *[]map[string]interface{}, max_rec
 		}
 
 		if w > width {
-			if w < max_width {
+			if w < maxWidth {
 				width = w
 			} else {
-				width = max_width
+				width = maxWidth
 				return
 			}
 		}

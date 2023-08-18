@@ -31,6 +31,8 @@ issues:
   exclude:
     - instead of using struct literal
     - should have a package comment
+    - should have comment or be unexported
+    - time-naming
     - error strings should not be capitalized or end with punctuation or a newline
 
 service:

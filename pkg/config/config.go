@@ -29,7 +29,8 @@ var (
 	configAppName  = "parseable"
 )
 
-func ConfigPath() (string, error) {
+// Path returns user directory that can be used for the config file
+func Path() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
@@ -53,7 +54,7 @@ type Profile struct {
 // WriteConfigToFile writes the configuration to the config file
 func WriteConfigToFile(config *Config) error {
 	tomlData, _ := toml.Marshal(config)
-	filePath, err := ConfigPath()
+	filePath, err := Path()
 	if err != nil {
 		return err
 	}
@@ -80,7 +81,7 @@ func WriteConfigToFile(config *Config) error {
 
 // ReadConfigFromFile reads the configuration from the config file
 func ReadConfigFromFile() (config *Config, err error) {
-	filePath, err := ConfigPath()
+	filePath, err := Path()
 	if err != nil {
 		return
 	}

@@ -17,17 +17,16 @@
 package credential
 
 import (
-	"strings"
-
 	"pb/pkg/model/button"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Default Style for this widget
 var (
-	// FocusPrimary is the color used for the focused
 	FocusPrimary   = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
 	FocusSecondary = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
 
@@ -48,9 +47,8 @@ type Model struct {
 func (m *Model) Values() (string, string) {
 	if validInputs(&m.inputs) {
 		return m.inputs[0].Value(), m.inputs[1].Value()
-	} else {
-		return "", ""
 	}
+	return "", ""
 }
 
 func validInputs(inputs *[]textinput.Model) bool {

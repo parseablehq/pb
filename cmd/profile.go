@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-
 	"pb/pkg/config"
 	"pb/pkg/model/credential"
 	"pb/pkg/model/defaultprofile"
@@ -64,10 +63,7 @@ var AddProfileCmd = &cobra.Command{
 		if err := cobra.MinimumNArgs(2)(cmd, args); err != nil {
 			return err
 		}
-		if err := cobra.MaximumNArgs(4)(cmd, args); err != nil {
-			return err
-		}
-		return nil
+		return cobra.MaximumNArgs(4)(cmd, args)
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
@@ -99,26 +95,26 @@ var AddProfileCmd = &cobra.Command{
 			Password: password,
 		}
 
-		file_config, err := config.ReadConfigFromFile()
+		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
 			// create new file
-			new_config := config.Config{
+			newConfig := config.Config{
 				Profiles: map[string]config.Profile{
 					name: profile,
 				},
 				DefaultProfile: name,
 			}
-			err = config.WriteConfigToFile(&new_config)
+			err = config.WriteConfigToFile(&newConfig)
 			return err
 		}
-		if file_config.Profiles == nil {
-			file_config.Profiles = make(map[string]config.Profile)
+		if fileConfig.Profiles == nil {
+			fileConfig.Profiles = make(map[string]config.Profile)
 		}
-		file_config.Profiles[name] = profile
-		if file_config.DefaultProfile == "" {
-			file_config.DefaultProfile = name
+		fileConfig.Profiles[name] = profile
+		if fileConfig.DefaultProfile == "" {
+			fileConfig.DefaultProfile = name
 		}
-		config.WriteConfigToFile(file_config)
+		config.WriteConfigToFile(fileConfig)
 
 		return nil
 	},
@@ -132,18 +128,18 @@ var RemoveProfileCmd = &cobra.Command{
 	Short:   "Delete a profile",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		file_config, err := config.ReadConfigFromFile()
+		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
 			return nil
 		}
 
-		_, exists := file_config.Profiles[name]
+		_, exists := fileConfig.Profiles[name]
 		if exists {
-			delete(file_config.Profiles, name)
-			if len(file_config.Profiles) == 0 {
-				file_config.DefaultProfile = ""
+			delete(fileConfig.Profiles, name)
+			if len(fileConfig.Profiles) == 0 {
+				fileConfig.DefaultProfile = ""
 			}
-			config.WriteConfigToFile(file_config)
+			config.WriteConfigToFile(fileConfig)
 			fmt.Printf("Deleted profile %s\n", styleBold.Render(name))
 		} else {
 			fmt.Printf("No profile found with the name: %s", styleBold.Render(name))
@@ -161,7 +157,7 @@ var DefaultProfileCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var name string
 
-		file_config, err := config.ReadConfigFromFile()
+		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
 			return nil
 		}
@@ -169,7 +165,7 @@ var DefaultProfileCmd = &cobra.Command{
 		if len(args) > 0 {
 			name = args[0]
 		} else {
-			model := defaultprofile.New(file_config.Profiles)
+			model := defaultprofile.New(fileConfig.Profiles)
 			_m, err := tea.NewProgram(model).Run()
 			if err != nil {
 				fmt.Printf("Alas, there's been an error: %v", err)
@@ -184,16 +180,16 @@ var DefaultProfileCmd = &cobra.Command{
 			}
 		}
 
-		_, exists := file_config.Profiles[name]
+		_, exists := fileConfig.Profiles[name]
 		if exists {
-			file_config.DefaultProfile = name
+			fileConfig.DefaultProfile = name
 		} else {
 			name = lipgloss.NewStyle().Bold(true).Render(name)
 			err := fmt.Sprintf("profile %s does not exist", styleBold.Render(name))
 			return errors.New(err)
 		}
 
-		config.WriteConfigToFile(file_config)
+		config.WriteConfigToFile(fileConfig)
 		fmt.Printf("%s is now set as default profile\n", styleBold.Render(name))
 		return nil
 	},
@@ -204,19 +200,19 @@ var ListProfileCmd = &cobra.Command{
 	Short:   "List all added profiles",
 	Example: "  pb profile list",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		file_config, err := config.ReadConfigFromFile()
+		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
 			return nil
 		}
 
-		if len(file_config.Profiles) != 0 {
+		if len(fileConfig.Profiles) != 0 {
 			println()
 		}
 
 		row := 0
-		for key, value := range file_config.Profiles {
+		for key, value := range fileConfig.Profiles {
 			item := ProfileListItem{key, value.URL, value.Username}
-			fmt.Println(item.Render(file_config.DefaultProfile == key))
+			fmt.Println(item.Render(fileConfig.DefaultProfile == key))
 			row++
 			fmt.Println()
 		}
@@ -227,7 +223,6 @@ var ListProfileCmd = &cobra.Command{
 func Max(a int, b int) int {
 	if a >= b {
 		return a
-	} else {
-		return b
 	}
+	return b
 }

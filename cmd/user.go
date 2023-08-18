@@ -21,10 +21,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"pb/pkg/model/role"
 	"strings"
 	"sync"
-
-	"pb/pkg/model/role"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -123,8 +122,8 @@ var AddUserCmd = &cobra.Command{
 					roleData.Resource.Tag = tag
 				}
 			}
-			roleDataJson, _ := json.Marshal([]UserRoleData{roleData})
-			putBody = bytes.NewBuffer(roleDataJson)
+			roleDataJSON, _ := json.Marshal([]UserRoleData{roleData})
+			putBody = bytes.NewBuffer(roleDataJSON)
 		}
 		req, err := client.NewRequest("PUT", "user/"+name, putBody)
 		if err != nil {
@@ -201,7 +200,7 @@ var ListUserCmd = &cobra.Command{
 			return err
 		}
 
-		role_responses := make([]FetchUserRoleRes, len(users))
+		roleResponses := make([]FetchUserRoleRes, len(users))
 		wsg := sync.WaitGroup{}
 		wsg.Add(len(users))
 
@@ -210,7 +209,7 @@ var ListUserCmd = &cobra.Command{
 			user := user
 			client := &client
 			go func() {
-				role_responses[idx] = fetchUserRoles(client, user)
+				roleResponses[idx] = fetchUserRoles(client, user)
 				wsg.Done()
 			}()
 		}
@@ -218,7 +217,7 @@ var ListUserCmd = &cobra.Command{
 		wsg.Wait()
 		fmt.Println()
 		for idx, user := range users {
-			roles := role_responses[idx]
+			roles := roleResponses[idx]
 			fmt.Print("• ")
 			fmt.Println(standardStyleBold.Bold(true).Render(user))
 			if roles.err == nil {

@@ -27,6 +27,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Items for time range
 const (
 	TenMinute    = -10 * time.Minute
 	TwentyMinute = -20 * time.Minute
@@ -82,6 +83,7 @@ func (d timeDurationItemDelegate) Render(w io.Writer, m list.Model, index int, l
 	fmt.Fprint(w, fn(i.repr))
 }
 
+// NewTimeRangeModel creates new range model
 func NewTimeRangeModel() list.Model {
 	list := list.New(timeDurations, timeDurationItemDelegate{}, 20, 10)
 	list.SetShowPagination(false)

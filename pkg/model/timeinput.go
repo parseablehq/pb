@@ -18,9 +18,8 @@ package model
 
 import (
 	"fmt"
-	"time"
-
 	"pb/pkg/model/datetime"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -32,23 +31,23 @@ var rangeNavigationMap = []string{
 	"list", "start", "end",
 }
 
-type EndTimeKeyBind struct {
+type endTimeKeyBind struct {
 	ResetTime key.Binding
 	Ok        key.Binding
 }
 
-func (k EndTimeKeyBind) ShortHelp() []key.Binding {
+func (k endTimeKeyBind) ShortHelp() []key.Binding {
 	return []key.Binding{k.ResetTime, k.Ok}
 }
 
-func (k EndTimeKeyBind) FullHelp() [][]key.Binding {
+func (k endTimeKeyBind) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.ResetTime},
 		{k.Ok},
 	}
 }
 
-var EndHelpBinds = EndTimeKeyBind{
+var endHelpBinds = endTimeKeyBind{
 	ResetTime: key.NewBinding(
 		key.WithKeys("ctrl+{"),
 		key.WithHelp("ctrl+{", "change end time to current time"),
@@ -115,6 +114,7 @@ func (m *TimeInputModel) currentFocus() string {
 	return rangeNavigationMap[m.focus]
 }
 
+// NewTimeInputModel creates a new model
 func NewTimeInputModel(duration uint) TimeInputModel {
 	endTime := time.Now()
 	startTime := endTime.Add(TenMinute)
@@ -124,12 +124,12 @@ func NewTimeInputModel(duration uint) TimeInputModel {
 	}
 
 	list := NewTimeRangeModel()
-	input_style := lipgloss.NewStyle().Inherit(baseStyle).Bold(true).Width(6).Align(lipgloss.Center)
+	inputStyle := lipgloss.NewStyle().Inherit(baseStyle).Bold(true).Width(6).Align(lipgloss.Center)
 
-	start := datetime.New(input_style.Render("start"))
+	start := datetime.New(inputStyle.Render("start"))
 	start.SetTime(startTime)
 	start.Focus()
-	end := datetime.New(input_style.Render("end"))
+	end := datetime.New(inputStyle.Render("end"))
 	end.SetTime(endTime)
 
 	return TimeInputModel{
@@ -141,7 +141,7 @@ func NewTimeInputModel(duration uint) TimeInputModel {
 }
 
 func (m TimeInputModel) FullHelp() [][]key.Binding {
-	return EndHelpBinds.FullHelp()
+	return endHelpBinds.FullHelp()
 }
 
 func (m TimeInputModel) Init() tea.Cmd {

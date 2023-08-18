@@ -18,7 +18,6 @@ package defaultprofile
 import (
 	"fmt"
 	"io"
-
 	"pb/pkg/config"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -83,6 +82,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprint(w, render)
 }
 
+// Model for profile selection command
 type Model struct {
 	list    list.Model
 	Choice  string

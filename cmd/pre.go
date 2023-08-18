@@ -19,7 +19,6 @@ package cmd
 import (
 	"errors"
 	"os"
-
 	"pb/pkg/config"
 
 	"github.com/spf13/cobra"
@@ -27,17 +26,16 @@ import (
 
 var DefaultProfile config.Profile
 
-// Check if a profile exists.
+// PreRunDefaultProfile if a profile exists.
 // This is required by mostly all commands except profile
-func PreRunDefaultProfile(cmd *cobra.Command, args []string) error {
+func PreRunDefaultProfile(_ *cobra.Command, _ []string) error {
 	conf, err := config.ReadConfigFromFile()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return errors.New("no config found to run this command. add a profile using pb profile command")
-		} else {
-			return err
-		}
+	if os.IsNotExist(err) {
+		return errors.New("no config found to run this command. add a profile using pb profile command")
+	} else if err != nil {
+		return err
 	}
+
 	if conf.Profiles == nil || conf.DefaultProfile == "" {
 		return errors.New("no profile is configured to run this command. please create one using profile command")
 	}

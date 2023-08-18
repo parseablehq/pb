@@ -18,10 +18,9 @@ package role
 
 import (
 	"fmt"
-	"strings"
-
 	"pb/pkg/model/button"
 	"pb/pkg/model/selection"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -34,7 +33,10 @@ var (
 	navigationMapStream    = []string{"role", "stream", "button"}
 	navigationMap          = []string{"role", "button"}
 	navigationMapNone      = []string{"role"}
+)
 
+// Style for role selection widget
+var (
 	FocusPrimary  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
 	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
 
