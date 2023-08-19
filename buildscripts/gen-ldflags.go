@@ -23,48 +23,13 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 )
 
 func genLDFlags(version string) string {
-	releaseTag, date := releaseTag(version)
-	copyrightYear := fmt.Sprintf("%d", date.Year())
-
 	var ldflagsStr string
-	ldflagsStr = "-s -w -X github.com/parseablehq/pb/cmd.Version=" + version + " "
-	ldflagsStr = ldflagsStr + "-X github.com/parseablehq/pb/cmd.CopyrightYear=" + copyrightYear + " "
-	ldflagsStr = ldflagsStr + "-X github.com/parseablehq/pb/cmd.ReleaseTag=" + releaseTag + " "
-	ldflagsStr = ldflagsStr + "-X github.com/parseablehq/pb/cmd.CommitID=" + commitID() + " "
-	ldflagsStr = ldflagsStr + "-X github.com/parseablehq/pb/cmd.ShortCommitID=" + commitID()[:12]
+	ldflagsStr = "-s -w -X main.Version=" + version + " "
+	ldflagsStr = ldflagsStr + "-X main.Commit=" + commitID()[:12]
 	return ldflagsStr
-}
-
-// releaseTag prints release tag to the console for easy git tagging.
-func releaseTag(version string) (string, time.Time) {
-	relPrefix := "DEVELOPMENT"
-	if prefix := os.Getenv("PB_RELEASE"); prefix != "" {
-		relPrefix = prefix
-	}
-
-	relSuffix := ""
-	if hotfix := os.Getenv("PB_HOTFIX"); hotfix != "" {
-		relSuffix = hotfix
-	}
-
-	relTag := strings.ReplaceAll(version, " ", "-")
-	relTag = strings.ReplaceAll(relTag, ":", "-")
-	t, err := time.Parse("2006-01-02T15-04-05Z", relTag)
-	if err != nil {
-		panic(err)
-	}
-
-	relTag = strings.ReplaceAll(relTag, ",", "")
-	relTag = relPrefix + "." + relTag
-	if relSuffix != "" {
-		relTag += "." + relSuffix
-	}
-
-	return relTag, t
 }
 
 // commitID returns the abbreviated commit-id hash of the last commit.
@@ -84,34 +49,12 @@ func commitID() string {
 	return strings.TrimSpace(string(commit))
 }
 
-func commitTime() time.Time {
-	// git log --format=%cD -n1
-	var (
-		commitUnix []byte
-		err        error
-	)
-	cmdName := "git"
-	cmdArgs := []string{"log", "--format=%cI", "-n1"}
-	if commitUnix, err = exec.Command(cmdName, cmdArgs...).Output(); err != nil {
-		fmt.Fprintln(os.Stderr, "Error generating git commit-time: ", err)
-		os.Exit(1)
-	}
-
-	t, err := time.Parse(time.RFC3339, strings.TrimSpace(string(commitUnix)))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error generating git commit-time: ", err)
-		os.Exit(1)
-	}
-
-	return t.UTC()
-}
-
 func main() {
 	var version string
 	if len(os.Args) > 1 {
 		version = os.Args[1]
 	} else {
-		version = commitTime().Format(time.RFC3339)
+		version = "v0.0.0/DEVELOPMENT"
 	}
 
 	fmt.Println(genLDFlags(version))

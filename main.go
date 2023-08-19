@@ -30,8 +30,8 @@ import (
 
 var (
 	// populated at build time
-	version string
-	commit  string
+	Version string
+	Commit  string
 )
 
 var (
@@ -57,7 +57,7 @@ var cli = &cobra.Command{
 	Long:  "\npb is a command line tool for Parseable",
 	Run: func(command *cobra.Command, args []string) {
 		if p, _ := command.Flags().GetBool(versionFlag); p {
-			cmd.PrintVersion(version, commit)
+			cmd.PrintVersion(Version, Commit)
 		}
 	},
 }
@@ -132,7 +132,7 @@ func main() {
 
 	// Set as command
 	cmd.VersionCmd.Run = func(_ *cobra.Command, args []string) {
-		cmd.PrintVersion(version, commit)
+		cmd.PrintVersion(Version, Commit)
 	}
 	cli.AddCommand(cmd.VersionCmd)
 	// set as flag
