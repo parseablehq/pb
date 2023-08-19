@@ -1,12 +1,11 @@
 PWD := $(shell pwd)
 GOPATH := $(shell go env GOPATH)
-LDFLAGS := $(shell go run buildscripts/gen-ldflags.go)
+VERSION ?= $(shell git describe --tags)
+TAG ?= "parseablehq/pb:$(VERSION)"
+LDFLAGS := $(shell go run buildscripts/gen-ldflags.go $(VERSION))
 
 GOARCH := $(shell go env GOARCH)
 GOOS := $(shell go env GOOS)
-
-VERSION ?= $(shell git describe --tags)
-TAG ?= "parseablehq/pb:$(VERSION)"
 
 all: build
 
