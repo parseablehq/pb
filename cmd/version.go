@@ -32,17 +32,16 @@ var VersionCmd = &cobra.Command{
 // PrintVersion prints version information
 func PrintVersion(version, commit string) {
 	client := DefaultClient()
-	about, err := FetchAbout(&client)
 
 	fmt.Printf("\n%s \n", standardStyleAlt.Render("pb version"))
 	fmt.Printf("- %s %s\n", standardStyleBold.Render("version: "), version)
 	fmt.Printf("- %s %s\n\n", standardStyleBold.Render("commit:  "), commit)
 
-	if err != nil {
+	if err := PreRun(); err != nil {
 		return
 	}
-
-	if err := PreRun(); err != nil {
+	about, err := FetchAbout(&client)
+	if err != nil {
 		return
 	}
 
