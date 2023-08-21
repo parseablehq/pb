@@ -17,6 +17,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"pb/cmd"
@@ -28,8 +29,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// populated at build time
 var (
-	// populated at build time
 	Version string
 	Commit  string
 )
@@ -55,10 +56,13 @@ var cli = &cobra.Command{
 	Use:   "pb",
 	Short: "\nParseable command line tool",
 	Long:  "\npb is a command line tool for Parseable",
-	Run: func(command *cobra.Command, args []string) {
+	RunE: func(command *cobra.Command, args []string) error {
 		if p, _ := command.Flags().GetBool(versionFlag); p {
 			cmd.PrintVersion(Version, Commit)
+			return nil
 		}
+
+		return errors.New("No command or flag supplied\n")
 	},
 }
 
