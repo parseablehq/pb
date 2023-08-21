@@ -29,6 +29,10 @@ var DefaultProfile config.Profile
 // PreRunDefaultProfile if a profile exists.
 // This is required by mostly all commands except profile
 func PreRunDefaultProfile(_ *cobra.Command, _ []string) error {
+	return PreRun()
+}
+
+func PreRun() error {
 	conf, err := config.ReadConfigFromFile()
 	if os.IsNotExist(err) {
 		return errors.New("no config found to run this command. add a profile using pb profile command")
