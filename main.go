@@ -54,35 +54,35 @@ func defaultInitialProfile() config.Profile {
 // Root command
 var cli = &cobra.Command{
 	Use:   "pb",
-	Short: "\nParseable command line tool",
-	Long:  "\npb is a command line tool for Parseable",
+	Short: "\nParseable command line interface",
+	Long:  "\npb is a command line interface for Parseable",
 	RunE: func(command *cobra.Command, args []string) error {
 		if p, _ := command.Flags().GetBool(versionFlag); p {
 			cmd.PrintVersion(Version, Commit)
 			return nil
 		}
 
-		return errors.New("No command or flag supplied\n")
+		return errors.New("no command or flag supplied")
 	},
 }
 
 var profile = &cobra.Command{
 	Use:   "profile",
 	Short: "Manage profiles",
-	Long:  "\nprofile command is used to manage multiple instances of Parseable. Each profile can have a different set of credentials and URL",
+	Long:  "\nuse profile command to configure (multiple) Parseable instances. Each profile takes a URL and credentials.",
 }
 
 var user = &cobra.Command{
 	Use:               "user",
 	Short:             "Manage users",
-	Long:              "\nuser command is used to manage users. Users can be added, deleted and listed",
+	Long:              "\nuser command is used to manage users.",
 	PersistentPreRunE: cmd.PreRunDefaultProfile,
 }
 
 var stream = &cobra.Command{
 	Use:               "stream",
 	Short:             "Manage streams",
-	Long:              "\nstream command is used to manage streams. Streams can be created, deleted and listed",
+	Long:              "\nstream command is used to manage streams.",
 	PersistentPreRunE: cmd.PreRunDefaultProfile,
 }
 
@@ -90,7 +90,7 @@ var query = &cobra.Command{
 	Use:     "query [stream-name] --duration 10",
 	Example: "  pb query frontend --duration 10",
 	Short:   "Open SQL query prompt",
-	Long:    "\nquery command is used to open a prompt to query a stream. The stream name and duration in minutes are required arguments",
+	Long:    "\nquery command is used to open a prompt to query a stream.",
 	Args:    cobra.ExactArgs(1),
 	PreRunE: cmd.PreRunDefaultProfile,
 	RunE: func(command *cobra.Command, args []string) error {

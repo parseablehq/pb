@@ -25,6 +25,7 @@ config.toml
 
 # build
 pb
+bin/
 
 # OS Files
 .DS_Store

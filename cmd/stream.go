@@ -43,6 +43,15 @@ type StreamStatsData struct {
 	Time   time.Time `json:"time"`
 }
 
+type StreamListItem struct {
+	name string
+}
+
+func (item *StreamListItem) Render() string {
+	render := standardStyle.Render(item.name)
+	return itemOuter.Render(render)
+}
+
 // StreamRetentionData is the data structure for stream retention
 type StreamRetentionData []struct {
 	Description string `json:"description"`
@@ -143,7 +152,7 @@ var StatStreamCmd = &cobra.Command{
 
 		isRententionSet := len(retention) > 0
 
-		fmt.Println(styleBold.Render("Info:"))
+		fmt.Println(styleBold.Render("\nInfo:"))
 		fmt.Printf("  Event Count:     %d\n", ingestionCount)
 		fmt.Printf("  Ingestion Size:  %s\n", humanize.Bytes(uint64(ingestionSize)))
 		fmt.Printf("  Storage Size:    %s\n", humanize.Bytes(uint64(storageSize)))
@@ -217,7 +226,7 @@ var RemoveStreamCmd = &cobra.Command{
 		}
 
 		if resp.StatusCode == 200 {
-			fmt.Printf("Removed stream %s", styleBold.Render(name))
+			fmt.Printf("Removed stream %s\n", styleBold.Render(name))
 		} else {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -256,18 +265,27 @@ var ListStreamCmd = &cobra.Command{
 				return err
 			}
 			defer resp.Body.Close()
-			for _, item := range items {
-				fmt.Println(item["name"])
-			}
-		} else {
-			bytes, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
-			body := string(bytes)
-			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
-		}
 
+			if len(items) >= 0 {
+				fmt.Println()
+			} else if len(items) == 0 {
+				fmt.Println("No streams found")
+				return nil
+			}
+
+			for _, item := range items {
+				item := StreamListItem{item["name"]}
+				fmt.Println(item.Render())
+			}
+			fmt.Println()
+			return nil
+		}
+		bytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		body := string(bytes)
+		fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
 		return nil
 	},
 }
