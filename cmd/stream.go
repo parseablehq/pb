@@ -275,6 +275,7 @@ var ListStreamCmd = &cobra.Command{
 
 			for _, item := range items {
 				item := StreamListItem{item["name"]}
+				fmt.Print("• ")
 				fmt.Println(item.Render())
 			}
 			fmt.Println()
