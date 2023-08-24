@@ -6,6 +6,7 @@ LDFLAGS := $(shell go run buildscripts/gen-ldflags.go $(VERSION))
 
 GOARCH := $(shell go env GOARCH)
 GOOS := $(shell go env GOOS)
+GO111MODULE=on
 
 all: build
 
@@ -14,6 +15,7 @@ checks:
 	@(env bash $(PWD)/buildscripts/checkdeps.sh)
 
 getdeps:
+	@GO111MODULE=on
 	@mkdir -p ${GOPATH}/bin
 	@echo "Installing golangci-lint" && curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOPATH)/bin
 	@echo "Installing stringer" && go install -v golang.org/x/tools/cmd/stringer@latest
@@ -41,9 +43,9 @@ build: checks
 	@echo "Building pb binary to './pb'"
 	@GO111MODULE=on CGO_ENABLED=0 go build -trimpath -tags kqueue --ldflags "$(LDFLAGS)" -o $(PWD)/pb
 
-build-release: checks
+# Build pb for all supported platforms.
+build-release: verifiers crosscompile
 	@echo "Building release for version $(VERSION)"
-	@(env bash $(PWD)/buildscripts/cross-compile.sh $(VERSION))
 
 # Builds pb and installs it to $GOPATH/bin.
 install: build

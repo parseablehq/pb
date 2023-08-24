@@ -279,16 +279,13 @@ var ListStreamCmd = &cobra.Command{
 			}
 			fmt.Println()
 			return nil
-
-		} else {
-			bytes, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
-			body := string(bytes)
-			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
 		}
-
+		bytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		body := string(bytes)
+		fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
 		return nil
 	},
 }
