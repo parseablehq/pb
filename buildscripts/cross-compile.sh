@@ -44,6 +44,7 @@ function _build() {
         export GOARCH=$arch
         printf -- "Building release binary for --> %s:%s\n" "${os}" "${arch}"
         go build -trimpath -tags kqueue --ldflags "${ldflags[@]}" -o "$(PWD)"/bin/pb_"${os}"_"${arch}"
+        shasum -a 256 "$(PWD)"/bin/pb_"${os}"_"${arch}" >"$(PWD)"/bin/pb_"${os}"_"${arch}".sha256
     done
 }
 

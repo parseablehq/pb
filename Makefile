@@ -45,7 +45,7 @@ build: checks
 
 # Build pb for all supported platforms.
 build-release: verifiers crosscompile
-	@echo "Building release for version $(VERSION)"
+	@echo "Built releases for version $(VERSION)" 
 
 # Builds pb and installs it to $GOPATH/bin.
 install: build
