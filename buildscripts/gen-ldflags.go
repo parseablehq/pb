@@ -28,7 +28,7 @@ import (
 func genLDFlags(version string) string {
 	var ldflagsStr string
 	ldflagsStr = "-s -w -X main.Version=" + version + " "
-	ldflagsStr = ldflagsStr + "-X main.Commit=" + commitID()[:12]
+	ldflagsStr = ldflagsStr + "-X main.Commit=" + commitID()[:6]
 	return ldflagsStr
 }
 
@@ -50,12 +50,9 @@ func commitID() string {
 }
 
 func main() {
-	var version string
-	if len(os.Args) > 1 {
-		version = os.Args[1]
-	} else {
+	version, ok := os.LookupEnv("VERSION")
+	if !ok {
 		version = "v0.0.0/DEVELOPMENT"
 	}
-
 	fmt.Println(genLDFlags(version))
 }

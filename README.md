@@ -1,12 +1,12 @@
-## PB
+## pb
 
-PB (short for Parseable) is a command line interface for [Parseable Server](https://github.com/parseablehq/parseable). PB allows you to manage Streams, Users, and Data on Parseable Server. You can use PB to manage multiple Parseable Server instances using Profiles.
+pb (short for Parseable) is a command line interface for [Parseable Server](https://github.com/parseablehq/parseable). pb allows you to manage Streams, Users, and Data on Parseable Server. You can use pb to manage multiple Parseable Server instances using Profiles.
 
 ### Installation
 
-PB is available as a single, self contained binary for Mac, Linux, and Windows. You can download the latest version from the [releases page](https://github.com/parseablehq/pb/releases/latest).
+pb is available as a single, self contained binary for Mac, Linux, and Windows. You can download the latest version from the [releases page](https://github.com/parseablehq/pb/releases/latest).
 
-To install PB, download the binary for your platform and place it in a directory that is in your $PATH. For example, on Mac you can place the binary in `/usr/local/bin`.
+To install pb, download the binary for your platform and place it in a directory that is in your $PATH. For example, on Mac you can place the binary in `/usr/local/bin`.
 
 ![pb query](https://github.com/parseablehq/.github/blob/main/images/pb.png?raw=true)
 

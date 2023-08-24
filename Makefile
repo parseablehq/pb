@@ -41,6 +41,10 @@ build: checks
 	@echo "Building pb binary to './pb'"
 	@GO111MODULE=on CGO_ENABLED=0 go build -trimpath -tags kqueue --ldflags "$(LDFLAGS)" -o $(PWD)/pb
 
+build-release: checks
+	@echo "Building release for version $(VERSION)"
+	@(env bash $(PWD)/buildscripts/cross-compile.sh $(VERSION))
+
 # Builds pb and installs it to $GOPATH/bin.
 install: build
 	@echo "Installing pb binary to '$(GOPATH)/bin/pb'"

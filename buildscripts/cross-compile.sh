@@ -30,26 +30,26 @@ function _init() {
 }
 
 function _build() {
-    local osarch=$1
-    IFS=/ read -r -a arr <<<"$osarch"
-    os="${arr[0]}"
-    arch="${arr[1]}"
-    package=$(go list -f '{{.ImportPath}}')
-    printf -- "--> %15s:%s\n" "${osarch}" "${package}"
+    local ldflags=("$@")
 
     # Go build to build the binary.
-    export GOOS=$os
-    export GOARCH=$arch
     export GO111MODULE=on
     export CGO_ENABLED=0
-    go build -tags kqueue -o /dev/null
+    
+    for osarch in ${SUPPORTED_OSARCH}; do
+        IFS=/ read -r -a arr <<<"$osarch"
+        os="${arr[0]}"
+        arch="${arr[1]}"
+        export GOOS=$os
+        export GOARCH=$arch
+        printf -- "Building release binary for --> %s:%s\n" "${os}" "${arch}"
+        go build -trimpath -tags kqueue --ldflags "${ldflags[@]}" -o "$(PWD)"/bin/pb_"${os}"_"${arch}"
+    done
 }
 
 function main() {
-    echo "Testing builds for OS/Arch: ${SUPPORTED_OSARCH}"
-    for each_osarch in ${SUPPORTED_OSARCH}; do
-        _build "${each_osarch}"
-    done
+    ldflags=/ read -r arr <<<"$(go run "$(PWD)"/buildscripts/gen-ldflags.go)"
+    _build "${arr[@]}"
 }
 
 _init && main "$@"
