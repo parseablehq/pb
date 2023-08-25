@@ -55,13 +55,12 @@ func defaultInitialProfile() config.Profile {
 var cli = &cobra.Command{
 	Use:   "pb",
 	Short: "\nParseable command line interface",
-	Long:  "\npb is a command line interface for Parseable",
+	Long:  "\npb is the command line interface for Parseable",
 	RunE: func(command *cobra.Command, args []string) error {
 		if p, _ := command.Flags().GetBool(versionFlag); p {
 			cmd.PrintVersion(Version, Commit)
 			return nil
 		}
-
 		return errors.New("no command or flag supplied")
 	},
 }
@@ -127,7 +126,7 @@ func main() {
 	stream.AddCommand(cmd.ListStreamCmd)
 	stream.AddCommand(cmd.StatStreamCmd)
 
-	query.PersistentFlags().StringP(durationFlag, durationFlagShort, defaultDuration, "specify the duration in minutes for which queries should be executed. Defaults to 10")
+	query.PersistentFlags().StringP(durationFlag, durationFlagShort, defaultDuration, "specify the duration in minutes for which queries should be executed. Defaults to 10 minutes")
 
 	cli.AddCommand(profile)
 	cli.AddCommand(query)
