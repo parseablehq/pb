@@ -6,7 +6,13 @@ pb (short for Parseable) is a command line interface for [Parseable Server](http
 
 pb is available as a single, self contained binary for Mac, Linux, and Windows. You can download the latest version from the [releases page](https://github.com/parseablehq/pb/releases/latest).
 
-To install pb, download the binary for your platform and place it in a directory that is in your $PATH. For example, on Mac you can place the binary in `/usr/local/bin`.
+To install pb, download the binary for your platform and place it in a directory that is in your `$PATH`. For example, on Linux follow these steps:
+
+```bash
+wget https://github.com/parseablehq/pb/releases/download/v0.1.0/pb_linux_amd64 -O pb
+chmod +x pb && mv pb /usr/local/bin
+pb query backend
+```
 
 ![pb query](https://github.com/parseablehq/.github/blob/main/images/pb.png?raw=true)
 
