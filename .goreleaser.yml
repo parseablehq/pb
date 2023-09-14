@@ -1,0 +1,50 @@
+env:
+  - GO111MODULE=on
+  - CGO_ENABLED=0
+
+builds:
+  - binary: pb
+    id: pb
+    main: ./main.go
+    goos:
+      - windows
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+      - -tags=kqueue
+    ldflags:
+      - -s -w -X main.Version={{ .Version }} -X main.Commit={{ .ShortCommit }}
+
+archives:
+  - format: tar.gz
+    rlcp: true
+    files:
+      - README.md
+      - LICENSE
+
+dockers:
+  - id: pb
+    goos: linux
+    goarch: amd64
+    ids:
+      - pb
+    image_templates:
+      - "parseablehq/pb:{{ .Tag }}"
+      - "parseablehq/pb:latest"
+    skip_push: false
+    dockerfile: Dockerfile
+    use: docker
+    build_flag_templates:
+      - "--pull"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title=Parseable"
+      - "--label=maintainer=Parseable Team <hi@parseable.io>"
+      - "--label=org.opencontainers.image.vendor=Cloudnatively Pvt Ltd"
+      - "--label=org.opencontainers.image.licenses=AGPL-3.0"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--platform=linux/amd64"
