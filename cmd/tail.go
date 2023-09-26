@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"pb/pkg/config"
 	"strconv"
 	"time"
@@ -55,15 +56,15 @@ func tail(profile config.Profile, stream string) error {
 	}
 
 	for true {
-		// if records.Next() {
-		// 	fmt.Println("here")
-		// 	record, err := records.Read()
-		// 	if err != nil {
-		// 		return err
-		// 	}
-		// 	recs := toPretty(*record.Schema(), record)
-		// 	fmt.Println(recs)
-		// }
+		if records.Next() {
+			fmt.Println("here")
+			record, err := records.Read()
+			if err != nil {
+				return err
+			}
+			recs := toPretty(*record.Schema(), record)
+			fmt.Println(recs)
+		}
 	}
 
 	defer records.Release()
