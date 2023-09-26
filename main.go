@@ -78,6 +78,13 @@ var user = &cobra.Command{
 	PersistentPreRunE: cmd.PreRunDefaultProfile,
 }
 
+var role = &cobra.Command{
+	Use:               "role",
+	Short:             "Manage roles",
+	Long:              "\nuser command is used to manage roles.",
+	PersistentPreRunE: cmd.PreRunDefaultProfile,
+}
+
 var stream = &cobra.Command{
 	Use:               "stream",
 	Short:             "Manage streams",
@@ -121,6 +128,10 @@ func main() {
 	user.AddCommand(cmd.RemoveUserCmd)
 	user.AddCommand(cmd.ListUserCmd)
 
+	role.AddCommand(cmd.AddRoleCmd)
+	role.AddCommand(cmd.RemoveRoleCmd)
+	role.AddCommand(cmd.ListRoleCmd)
+
 	stream.AddCommand(cmd.AddStreamCmd)
 	stream.AddCommand(cmd.RemoveStreamCmd)
 	stream.AddCommand(cmd.ListStreamCmd)
@@ -132,6 +143,7 @@ func main() {
 	cli.AddCommand(query)
 	cli.AddCommand(stream)
 	cli.AddCommand(user)
+	cli.AddCommand(role)
 
 	// Set as command
 	cmd.VersionCmd.Run = func(_ *cobra.Command, args []string) {
