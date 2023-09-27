@@ -24,6 +24,10 @@ import (
 	"net/http"
 	"os"
 	"pb/pkg/config"
+	"pb/pkg/iterator"
+	"regexp"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -92,6 +96,11 @@ var (
 		key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl r", "(re) run query")),
 	}
 
+	pagiatorKeyBinds = []key.Binding{
+		key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl r", "Fetch Next Minute")),
+		key.NewBinding(key.WithKeys("ctrl+b"), key.WithHelp("ctrl b", "Fetch Prev Minute")),
+	}
+
 	QueryNavigationMap = []string{"query", "time", "table"}
 )
 
@@ -117,16 +126,17 @@ const (
 )
 
 type QueryModel struct {
-	width     int
-	height    int
-	table     table.Model
-	query     textarea.Model
-	timeRange TimeInputModel
-	profile   config.Profile
-	help      help.Model
-	status    StatusBar
-	overlay   uint
-	focused   int
+	width         int
+	height        int
+	table         table.Model
+	query         textarea.Model
+	timeRange     TimeInputModel
+	profile       config.Profile
+	help          help.Model
+	status        StatusBar
+	queryIterator *iterator.QueryIterator[QueryData, FetchResult]
+	overlay       uint
+	focused       int
 }
 
 func (m *QueryModel) focusSelected() {
@@ -143,6 +153,47 @@ func (m *QueryModel) focusSelected() {
 
 func (m *QueryModel) currentFocus() string {
 	return QueryNavigationMap[m.focused]
+}
+
+func (m *QueryModel) initIterator() {
+	iter := createIteratorFromModel(m)
+	m.queryIterator = iter
+}
+
+func createIteratorFromModel(m *QueryModel) *iterator.QueryIterator[QueryData, FetchResult] {
+	startTime := m.timeRange.start.Time()
+	endTime := m.timeRange.end.Time()
+
+	startTime = startTime.Truncate(time.Minute)
+	endTime = endTime.Truncate(time.Minute).Add(time.Minute)
+
+	regex := regexp.MustCompile(`^select\s+(?:\*|\w+(?:,\s*\w+)*)\s+from\s+(\w+)(?:\s+;)?$`)
+	matches := regex.FindStringSubmatch(m.query.Value())
+	if matches == nil {
+		return nil
+	}
+	table := matches[1]
+	iter := iterator.NewQueryIterator(
+		startTime, endTime,
+		false,
+		func(t1, t2 time.Time) (QueryData, FetchResult) {
+			client := &http.Client{
+				Timeout: time.Second * 50,
+			}
+			return fetchData(client, &m.profile, m.query.Value(), t1.UTC().Format(time.RFC3339), t2.UTC().Format(time.RFC3339))
+		},
+		func(t1, t2 time.Time) bool {
+			client := &http.Client{
+				Timeout: time.Second * 50,
+			}
+			res, err := fetchData(client, &m.profile, "select count(*) as count from "+table, m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
+			if err == fetchErr {
+				return false
+			}
+			count := res.Records[0]["count"].(float64)
+			return count > 0
+		})
+	return &iter
 }
 
 func NewQueryModel(profile config.Profile, stream string, duration uint) QueryModel {
@@ -184,22 +235,40 @@ func NewQueryModel(profile config.Profile, stream string, duration uint) QueryMo
 	help := help.New()
 	help.Styles.FullDesc = lipgloss.NewStyle().Foreground(FocusSecondry)
 
-	return QueryModel{
-		width:     w,
-		height:    h,
-		table:     table,
-		query:     query,
-		timeRange: inputs,
-		overlay:   overlayNone,
-		profile:   profile,
-		help:      help,
-		status:    NewStatusBar(profile.URL, stream, w),
+	model := QueryModel{
+		width:         w,
+		height:        h,
+		table:         table,
+		query:         query,
+		timeRange:     inputs,
+		overlay:       overlayNone,
+		profile:       profile,
+		help:          help,
+		queryIterator: nil,
+		status:        NewStatusBar(profile.URL, stream, w),
 	}
+	model.queryIterator = createIteratorFromModel(&model)
+	return model
 }
 
 func (m QueryModel) Init() tea.Cmd {
-	// Just return `nil`, which means "no I/O right now, please."
-	return NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
+	return func() tea.Msg {
+		var ready sync.WaitGroup
+		ready.Add(1)
+		go func() {
+			m.initIterator()
+			for !m.queryIterator.Ready() {
+				time.Sleep(time.Millisecond * 100)
+			}
+			ready.Done()
+		}()
+		ready.Wait()
+		if m.queryIterator.Finished() {
+			return nil
+		}
+
+		return IteratorNext(m.queryIterator)()
+	}
 }
 
 func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -256,7 +325,21 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// common keybind
 		if msg.Type == tea.KeyCtrlR {
 			m.overlay = overlayNone
-			return m, NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
+			if m.queryIterator == nil {
+				return m, NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
+			}
+			if m.queryIterator.Ready() && !m.queryIterator.Finished() {
+				return m, IteratorNext(m.queryIterator)
+			}
+			return m, nil
+		}
+
+		if msg.Type == tea.KeyCtrlB {
+			m.overlay = overlayNone
+			if m.queryIterator.CanFetchPrev() {
+				return m, IteratorPrev(m.queryIterator)
+			}
+			return m, nil
 		}
 
 		switch msg.Type {
@@ -269,12 +352,14 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch m.currentFocus() {
 				case "query":
 					m.query, cmd = m.query.Update(msg)
+					m.initIterator()
 				case "table":
 					m.table, cmd = m.table.Update(msg)
 				}
 				cmds = append(cmds, cmd)
 			case overlayInputs:
 				m.timeRange, cmd = m.timeRange.Update(msg)
+				m.initIterator()
 				cmds = append(cmds, cmd)
 			}
 		}
@@ -314,12 +399,33 @@ func (m QueryModel) View() string {
 			BorderForeground(FocusPrimary)
 	}
 
+	mainViewRenderElements := []string{lipgloss.JoinHorizontal(lipgloss.Top, queryOuter.Render(m.query.View()), timeOuter.Render(time)), tableOuter.Render(m.table.View())}
+
+	if m.queryIterator != nil {
+		inactiveStyle := lipgloss.NewStyle().Foreground(StandardPrimary)
+		activeStyle := lipgloss.NewStyle().Foreground(FocusPrimary)
+		var line strings.Builder
+
+		if m.queryIterator.CanFetchPrev() {
+			line.WriteString(activeStyle.Render("<<"))
+		} else {
+			line.WriteString(inactiveStyle.Render("<<"))
+		}
+
+		fmt.Fprintf(&line, " %d of many ", m.table.TotalRows())
+
+		if m.queryIterator.Ready() && !m.queryIterator.Finished() {
+			line.WriteString(activeStyle.Render(">>"))
+		} else {
+			line.WriteString(inactiveStyle.Render(">>"))
+		}
+
+		mainViewRenderElements = append(mainViewRenderElements, line.String())
+	}
+
 	switch m.overlay {
 	case overlayNone:
-		mainView = lipgloss.JoinVertical(lipgloss.Left,
-			lipgloss.JoinHorizontal(lipgloss.Top, queryOuter.Render(m.query.View()), timeOuter.Render(time)),
-			tableOuter.Render(m.table.View()),
-		)
+		mainView = lipgloss.JoinVertical(lipgloss.Left, mainViewRenderElements...)
 		switch m.currentFocus() {
 		case "query":
 			helpKeys = TextAreaHelpKeys{}.FullHelp()
@@ -334,7 +440,13 @@ func (m QueryModel) View() string {
 		mainView = m.timeRange.View()
 		helpKeys = m.timeRange.FullHelp()
 	}
-	helpKeys = append(helpKeys, additionalKeyBinds)
+
+	if m.queryIterator != nil {
+		helpKeys = append(helpKeys, pagiatorKeyBinds)
+	} else {
+		helpKeys = append(helpKeys, additionalKeyBinds)
+	}
+
 	helpView = m.help.FullHelpView(helpKeys)
 
 	helpHeight := lipgloss.Height(helpView)
@@ -366,6 +478,46 @@ func NewFetchTask(profile config.Profile, query string, startTime string, endTim
 		}
 
 		data, status := fetchData(client, &profile, query, startTime, endTime)
+
+		if status == fetchOk {
+			res.data = data.Records
+			res.schema = data.Fields
+			res.status = fetchOk
+		}
+
+		return res
+	}
+}
+
+func IteratorNext(iter *iterator.QueryIterator[QueryData, FetchResult]) func() tea.Msg {
+	return func() tea.Msg {
+		res := FetchData{
+			status: fetchErr,
+			schema: []string{},
+			data:   []map[string]interface{}{},
+		}
+
+		data, status := iter.Next()
+
+		if status == fetchOk {
+			res.data = data.Records
+			res.schema = data.Fields
+			res.status = fetchOk
+		}
+
+		return res
+	}
+}
+
+func IteratorPrev(iter *iterator.QueryIterator[QueryData, FetchResult]) func() tea.Msg {
+	return func() tea.Msg {
+		res := FetchData{
+			status: fetchErr,
+			schema: []string{},
+			data:   []map[string]interface{}{},
+		}
+
+		data, status := iter.Prev()
 
 		if status == fetchOk {
 			res.data = data.Records
