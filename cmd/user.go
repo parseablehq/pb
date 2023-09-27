@@ -22,7 +22,6 @@ import (
 	"io"
 	"os"
 	"pb/pkg/model/role"
-	"strings"
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -31,41 +30,12 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-type RoleResource struct {
-	Stream string `json:"stream,omitempty"`
-	Tag    string `json:"tag,omitempty"`
+type UserData struct {
+	ID     string `json:"id"`
+	Method string `json:"method"`
 }
 
-type UserRoleData struct {
-	Privilege string        `json:"privilege"`
-	Resource  *RoleResource `json:"resource,omitempty"`
-}
-
-func (user *UserRoleData) Render() string {
-	var s strings.Builder
-	s.WriteString(standardStyle.Render("Privilege: "))
-	s.WriteString(standardStyleAlt.Render(user.Privilege))
-	s.WriteString("\n")
-	if user.Resource != nil {
-		if user.Resource.Stream != "" {
-			s.WriteString(standardStyle.Render("Stream:    "))
-			s.WriteString(standardStyleAlt.Render(user.Resource.Stream))
-			s.WriteString("\n")
-		}
-		if user.Resource.Tag != "" {
-			s.WriteString(standardStyle.Render("Tag:       "))
-			s.WriteString(standardStyleAlt.Render(user.Resource.Tag))
-			s.WriteString("\n")
-		}
-	}
-
-	return s.String()
-}
-
-type FetchUserRoleRes struct {
-	data []UserRoleData
-	err  error
-}
+type UserRoleData map[string][]RoleData
 
 var AddUserCmd = &cobra.Command{
 	Use:     "add user-name",
@@ -75,13 +45,15 @@ var AddUserCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
-		var users []string
 		client := DefaultClient()
-		if err := fetchUsers(&client, &users); err != nil {
+		users, err := fetchUsers(&client)
+		if err != nil {
 			return err
 		}
 
-		if slices.Contains(users, name) {
+		if slices.ContainsFunc(users, func(user UserData) bool {
+			return user.ID == name
+		}) {
 			fmt.Println("user already exists")
 			return nil
 		}
@@ -93,9 +65,7 @@ var AddUserCmd = &cobra.Command{
 		}
 		m := _m.(role.Model)
 
-		privilege := m.Selection.Value()
-		stream := m.Stream.Value()
-		tag := m.Tag.Value()
+		roles := m.Selection.Value()
 
 		if !m.Success {
 			fmt.Println("aborted by user")
@@ -103,28 +73,9 @@ var AddUserCmd = &cobra.Command{
 		}
 
 		var putBody io.Reader
+		roleDataJSON, _ := json.Marshal([]string{roles})
+		putBody = bytes.NewBuffer(roleDataJSON)
 
-		// set role
-		if privilege != "none" {
-			roleData := UserRoleData{
-				Privilege: privilege,
-			}
-			switch privilege {
-			case "writer":
-				roleData.Resource = &RoleResource{
-					Stream: stream,
-				}
-			case "reader":
-				roleData.Resource = &RoleResource{
-					Stream: stream,
-				}
-				if tag != "" {
-					roleData.Resource.Tag = tag
-				}
-			}
-			roleDataJSON, _ := json.Marshal([]UserRoleData{roleData})
-			putBody = bytes.NewBuffer(roleDataJSON)
-		}
 		req, err := client.NewRequest("PUT", "user/"+name, putBody)
 		if err != nil {
 			return err
@@ -193,23 +144,26 @@ var ListUserCmd = &cobra.Command{
 	Short:   "List all users",
 	Example: "  pb user list",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var users []string
 		client := DefaultClient()
-		err := fetchUsers(&client, &users)
+		users, err := fetchUsers(&client)
 		if err != nil {
 			return err
 		}
 
-		roleResponses := make([]FetchUserRoleRes, len(users))
+		roleResponses := make([]struct {
+			data UserRoleData
+			err  error
+		}, len(users))
+
 		wsg := sync.WaitGroup{}
-		wsg.Add(len(users))
 
 		for idx, user := range users {
-			idx := idx
-			user := user
+			wsg.Add(1)
+			out := &roleResponses[idx]
+			user := user.ID
 			client := &client
 			go func() {
-				roleResponses[idx] = fetchUserRoles(client, user)
+				out.data, out.err = fetchUserRoles(client, user)
 				wsg.Done()
 			}()
 		}
@@ -219,10 +173,10 @@ var ListUserCmd = &cobra.Command{
 		for idx, user := range users {
 			roles := roleResponses[idx]
 			fmt.Print("• ")
-			fmt.Println(standardStyleBold.Bold(true).Render(user))
+			fmt.Println(standardStyleBold.Bold(true).Render(user.ID))
 			if roles.err == nil {
-				for _, role := range roles.data {
-					fmt.Println(lipgloss.NewStyle().PaddingLeft(3).Render(role.Render()))
+				for role := range roles.data {
+					fmt.Println(lipgloss.NewStyle().PaddingLeft(3).Render(role))
 				}
 			} else {
 				fmt.Println(roles.err)
@@ -233,37 +187,38 @@ var ListUserCmd = &cobra.Command{
 	},
 }
 
-func fetchUsers(client *HTTPClient, data *[]string) error {
+func fetchUsers(client *HTTPClient) (res []UserData, err error) {
 	req, err := client.NewRequest("GET", "user", nil)
 	if err != nil {
-		return err
+		return
 	}
 
 	resp, err := client.client.Do(req)
 	if err != nil {
-		return err
+		return
 	}
 
 	bytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 200 {
-		err = json.Unmarshal(bytes, data)
+		err = json.Unmarshal(bytes, &res)
 		if err != nil {
-			return err
+			return
 		}
 	} else {
 		body := string(bytes)
-		return fmt.Errorf("request failed\nstatus code: %s\nresponse: %s", resp.Status, body)
+		err = fmt.Errorf("request failed\nstatus code: %s\nresponse: %s", resp.Status, body)
+		return
 	}
 
-	return nil
+	return
 }
 
-func fetchUserRoles(client *HTTPClient, user string) (res FetchUserRoleRes) {
+func fetchUserRoles(client *HTTPClient, user string) (res UserRoleData, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("user/%s/role", user), nil)
 	if err != nil {
 		return
@@ -278,6 +233,6 @@ func fetchUserRoles(client *HTTPClient, user string) (res FetchUserRoleRes) {
 	}
 	defer resp.Body.Close()
 
-	res.err = json.Unmarshal(body, &res.data)
+	err = json.Unmarshal(body, &res)
 	return
 }
