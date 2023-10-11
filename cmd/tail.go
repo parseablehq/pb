@@ -6,9 +6,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+
 	"pb/pkg/config"
 
-	"github.com/apache/arrow/go/arrow/flight"
+	"github.com/apache/arrow/go/v13/arrow/array"
+	"github.com/apache/arrow/go/v13/arrow/flight"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -35,7 +37,6 @@ func tail(profile config.Profile, stream string) error {
 		Stream: stream,
 	})
 	client, err := flight.NewClientWithMiddleware("localhost:8001", nil, nil, grpc.WithTransportCredentials(insecure.NewCredentials()))
-
 	if err != nil {
 		return err
 	}
@@ -52,27 +53,19 @@ func tail(profile config.Profile, stream string) error {
 	if err != nil {
 		return err
 	}
+	defer records.Release()
 
-	for true {
+	for {
 		if records.Next() {
 			record, err := records.Read()
 			if err != nil {
 				return err
 			}
-
 			var buf bytes.Buffer
-			enc := json.NewEncoder(&buf)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(record); err != nil {
-				panic(err)
-			}
-
+			array.RecordToJSON(record, &buf)
 			fmt.Println(buf.String())
 		}
 	}
-
-	defer records.Release()
-
 	return nil
 }
 
