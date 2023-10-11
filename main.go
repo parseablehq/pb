@@ -143,11 +143,8 @@ func main() {
 	cli.AddCommand(query)
 	cli.AddCommand(stream)
 	cli.AddCommand(user)
-<<<<<<< HEAD
 	cli.AddCommand(role)
-=======
 	cli.AddCommand(cmd.TailCmd)
->>>>>>> dc5392d (Add livetail support)
 
 	// Set as command
 	cmd.VersionCmd.Run = func(_ *cobra.Command, args []string) {

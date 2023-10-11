@@ -37,7 +37,12 @@ func tail(profile config.Profile, stream string) error {
 	}{
 		Stream: stream,
 	})
-	client, err := flight.NewClientWithMiddleware("localhost:7000", nil, nil, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := flight.NewClientWithMiddleware(
+		"localhost:8001",
+		nil,
+		nil,
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+
 	if err != nil {
 		return err
 	}
