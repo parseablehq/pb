@@ -144,6 +144,7 @@ func main() {
 	cli.AddCommand(stream)
 	cli.AddCommand(user)
 	cli.AddCommand(role)
+	cli.AddCommand(cmd.TailCmd)
 
 	// Set as command
 	cmd.VersionCmd.Run = func(_ *cobra.Command, args []string) {
