@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-
 	"pb/pkg/config"
 
 	"github.com/apache/arrow/go/v13/arrow/array"
@@ -56,17 +55,14 @@ func tail(profile config.Profile, stream string) error {
 	defer records.Release()
 
 	for {
-		if records.Next() {
-			record, err := records.Read()
-			if err != nil {
-				return err
-			}
-			var buf bytes.Buffer
-			array.RecordToJSON(record, &buf)
-			fmt.Println(buf.String())
+		record, err := records.Read()
+		if err != nil {
+			return err
 		}
+		var buf bytes.Buffer
+		array.RecordToJSON(record, &buf)
+		fmt.Println(buf.String())
 	}
-	return nil
 }
 
 func basicAuth(username, password string) string {
