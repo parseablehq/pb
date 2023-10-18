@@ -22,7 +22,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-
 	"pb/pkg/config"
 
 	"github.com/apache/arrow/go/v13/arrow/array"
@@ -52,7 +51,16 @@ func tail(profile config.Profile, stream string) error {
 	}{
 		Stream: stream,
 	})
-	client, err := flight.NewClientWithMiddleware("localhost:8001", nil, nil, grpc.WithTransportCredentials(insecure.NewCredentials()))
+
+	// get grpc url for this request
+	httpClient := DefaultClient()
+	about, err := FetchAbout(&httpClient)
+	if err != nil {
+		return err
+	}
+	url := profile.GrpcAddr(fmt.Sprint(about.GrpcPort))
+
+	client, err := flight.NewClientWithMiddleware(url, nil, nil, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
 	}
