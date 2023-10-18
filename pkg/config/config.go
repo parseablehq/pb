@@ -18,6 +18,8 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	path "path/filepath"
 
@@ -49,6 +51,11 @@ type Profile struct {
 	URL      string
 	Username string
 	Password string
+}
+
+func (p *Profile) GrpcAddr(port string) string {
+	urlv, _ := url.Parse(p.URL)
+	return net.JoinHostPort(urlv.Hostname(), port)
 }
 
 // WriteConfigToFile writes the configuration to the config file

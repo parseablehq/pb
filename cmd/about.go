@@ -30,6 +30,7 @@ type About struct {
 	Mode            string `json:"mode"`
 	Staging         string `json:"staging"`
 	Store           string `json:"store"`
+	GrpcPort        uint16 `json:"grpcPort"`
 	UpdateAvailable bool   `json:"updateAvailable"`
 	Version         string `json:"version"`
 }
