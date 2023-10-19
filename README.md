@@ -45,11 +45,30 @@ pb profile default local
 
 #### Query
 
-To query a stream, run:
+##### Interactive Mode
+
+To run query/view data in interactive TUI mode use
 
 ```bash
-pb query <stream-name>
+pb query i <stream-name> --duration=5
 ```
+
+##### Getting JSON output
+
+You can also query directly and output json data to stdout.
+
+```bash
+pb query "select * from table" --from=10m --to=now
+```
+
+or specifying time range in rfc3999
+
+```bash
+pb query "select * from table" --from=2023-01-00T01:40:00.000Z --to=2023-01-00T01:55:00.000Z
+```
+
+![note]
+Query command outputs data to stdout. Output json is not beautified. Use tool like `jq` to format and filter json output.
 
 ![pb query](https://github.com/parseablehq/.github/blob/main/images/pb/query.png?raw=true)
 
