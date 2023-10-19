@@ -18,14 +18,10 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"pb/cmd"
 	"pb/pkg/config"
-	"pb/pkg/model"
-	"strconv"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
@@ -36,11 +32,8 @@ var (
 )
 
 var (
-	durationFlag      = "duration"
-	durationFlagShort = "d"
-	versionFlag       = "version"
-	versionFlagShort  = "v"
-	defaultDuration   = "10"
+	versionFlag      = "version"
+	versionFlagShort = "v"
 )
 
 func defaultInitialProfile() config.Profile {
@@ -92,32 +85,6 @@ var stream = &cobra.Command{
 	PersistentPreRunE: cmd.PreRunDefaultProfile,
 }
 
-var query = &cobra.Command{
-	Use:     "query [stream-name] --duration 10",
-	Example: "  pb query frontend --duration 10",
-	Short:   "Open SQL query prompt",
-	Long:    "\nquery command is used to open a prompt to query a stream.",
-	Args:    cobra.ExactArgs(1),
-	PreRunE: cmd.PreRunDefaultProfile,
-	RunE: func(command *cobra.Command, args []string) error {
-		stream := args[0]
-		duration, _ := command.Flags().GetString(durationFlag)
-		if duration == "" {
-			duration = defaultDuration
-		}
-		durationInt, err := strconv.Atoi(duration)
-		if err != nil {
-			return err
-		}
-		p := tea.NewProgram(model.NewQueryModel(cmd.DefaultProfile, stream, uint(durationInt)), tea.WithAltScreen())
-		if _, err := p.Run(); err != nil {
-			fmt.Printf("there's been an error: %v", err)
-			os.Exit(1)
-		}
-		return nil
-	},
-}
-
 func main() {
 	profile.AddCommand(cmd.AddProfileCmd)
 	profile.AddCommand(cmd.RemoveProfileCmd)
@@ -137,10 +104,8 @@ func main() {
 	stream.AddCommand(cmd.ListStreamCmd)
 	stream.AddCommand(cmd.StatStreamCmd)
 
-	query.PersistentFlags().StringP(durationFlag, durationFlagShort, defaultDuration, "specify the duration in minutes for which queries should be executed. Defaults to 10 minutes")
-
 	cli.AddCommand(profile)
-	cli.AddCommand(query)
+	cli.AddCommand(cmd.QueryCmd)
 	cli.AddCommand(stream)
 	cli.AddCommand(user)
 	cli.AddCommand(role)
