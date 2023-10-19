@@ -85,8 +85,8 @@ var QueryInteractiveCmd = func() *cobra.Command {
 }()
 
 var QueryCmd = func() *cobra.Command {
-	queryJSON.Flags().StringP(startFlag, startFlagShort, defaultStart, "start time")
-	queryJSON.Flags().StringP(endFlag, endFlagShort, defaultEnd, "end time")
+	queryJSON.Flags().StringP(startFlag, startFlagShort, defaultStart, "Specify start datetime of query. Supports RFC3999 time format and durations (ex. 10m, 1hr ..) ")
+	queryJSON.Flags().StringP(endFlag, endFlagShort, defaultEnd, "Specify end datetime of query. Supports RFC3999 time format and literal - now ")
 	queryJSON.AddCommand(queryInteractive)
 	return queryJSON
 }()
