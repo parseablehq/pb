@@ -19,6 +19,7 @@ package main
 import (
 	"errors"
 	"os"
+
 	"pb/cmd"
 	"pb/pkg/config"
 
@@ -60,8 +61,8 @@ var cli = &cobra.Command{
 
 var profile = &cobra.Command{
 	Use:   "profile",
-	Short: "Manage profiles",
-	Long:  "\nuse profile command to configure (multiple) Parseable instances. Each profile takes a URL and credentials.",
+	Short: "Manage different Parseable targets",
+	Long:  "\nuse profile command to configure different Parseable instances. Each profile takes a URL and credentials.",
 }
 
 var user = &cobra.Command{

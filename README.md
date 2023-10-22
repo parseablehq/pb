@@ -1,8 +1,8 @@
 ## pb
 
-pb is the command line interface for [Parseable Server](https://github.com/parseablehq/parseable). pb allows you to manage Streams, Users, and Data on Parseable Server. You can use pb to manage multiple Parseable Server instances using Profiles.
+Dashboard fatigue is one of key reasons for poor adoption of logging tools among developers. With pb, we intend to bring the familiar command line interface for querying and analyzing log data at scale.
 
-We believe dashboard fatigue is one of key reasons for poor adoption of logging tools among developers. With pb, we intend to bring the familiar command line interface for querying and analyzing log data at scale.
+pb is the command line interface for [Parseable Server](https://github.com/parseablehq/parseable). pb allows you to manage Streams, Users, and Data on Parseable Server. You can use pb to manage multiple Parseable Server instances using Profiles.
 
 ![pb banner](https://github.com/parseablehq/.github/blob/main/images/pb/pb.png?raw=true)
 
@@ -22,7 +22,7 @@ chmod +x pb && mv pb /usr/local/bin
 pb comes configured with `demo` profile as the default. This means you can directly start using pb against the [demo Parseable Server](https://demo.parseable.io). For example, to query the stream `backend` on demo server, run:
 
 ```bash
-pb query backend
+pb query backend    
 ```
 
 #### Profiles

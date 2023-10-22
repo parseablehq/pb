@@ -32,10 +32,6 @@ var (
 			Background(lipgloss.AdaptiveColor{Light: "#13315C", Dark: "#FFD6A5"}).
 			Padding(0, 1)
 
-	streamStyle = commonStyle.Copy().
-			Background(lipgloss.AdaptiveColor{Light: "#0B2545", Dark: "#FDFFB6"}).
-			Padding(0, 1)
-
 	infoStyle = commonStyle.Copy().
 			Background(lipgloss.AdaptiveColor{Light: "#212529", Dark: "#CAFFBF"}).
 			AlignHorizontal(lipgloss.Right)
@@ -46,22 +42,20 @@ var (
 )
 
 type StatusBar struct {
-	title  string
-	host   string
-	stream string
-	Info   string
-	Error  string
-	width  int
+	title string
+	host  string
+	Info  string
+	Error string
+	width int
 }
 
-func NewStatusBar(host string, stream string, width int) StatusBar {
+func NewStatusBar(host string, width int) StatusBar {
 	return StatusBar{
-		title:  "Parseable",
-		host:   host,
-		stream: stream,
-		Info:   "",
-		Error:  "",
-		width:  width,
+		title: "Parseable",
+		host:  host,
+		Info:  "",
+		Error: "",
+		width: width,
 	}
 }
 
@@ -85,7 +79,7 @@ func (m StatusBar) View() string {
 		rightStyle = infoStyle
 	}
 
-	left := lipgloss.JoinHorizontal(lipgloss.Bottom, titleStyle.Render(m.title), hostStyle.Render(m.host), streamStyle.Render(m.stream))
+	left := lipgloss.JoinHorizontal(lipgloss.Bottom, titleStyle.Render(m.title), hostStyle.Render(m.host))
 
 	leftWidth := lipgloss.Width(left)
 	rightWidth := m.width - leftWidth

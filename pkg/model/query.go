@@ -23,12 +23,13 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"pb/pkg/config"
-	"pb/pkg/iterator"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"pb/pkg/config"
+	"pb/pkg/iterator"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -49,8 +50,8 @@ const (
 
 // Style for this widget
 var (
-	FocusPrimary  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
-	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
+	FocusPrimary   = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
+	FocusSecondary = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
 
 	StandardPrimary   = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
 	StandardSecondary = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
@@ -67,7 +68,7 @@ var (
 
 	baseStyle               = lipgloss.NewStyle().BorderForeground(StandardPrimary)
 	baseBoldUnderlinedStyle = lipgloss.NewStyle().BorderForeground(StandardPrimary).Bold(true)
-	headerStyle             = lipgloss.NewStyle().Inherit(baseStyle).Foreground(FocusSecondry).Bold(true)
+	headerStyle             = lipgloss.NewStyle().Inherit(baseStyle).Foreground(FocusSecondary).Bold(true)
 	tableStyle              = lipgloss.NewStyle().Inherit(baseStyle).Align(lipgloss.Left)
 )
 
@@ -96,7 +97,7 @@ var (
 		key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl r", "(re) run query")),
 	}
 
-	pagiatorKeyBinds = []key.Binding{
+	paginatorKeyBinds = []key.Binding{
 		key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl r", "Fetch Next Minute")),
 		key.NewBinding(key.WithKeys("ctrl+b"), key.WithHelp("ctrl b", "Fetch Prev Minute")),
 	}
@@ -196,10 +197,10 @@ func createIteratorFromModel(m *QueryModel) *iterator.QueryIterator[QueryData, F
 	return &iter
 }
 
-func NewQueryModel(profile config.Profile, stream string, duration uint) QueryModel {
+func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime time.Time) QueryModel {
 	w, h, _ := term.GetSize(int(os.Stdout.Fd()))
 
-	inputs := NewTimeInputModel(duration)
+	inputs := NewTimeInputModel(startTime, endTime)
 
 	columns := []table.Column{
 		table.NewColumn("Id", "Id", 5),
@@ -228,12 +229,12 @@ func NewQueryModel(profile config.Profile, stream string, duration uint) QueryMo
 	query.SetHeight(2)
 	query.SetWidth(70)
 	query.ShowLineNumbers = true
-	query.SetValue(fmt.Sprintf("select * from %s", stream))
+	query.SetValue(queryStr)
 	query.KeyMap = textAreaKeyMap
 	query.Focus()
 
 	help := help.New()
-	help.Styles.FullDesc = lipgloss.NewStyle().Foreground(FocusSecondry)
+	help.Styles.FullDesc = lipgloss.NewStyle().Foreground(FocusSecondary)
 
 	model := QueryModel{
 		width:         w,
@@ -245,7 +246,7 @@ func NewQueryModel(profile config.Profile, stream string, duration uint) QueryMo
 		profile:       profile,
 		help:          help,
 		queryIterator: nil,
-		status:        NewStatusBar(profile.URL, stream, w),
+		status:        NewStatusBar(profile.URL, w),
 	}
 	model.queryIterator = createIteratorFromModel(&model)
 	return model
@@ -442,7 +443,7 @@ func (m QueryModel) View() string {
 	}
 
 	if m.queryIterator != nil {
-		helpKeys = append(helpKeys, pagiatorKeyBinds)
+		helpKeys = append(helpKeys, paginatorKeyBinds)
 	} else {
 		helpKeys = append(helpKeys, additionalKeyBinds)
 	}
