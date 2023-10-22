@@ -17,8 +17,9 @@
 package credential
 
 import (
-	"pb/pkg/model/button"
 	"strings"
+
+	"pb/pkg/model/button"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"

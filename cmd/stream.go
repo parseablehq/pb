@@ -150,7 +150,7 @@ var StatStreamCmd = &cobra.Command{
 			return err
 		}
 
-		isRententionSet := len(retention) > 0
+		isRetentionSet := len(retention) > 0
 
 		fmt.Println(styleBold.Render("\nInfo:"))
 		fmt.Printf("  Event Count:     %d\n", ingestionCount)
@@ -161,7 +161,7 @@ var StatStreamCmd = &cobra.Command{
 			100-(float64(storageSize)/float64(ingestionSize))*100, "%")
 		fmt.Println()
 
-		if isRententionSet {
+		if isRetentionSet {
 			fmt.Println(styleBold.Render("Retention:"))
 			for _, item := range retention {
 				fmt.Printf("  Action:    %s\n", styleBold.Render(item.Action))

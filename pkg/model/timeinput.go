@@ -18,8 +18,9 @@ package model
 
 import (
 	"fmt"
-	"pb/pkg/model/datetime"
 	"time"
+
+	"pb/pkg/model/datetime"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -115,14 +116,7 @@ func (m *TimeInputModel) currentFocus() string {
 }
 
 // NewTimeInputModel creates a new model
-func NewTimeInputModel(duration uint) TimeInputModel {
-	endTime := time.Now()
-	startTime := endTime.Add(TenMinute)
-
-	if duration != 0 {
-		startTime = endTime.Add(-(time.Duration(duration) * time.Minute))
-	}
-
+func NewTimeInputModel(startTime, endTime time.Time) TimeInputModel {
 	list := NewTimeRangeModel()
 	inputStyle := lipgloss.NewStyle().Inherit(baseStyle).Bold(true).Width(6).Align(lipgloss.Center)
 
