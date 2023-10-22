@@ -42,8 +42,8 @@ import (
 )
 
 const (
-	datetimeWidth = 26
-	datetimeKey   = "p_timestamp"
+	dateTimeWidth = 26
+	dateTimeKey   = "p_timestamp"
 	tagKey        = "p_tags"
 	metadataKey   = "p_metadata"
 )
@@ -567,14 +567,14 @@ func fetchData(client *http.Client, profile *config.Profile, query string, start
 
 func (m *QueryModel) UpdateTable(data FetchData) {
 	// pin p_timestamp to left if available
-	containsTimestamp := slices.Contains(data.schema, datetimeKey)
+	containsTimestamp := slices.Contains(data.schema, dateTimeKey)
 	containsTags := slices.Contains(data.schema, tagKey)
 	containsMetadata := slices.Contains(data.schema, metadataKey)
 	columns := make([]table.Column, len(data.schema))
 	columnIndex := 0
 
 	if containsTimestamp {
-		columns[0] = table.NewColumn(datetimeKey, datetimeKey, datetimeWidth)
+		columns[0] = table.NewColumn(dateTimeKey, dateTimeKey, dateTimeWidth)
 		columnIndex++
 	}
 
@@ -588,7 +588,7 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 
 	for _, title := range data.schema {
 		switch title {
-		case datetimeKey, tagKey, metadataKey:
+		case dateTimeKey, tagKey, metadataKey:
 			continue
 		default:
 			width := inferWidthForColumns(title, &data.data, 100, 100) + 1
