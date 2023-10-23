@@ -4,7 +4,7 @@ Dashboard fatigue is one of key reasons for poor adoption of logging tools among
 
 pb is the command line interface for [Parseable Server](https://github.com/parseablehq/parseable). pb allows you to manage Streams, Users, and Data on Parseable Server. You can use pb to manage multiple Parseable Server instances using Profiles.
 
-[![asciicast](https://asciinema.org/a/DRnnDIzSPRZlmcGfFLwsbdimC.svg)](https://asciinema.org/a/DRnnDIzSPRZlmcGfFLwsbdimC)
+[![asciicast](https://asciinema.org/a/DRnnDIzSPRZlmcGfFLwsbdimC.svg)](https://asciinema.org/a/DRnnDIzSPRZlmcGfFLwsbdimC?autoplay=1)
 
 ## Installation
 
