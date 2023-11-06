@@ -18,9 +18,8 @@ package model
 
 import (
 	"fmt"
-	"time"
-
 	"pb/pkg/model/datetime"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"

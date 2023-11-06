@@ -18,7 +18,6 @@ package defaultprofile
 import (
 	"fmt"
 	"io"
-
 	"pb/pkg/config"
 
 	"github.com/charmbracelet/bubbles/list"

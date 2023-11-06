@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-
 	"pb/pkg/config"
 	"pb/pkg/model/credential"
 	"pb/pkg/model/defaultprofile"

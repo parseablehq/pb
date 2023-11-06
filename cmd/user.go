@@ -21,9 +21,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sync"
-
 	"pb/pkg/model/role"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
