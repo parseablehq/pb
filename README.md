@@ -10,24 +10,19 @@ pb is the command line interface for [Parseable Server](https://github.com/parse
 
 pb is available as a single, self contained binary for Mac, Linux, and Windows. You can download the latest version from the [releases page](https://github.com/parseablehq/pb/releases/latest).
 
-To install pb, download the binary for your platform and place it in your `$PATH`. For example, on Linux:
-
-```bash
-wget https://github.com/parseablehq/pb/releases/download/v0.1.0/pb_linux_amd64 -O pb
-chmod +x pb && mv pb /usr/local/bin
-```
+To install pb, download the binary for your platform, un-tar the binary and place it in your `$PATH`.
 
 ## Usage
 
 pb is configured with `demo` profile as the default. This means you can directly start using pb against the [demo Parseable Server](https://demo.parseable.io). For example, to query:
 
 ```bash
-pb query -i    
+pb query -i
 ```
 
 ### Profiles
 
-To start using pb against your Parseable server, you need to create a profile (a profile is a set of credentials for a Parseable Server instance). You can create a profile using the `pb profile create` command. For example:
+To start using pb against your Parseable server, create a profile (a profile is a set of credentials for a Parseable Server instance). You can create a profile using the `pb profile create` command. For example:
 
 ```bash
 pb profile add local http://localhost:8000 admin admin
@@ -43,12 +38,14 @@ pb profile default local
 
 ### Query
 
+Query can be run in plaintext or interactive mode. Plaintext emits simple json data to stdout. Interactive mode opens a TUI based interface to view the data.
+
 #### Plaintext output
 
 By default `pb` sends json data to stdout.
 
 ```bash
-pb query "select * from backend" --from=10m --to=now
+pb query "select * from backend" --from=1m --to=now
 ```
 
 or specifying time range in rfc3999
@@ -57,19 +54,39 @@ or specifying time range in rfc3999
 pb query "select * from backend" --from=2023-01-00T01:40:00.000Z --to=2023-01-00T01:55:00.000Z
 ```
 
-Query command outputs data to stdout. Output json is not beautified. Use tool like `jq` to format and filter json output.
+You can use tools like `jq` and `grep` to further process and filter the output. Some examples:
 
 ```bash
-pb query "select * from backend" --from=10m --to=now | jq .
+pb query "select * from backend" --from=1m --to=now | jq .
+pb query "select host, id, method, status from backend where status = 500" --from=1m --to=now | jq . > 500.json
+pb query "select host, id, method, status from backend where status = 500" | jq '. | select(.method == "PATCH")'
+pb query "select host, id, method, status from backend where status = 500" --from=1m --to=now | grep "POST" | jq . | less
 ```
 
 #### Interactive mode
 
-To run query/view data in interactive TUI mode use
+To run queries in interactive TUI mode use the `-i` flag with the query command. For example:
 
 ```bash
-pb query "select * from backend" --from=10m --to=now -i
+pb query "select * from backend" --from=1m --to=now -i
 ```
+
+### Live Tail
+
+`pb` can be used to tail live data from Parseable Server. To tail live data, use the `pb tail` command. For example:
+
+```bash
+pb tail backend
+```
+
+You can also use the terminal tools like `jq` and `grep` to filter and process the tail output. Some examples:
+
+```bash
+pb tail backend | jq '. | select(.method == "PATCH")'
+pb tail backend | grep "POST" | jq .
+```
+
+To stop tailing, press `Ctrl+C`.
 
 ### Stream Management
 
