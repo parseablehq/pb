@@ -17,7 +17,7 @@ builds:
       - -trimpath
       - -tags=kqueue
     ldflags:
-      - -s -w -X main.Version={{ .Version }} -X main.Commit={{ .ShortCommit }}
+      - -s -w -X main.Version=v{{ .Version }} -X main.Commit={{ .ShortCommit }}
 
 archives:
   - format: tar.gz

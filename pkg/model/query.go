@@ -25,7 +25,6 @@ import (
 	"os"
 	"pb/pkg/config"
 	"pb/pkg/iterator"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -167,33 +166,31 @@ func createIteratorFromModel(m *QueryModel) *iterator.QueryIterator[QueryData, F
 	startTime = startTime.Truncate(time.Minute)
 	endTime = endTime.Truncate(time.Minute).Add(time.Minute)
 
-	regex := regexp.MustCompile(`^select\s+(?:\*|\w+(?:,\s*\w+)*)\s+from\s+(\w+)(?:\s+;)?$`)
-	matches := regex.FindStringSubmatch(m.query.Value())
-	if matches == nil {
-		return nil
+	table := streamNameFromQuery(m.query.Value())
+	if table != "" {
+		iter := iterator.NewQueryIterator(
+			startTime, endTime,
+			false,
+			func(t1, t2 time.Time) (QueryData, FetchResult) {
+				client := &http.Client{
+					Timeout: time.Second * 50,
+				}
+				return fetchData(client, &m.profile, m.query.Value(), t1.UTC().Format(time.RFC3339), t2.UTC().Format(time.RFC3339))
+			},
+			func(t1, t2 time.Time) bool {
+				client := &http.Client{
+					Timeout: time.Second * 50,
+				}
+				res, err := fetchData(client, &m.profile, "select count(*) as count from "+table, m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
+				if err == fetchErr {
+					return false
+				}
+				count := res.Records[0]["count"].(float64)
+				return count > 0
+			})
+		return &iter
 	}
-	table := matches[1]
-	iter := iterator.NewQueryIterator(
-		startTime, endTime,
-		false,
-		func(t1, t2 time.Time) (QueryData, FetchResult) {
-			client := &http.Client{
-				Timeout: time.Second * 50,
-			}
-			return fetchData(client, &m.profile, m.query.Value(), t1.UTC().Format(time.RFC3339), t2.UTC().Format(time.RFC3339))
-		},
-		func(t1, t2 time.Time) bool {
-			client := &http.Client{
-				Timeout: time.Second * 50,
-			}
-			res, err := fetchData(client, &m.profile, "select count(*) as count from "+table, m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
-			if err == fetchErr {
-				return false
-			}
-			count := res.Records[0]["count"].(float64)
-			return count > 0
-		})
-	return &iter
+	return nil
 }
 
 func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime time.Time) QueryModel {
@@ -652,4 +649,16 @@ func countDigits(num int) int {
 	// Using logarithm base 10 to calculate the number of digits
 	numDigits := int(math.Log10(math.Abs(float64(num)))) + 1
 	return numDigits
+}
+
+func streamNameFromQuery(query string) string {
+	stream := ""
+	tokens := strings.Split(query, " ")
+	for i, token := range tokens {
+		if token == "from" {
+			stream = tokens[i+1]
+			break
+		}
+	}
+	return stream
 }
