@@ -62,8 +62,8 @@ func (user *RoleData) Render() string {
 }
 
 var AddRoleCmd = &cobra.Command{
-	Use:     "upsert role-name",
-	Example: "  pb role upsert ingestors",
+	Use:     "add role-name",
+	Example: "  pb role add ingestors",
 	Short:   "Add a new role",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

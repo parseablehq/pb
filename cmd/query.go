@@ -46,7 +46,7 @@ var query = &cobra.Command{
 	Use:     "query [query] [flags]",
 	Example: "  pb query \"select * from frontend\" --from=10m --to=now",
 	Short:   "Run SQL query on a log stream",
-	Long:    "\nqRun SQL query on a log stream. Default output format is json. Use -i flag to open interactive table view.",
+	Long:    "\nRun SQL query on a log stream. Default output format is json. Use -i flag to open interactive table view.",
 	Args:    cobra.MaximumNArgs(1),
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(command *cobra.Command, args []string) error {
@@ -72,7 +72,7 @@ var query = &cobra.Command{
 			start = defaultStart
 		}
 
-		end, _ := command.Flags().GetString(endFlag)
+		end, err := command.Flags().GetString(endFlag)
 		if err != nil {
 			return err
 		}
@@ -80,7 +80,7 @@ var query = &cobra.Command{
 			end = defaultEnd
 		}
 
-		interactive, _ := command.Flags().GetBool(interactiveFlag)
+		interactive, err := command.Flags().GetBool(interactiveFlag)
 		if err != nil {
 			return err
 		}
