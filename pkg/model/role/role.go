@@ -28,7 +28,7 @@ import (
 )
 
 var (
-	privileges             = []string{"none", "admin", "editor", "writer", "reader"}
+	privileges             = []string{"none", "admin", "editor", "writer", "reader", "ingester"}
 	navigationMapStreamTag = []string{"role", "stream", "tag", "button"}
 	navigationMapStream    = []string{"role", "stream", "button"}
 	navigationMap          = []string{"role", "button"}
@@ -64,7 +64,7 @@ func (m *Model) Valid() bool {
 	switch m.Selection.Value() {
 	case "admin", "editor", "none":
 		return true
-	case "writer", "reader":
+	case "writer", "reader", "ingester":
 		return !(strings.Contains(m.Stream.Value(), " ") || m.Stream.Value() == "")
 	}
 	return true
@@ -175,6 +175,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.navMap = &navigationMapStream
 				case "reader":
 					m.navMap = &navigationMapStreamTag
+				case "ingester":
+					m.navMap = &navigationMapStream
 				default:
 					m.navMap = &navigationMapNone
 				}

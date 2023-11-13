@@ -74,7 +74,7 @@ var user = &cobra.Command{
 var role = &cobra.Command{
 	Use:               "role",
 	Short:             "Manage roles",
-	Long:              "\nuser command is used to manage roles.",
+	Long:              "\nrole command is used to manage roles.",
 	PersistentPreRunE: cmd.PreRunDefaultProfile,
 }
 

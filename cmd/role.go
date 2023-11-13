@@ -71,7 +71,7 @@ var AddRoleCmd = &cobra.Command{
 
 		_m, err := tea.NewProgram(role.New()).Run()
 		if err != nil {
-			fmt.Printf("Alas, there's been an error: %v", err)
+			fmt.Printf("there's been an error: %v", err)
 			os.Exit(1)
 		}
 		m := _m.(role.Model)
@@ -103,6 +103,10 @@ var AddRoleCmd = &cobra.Command{
 				}
 				if tag != "" {
 					roleData.Resource.Tag = tag
+				}
+			case "ingester":
+				roleData.Resource = &RoleResource{
+					Stream: stream,
 				}
 			}
 			roleDataJSON, _ := json.Marshal([]RoleData{roleData})
