@@ -82,8 +82,8 @@ var addUser = &cobra.Command{
 		}
 
 		var putBody io.Reader
-		putBodyJson, _ := json.Marshal(rolesToSetArr)
-		putBody = bytes.NewBuffer([]byte(putBodyJson))
+		putBodyJSON, _ := json.Marshal(rolesToSetArr)
+		putBody = bytes.NewBuffer([]byte(putBodyJSON))
 		req, err := client.NewRequest("POST", "user/"+name, putBody)
 		if err != nil {
 			return err
@@ -199,8 +199,8 @@ var SetUserRoleCmd = &cobra.Command{
 		}
 
 		var putBody io.Reader
-		putBodyJson, _ := json.Marshal(rolesToSetArr)
-		putBody = bytes.NewBuffer([]byte(putBodyJson))
+		putBodyJSON, _ := json.Marshal(rolesToSetArr)
+		putBody = bytes.NewBuffer([]byte(putBodyJSON))
 		req, err := client.NewRequest("PUT", "user/"+name+"/role", putBody)
 		if err != nil {
 			return err
