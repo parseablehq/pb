@@ -48,8 +48,8 @@ type StreamListItem struct {
 }
 
 func (item *StreamListItem) Render() string {
-	render := standardStyle.Render(item.name)
-	return itemOuter.Render(render)
+	render := StandardStyle.Render(item.name)
+	return ItemOuter.Render(render)
 }
 
 // StreamRetentionData is the data structure for stream retention
@@ -111,7 +111,7 @@ var AddStreamCmd = &cobra.Command{
 		}
 
 		if resp.StatusCode == 200 {
-			fmt.Printf("Created stream %s\n", styleBold.Render(name))
+			fmt.Printf("Created stream %s\n", StyleBold.Render(name))
 		} else {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -152,7 +152,7 @@ var StatStreamCmd = &cobra.Command{
 
 		isRetentionSet := len(retention) > 0
 
-		fmt.Println(styleBold.Render("\nInfo:"))
+		fmt.Println(StyleBold.Render("\nInfo:"))
 		fmt.Printf("  Event Count:     %d\n", ingestionCount)
 		fmt.Printf("  Ingestion Size:  %s\n", humanize.Bytes(uint64(ingestionSize)))
 		fmt.Printf("  Storage Size:    %s\n", humanize.Bytes(uint64(storageSize)))
@@ -162,14 +162,14 @@ var StatStreamCmd = &cobra.Command{
 		fmt.Println()
 
 		if isRetentionSet {
-			fmt.Println(styleBold.Render("Retention:"))
+			fmt.Println(StyleBold.Render("Retention:"))
 			for _, item := range retention {
-				fmt.Printf("  Action:    %s\n", styleBold.Render(item.Action))
-				fmt.Printf("  Duration:  %s\n", styleBold.Render(item.Duration))
+				fmt.Printf("  Action:    %s\n", StyleBold.Render(item.Action))
+				fmt.Printf("  Duration:  %s\n", StyleBold.Render(item.Duration))
 				fmt.Println()
 			}
 		} else {
-			fmt.Println(styleBold.Render("No retention period set on stream\n"))
+			fmt.Println(StyleBold.Render("No retention period set on stream\n"))
 		}
 
 		alertsData, err := fetchAlerts(&client, name)
@@ -181,9 +181,9 @@ var StatStreamCmd = &cobra.Command{
 		isAlertsSet := len(alerts) > 0
 
 		if isAlertsSet {
-			fmt.Println(styleBold.Render("Alerts:"))
+			fmt.Println(StyleBold.Render("Alerts:"))
 			for _, alert := range alerts {
-				fmt.Printf("  Alert:   %s\n", styleBold.Render(alert.Name))
+				fmt.Printf("  Alert:   %s\n", StyleBold.Render(alert.Name))
 				ruleFmt := fmt.Sprintf(
 					"%s %s %s repeated %d times",
 					alert.Rule.Config.Column,
@@ -199,7 +199,7 @@ var StatStreamCmd = &cobra.Command{
 				fmt.Print("\n\n")
 			}
 		} else {
-			fmt.Println(styleBold.Render("No alerts set on stream\n"))
+			fmt.Println(StyleBold.Render("No alerts set on stream\n"))
 		}
 
 		return nil
@@ -226,7 +226,7 @@ var RemoveStreamCmd = &cobra.Command{
 		}
 
 		if resp.StatusCode == 200 {
-			fmt.Printf("Removed stream %s\n", styleBold.Render(name))
+			fmt.Printf("Removed stream %s\n", StyleBold.Render(name))
 		} else {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {

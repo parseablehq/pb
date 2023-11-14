@@ -20,11 +20,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"pb/pkg/model/role"
+	"strings"
 	"sync"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/slices"
@@ -37,7 +35,12 @@ type UserData struct {
 
 type UserRoleData map[string][]RoleData
 
-var AddUserCmd = &cobra.Command{
+var (
+	roleFlag      = "role"
+	roleFlagShort = "r"
+)
+
+var addUser = &cobra.Command{
 	Use:     "add user-name",
 	Example: "  pb user add bob",
 	Short:   "Add a new user",
@@ -58,25 +61,30 @@ var AddUserCmd = &cobra.Command{
 			return nil
 		}
 
-		_m, err := tea.NewProgram(role.New()).Run()
-		if err != nil {
-			fmt.Printf("Alas, there's been an error: %v", err)
-			os.Exit(1)
+		// fetch all the roles to be applied to this user
+		rolesToSet := cmd.Flag(roleFlag).Value.String()
+		rolesToSetArr := strings.Split(rolesToSet, ",")
+
+		// fetch the role names on the server
+		var rolesOnServer []string
+		if err := fetchRoles(&client, &rolesOnServer); err != nil {
+			return err
 		}
-		m := _m.(role.Model)
+		rolesOnServerArr := strings.Join(rolesOnServer, " ")
 
-		roles := m.Selection.Value()
-
-		if !m.Success {
-			fmt.Println("aborted by user")
-			return nil
+		// validate if roles to be applied are actually present on the server
+		for idx, role := range rolesToSetArr {
+			rolesToSetArr[idx] = strings.TrimSpace(role)
+			if !strings.Contains(rolesOnServerArr, rolesToSetArr[idx]) {
+				fmt.Printf("role %s doesn't exist, please create a role using `pb role add %s`\n", rolesToSetArr[idx], rolesToSetArr[idx])
+				return nil
+			}
 		}
 
 		var putBody io.Reader
-		roleDataJSON, _ := json.Marshal([]string{roles})
-		putBody = bytes.NewBuffer(roleDataJSON)
-
-		req, err := client.NewRequest("PUT", "user/"+name, putBody)
+		putBodyJson, _ := json.Marshal(rolesToSetArr)
+		putBody = bytes.NewBuffer([]byte(putBodyJson))
+		req, err := client.NewRequest("POST", "user/"+name, putBody)
 		if err != nil {
 			return err
 		}
@@ -94,7 +102,7 @@ var AddUserCmd = &cobra.Command{
 		defer resp.Body.Close()
 
 		if resp.StatusCode == 200 {
-			fmt.Printf("Added user %s \nPassword is: %s\n", name, body)
+			fmt.Printf("Added user: %s \nPassword is: %s\nRole(s) assigned: %s\n", name, body, rolesToSet)
 		} else {
 			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
 		}
@@ -102,6 +110,11 @@ var AddUserCmd = &cobra.Command{
 		return nil
 	},
 }
+
+var AddUserCmd = func() *cobra.Command {
+	addUser.Flags().StringP(roleFlag, roleFlagShort, "", "specify the role(s) to be assigned to the user. Use comma separated values for multiple roles. Example: --role admin,developer")
+	return addUser
+}()
 
 var RemoveUserCmd = &cobra.Command{
 	Use:     "remove user-name",
@@ -123,7 +136,7 @@ var RemoveUserCmd = &cobra.Command{
 		}
 
 		if resp.StatusCode == 200 {
-			fmt.Printf("Removed user %s\n", styleBold.Render(name))
+			fmt.Printf("Removed user %s\n", StyleBold.Render(name))
 		} else {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -132,6 +145,82 @@ var RemoveUserCmd = &cobra.Command{
 			body := string(bytes)
 			defer resp.Body.Close()
 
+			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
+		}
+
+		return nil
+	},
+}
+
+var SetUserRoleCmd = &cobra.Command{
+	Use:     "set-role user-name roles",
+	Short:   "Set roles for a user",
+	Example: "  pb user set-role bob admin,developer",
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) < 2 {
+			return fmt.Errorf("requires at least 2 arguments")
+		}
+		return nil
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+
+		client := DefaultClient()
+		users, err := fetchUsers(&client)
+		if err != nil {
+			return err
+		}
+
+		if !slices.ContainsFunc(users, func(user UserData) bool {
+			return user.ID == name
+		}) {
+			fmt.Printf("user doesn't exist. Please create the user with `pb user add %s`\n", name)
+			return nil
+		}
+
+		// fetch all the roles to be applied to this user
+		rolesToSet := args[1]
+		rolesToSetArr := strings.Split(rolesToSet, ",")
+
+		// fetch the role names on the server
+		var rolesOnServer []string
+		if err := fetchRoles(&client, &rolesOnServer); err != nil {
+			return err
+		}
+		rolesOnServerArr := strings.Join(rolesOnServer, " ")
+
+		// validate if roles to be applied are actually present on the server
+		for idx, role := range rolesToSetArr {
+			rolesToSetArr[idx] = strings.TrimSpace(role)
+			if !strings.Contains(rolesOnServerArr, rolesToSetArr[idx]) {
+				fmt.Printf("role %s doesn't exist, please create a role using `pb role add %s`\n", rolesToSetArr[idx], rolesToSetArr[idx])
+				return nil
+			}
+		}
+
+		var putBody io.Reader
+		putBodyJson, _ := json.Marshal(rolesToSetArr)
+		putBody = bytes.NewBuffer([]byte(putBodyJson))
+		req, err := client.NewRequest("PUT", "user/"+name+"/role", putBody)
+		if err != nil {
+			return err
+		}
+
+		resp, err := client.client.Do(req)
+		if err != nil {
+			return err
+		}
+
+		bytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		body := string(bytes)
+		defer resp.Body.Close()
+
+		if resp.StatusCode == 200 {
+			fmt.Printf("Added role(s) %s to user %s\n", rolesToSet, name)
+		} else {
 			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
 		}
 
@@ -173,7 +262,7 @@ var ListUserCmd = &cobra.Command{
 		for idx, user := range users {
 			roles := roleResponses[idx]
 			fmt.Print("• ")
-			fmt.Println(standardStyleBold.Bold(true).Render(user.ID))
+			fmt.Println(StandardStyleBold.Bold(true).Render(user.ID))
 			if roles.err == nil {
 				for role := range roles.data {
 					fmt.Println(lipgloss.NewStyle().PaddingLeft(3).Render(role))

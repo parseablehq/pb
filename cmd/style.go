@@ -22,21 +22,18 @@ import (
 
 // styling for cli outputs
 var (
-	FocusPrimary  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
-	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
+	FocusPrimary   = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
+	FocusSecondary = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
 
-	standardPrimary  = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
-	standardSecondry = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
+	StandardPrimary   = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
+	StandardSecondary = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
+	StandardStyle     = lipgloss.NewStyle().Foreground(StandardPrimary)
+	StandardStyleBold = lipgloss.NewStyle().Foreground(StandardPrimary).Bold(true)
+	StandardStyleAlt  = lipgloss.NewStyle().Foreground(StandardSecondary)
+	SelectedStyle     = lipgloss.NewStyle().Foreground(FocusPrimary).Bold(true)
+	SelectedStyleAlt  = lipgloss.NewStyle().Foreground(FocusSecondary)
+	SelectedItemOuter = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).PaddingLeft(1).BorderForeground(FocusPrimary)
+	ItemOuter         = lipgloss.NewStyle().PaddingLeft(1)
 
-	standardStyle     = lipgloss.NewStyle().Foreground(standardPrimary)
-	standardStyleBold = lipgloss.NewStyle().Foreground(standardPrimary).Bold(true)
-	standardStyleAlt  = lipgloss.NewStyle().Foreground(standardSecondry)
-
-	selectedStyle    = lipgloss.NewStyle().Foreground(FocusPrimary).Bold(true)
-	selectedStyleAlt = lipgloss.NewStyle().Foreground(FocusSecondry)
-
-	selectedItemOuter = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).PaddingLeft(1).BorderForeground(FocusPrimary)
-	itemOuter         = lipgloss.NewStyle().PaddingLeft(1)
-
-	styleBold = lipgloss.NewStyle().Bold(true)
+	StyleBold = lipgloss.NewStyle().Bold(true)
 )

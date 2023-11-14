@@ -19,6 +19,7 @@ package main
 import (
 	"errors"
 	"os"
+
 	"pb/cmd"
 	"pb/pkg/config"
 
@@ -94,6 +95,7 @@ func main() {
 	user.AddCommand(cmd.AddUserCmd)
 	user.AddCommand(cmd.RemoveUserCmd)
 	user.AddCommand(cmd.ListUserCmd)
+	user.AddCommand(cmd.SetUserRoleCmd)
 
 	role.AddCommand(cmd.AddRoleCmd)
 	role.AddCommand(cmd.RemoveRoleCmd)

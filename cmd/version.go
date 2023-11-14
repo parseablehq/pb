@@ -33,9 +33,9 @@ var VersionCmd = &cobra.Command{
 func PrintVersion(version, commit string) {
 	client := DefaultClient()
 
-	fmt.Printf("\n%s \n", standardStyleAlt.Render("pb version"))
-	fmt.Printf("- %s %s\n", standardStyleBold.Render("version: "), version)
-	fmt.Printf("- %s %s\n\n", standardStyleBold.Render("commit:  "), commit)
+	fmt.Printf("\n%s \n", StandardStyleAlt.Render("pb version"))
+	fmt.Printf("- %s %s\n", StandardStyleBold.Render("version: "), version)
+	fmt.Printf("- %s %s\n\n", StandardStyleBold.Render("commit:  "), commit)
 
 	if err := PreRun(); err != nil {
 		return
@@ -45,7 +45,7 @@ func PrintVersion(version, commit string) {
 		return
 	}
 
-	fmt.Printf("%s %s \n", standardStyleAlt.Render("Connected to"), standardStyleBold.Render(DefaultProfile.URL))
-	fmt.Printf("- %s %s\n", standardStyleBold.Render("version: "), about.Version)
-	fmt.Printf("- %s %s\n\n", standardStyleBold.Render("commit:  "), about.Commit)
+	fmt.Printf("%s %s \n", StandardStyleAlt.Render("Connected to"), StandardStyleBold.Render(DefaultProfile.URL))
+	fmt.Printf("- %s %s\n", StandardStyleBold.Render("version: "), about.Version)
+	fmt.Printf("- %s %s\n\n", StandardStyleBold.Render("commit:  "), about.Commit)
 }
