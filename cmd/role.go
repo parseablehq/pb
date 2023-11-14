@@ -42,18 +42,18 @@ type RoleData struct {
 
 func (user *RoleData) Render() string {
 	var s strings.Builder
-	s.WriteString(standardStyle.Render("Privilege: "))
-	s.WriteString(standardStyleAlt.Render(user.Privilege))
+	s.WriteString(StandardStyle.Render("Privilege: "))
+	s.WriteString(StandardStyleAlt.Render(user.Privilege))
 	s.WriteString("\n")
 	if user.Resource != nil {
 		if user.Resource.Stream != "" {
-			s.WriteString(standardStyle.Render("Stream:    "))
-			s.WriteString(standardStyleAlt.Render(user.Resource.Stream))
+			s.WriteString(StandardStyle.Render("Stream:    "))
+			s.WriteString(StandardStyleAlt.Render(user.Resource.Stream))
 			s.WriteString("\n")
 		}
 		if user.Resource.Tag != "" {
-			s.WriteString(standardStyle.Render("Tag:       "))
-			s.WriteString(standardStyleAlt.Render(user.Resource.Tag))
+			s.WriteString(StandardStyle.Render("Tag:       "))
+			s.WriteString(StandardStyleAlt.Render(user.Resource.Tag))
 			s.WriteString("\n")
 		}
 	}
@@ -69,9 +69,20 @@ var AddRoleCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
+		// check if the role already exists
+		var roles []string
+		client := DefaultClient()
+		if err := fetchRoles(&client, &roles); err != nil {
+			return err
+		}
+		if strings.Contains(strings.Join(roles, " "), name) {
+			fmt.Println("role already exists, please use a different name")
+			return nil
+		}
+
 		_m, err := tea.NewProgram(role.New()).Run()
 		if err != nil {
-			fmt.Printf("Alas, there's been an error: %v", err)
+			fmt.Printf("there's been an error: %v", err)
 			os.Exit(1)
 		}
 		m := _m.(role.Model)
@@ -104,12 +115,15 @@ var AddRoleCmd = &cobra.Command{
 				if tag != "" {
 					roleData.Resource.Tag = tag
 				}
+			case "ingester":
+				roleData.Resource = &RoleResource{
+					Stream: stream,
+				}
 			}
 			roleDataJSON, _ := json.Marshal([]RoleData{roleData})
 			putBody = bytes.NewBuffer(roleDataJSON)
 		}
 
-		client := DefaultClient()
 		req, err := client.NewRequest("PUT", "role/"+name, putBody)
 		if err != nil {
 			return err
@@ -157,7 +171,7 @@ var RemoveRoleCmd = &cobra.Command{
 		}
 
 		if resp.StatusCode == 200 {
-			fmt.Printf("Removed role %s\n", styleBold.Render(name))
+			fmt.Printf("Removed role %s\n", StyleBold.Render(name))
 		} else {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -207,7 +221,7 @@ var ListRoleCmd = &cobra.Command{
 		for idx, roleName := range roles {
 			fetchRes := roleResponses[idx]
 			fmt.Print("• ")
-			fmt.Println(standardStyleBold.Bold(true).Render(roleName))
+			fmt.Println(StandardStyleBold.Bold(true).Render(roleName))
 			if fetchRes.err == nil {
 				for _, role := range fetchRes.data {
 					fmt.Println(lipgloss.NewStyle().PaddingLeft(3).Render(role.Render()))

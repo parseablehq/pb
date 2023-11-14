@@ -74,7 +74,7 @@ var user = &cobra.Command{
 var role = &cobra.Command{
 	Use:               "role",
 	Short:             "Manage roles",
-	Long:              "\nuser command is used to manage roles.",
+	Long:              "\nrole command is used to manage roles.",
 	PersistentPreRunE: cmd.PreRunDefaultProfile,
 }
 
@@ -94,6 +94,7 @@ func main() {
 	user.AddCommand(cmd.AddUserCmd)
 	user.AddCommand(cmd.RemoveUserCmd)
 	user.AddCommand(cmd.ListUserCmd)
+	user.AddCommand(cmd.SetUserRoleCmd)
 
 	role.AddCommand(cmd.AddRoleCmd)
 	role.AddCommand(cmd.RemoveRoleCmd)

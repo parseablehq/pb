@@ -39,19 +39,19 @@ func (item *ProfileListItem) Render(highlight bool) string {
 	if highlight {
 		render := fmt.Sprintf(
 			"%s\n%s\n%s",
-			selectedStyle.Render(item.title),
-			selectedStyleAlt.Render(fmt.Sprintf("url: %s", item.url)),
-			selectedStyleAlt.Render(fmt.Sprintf("user: %s", item.user)),
+			SelectedStyle.Render(item.title),
+			SelectedStyleAlt.Render(fmt.Sprintf("url: %s", item.url)),
+			SelectedStyleAlt.Render(fmt.Sprintf("user: %s", item.user)),
 		)
-		return selectedItemOuter.Render(render)
+		return SelectedItemOuter.Render(render)
 	}
 	render := fmt.Sprintf(
 		"%s\n%s\n%s",
-		standardStyle.Render(item.title),
-		standardStyleAlt.Render(fmt.Sprintf("url: %s", item.url)),
-		standardStyleAlt.Render(fmt.Sprintf("user: %s", item.user)),
+		StandardStyle.Render(item.title),
+		StandardStyleAlt.Render(fmt.Sprintf("url: %s", item.url)),
+		StandardStyleAlt.Render(fmt.Sprintf("user: %s", item.user)),
 	)
-	return itemOuter.Render(render)
+	return ItemOuter.Render(render)
 }
 
 var AddProfileCmd = &cobra.Command{
@@ -140,9 +140,9 @@ var RemoveProfileCmd = &cobra.Command{
 				fileConfig.DefaultProfile = ""
 			}
 			config.WriteConfigToFile(fileConfig)
-			fmt.Printf("Deleted profile %s\n", styleBold.Render(name))
+			fmt.Printf("Deleted profile %s\n", StyleBold.Render(name))
 		} else {
-			fmt.Printf("No profile found with the name: %s", styleBold.Render(name))
+			fmt.Printf("No profile found with the name: %s", StyleBold.Render(name))
 		}
 
 		return nil
@@ -185,12 +185,12 @@ var DefaultProfileCmd = &cobra.Command{
 			fileConfig.DefaultProfile = name
 		} else {
 			name = lipgloss.NewStyle().Bold(true).Render(name)
-			err := fmt.Sprintf("profile %s does not exist", styleBold.Render(name))
+			err := fmt.Sprintf("profile %s does not exist", StyleBold.Render(name))
 			return errors.New(err)
 		}
 
 		config.WriteConfigToFile(fileConfig)
-		fmt.Printf("%s is now set as default profile\n", styleBold.Render(name))
+		fmt.Printf("%s is now set as default profile\n", StyleBold.Render(name))
 		return nil
 	},
 }
