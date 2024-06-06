@@ -115,7 +115,7 @@ var AddRoleCmd = &cobra.Command{
 				if tag != "" {
 					roleData.Resource.Tag = tag
 				}
-			case "ingester":
+			case "ingestor":
 				roleData.Resource = &RoleResource{
 					Stream: stream,
 				}
