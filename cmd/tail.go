@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Cloudnatively Services Pvt Ltd
+// Copyright (c) 2024 Parseable, Inc
 //
 //
 // This program is free software: you can redistribute it and/or modify
@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+
 	"pb/pkg/config"
 
 	"github.com/apache/arrow/go/v13/arrow/array"

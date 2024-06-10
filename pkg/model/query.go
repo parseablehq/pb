@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Cloudnatively Services Pvt Ltd
+// Copyright (c) 2024 Parseable, Inc
 //
 //
 // This program is free software: you can redistribute it and/or modify
@@ -23,11 +23,12 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"pb/pkg/config"
-	"pb/pkg/iterator"
 	"strings"
 	"sync"
 	"time"
+
+	"pb/pkg/config"
+	"pb/pkg/iterator"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"

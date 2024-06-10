@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Cloudnatively Services Pvt Ltd
+// Copyright (c) 2024 Parseable, Inc
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -22,8 +22,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"pb/pkg/model"
 	"time"
+
+	"pb/pkg/model"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -106,8 +107,8 @@ var query = &cobra.Command{
 
 var QueryCmd = func() *cobra.Command {
 	query.Flags().BoolP(interactiveFlag, interactiveFlagShort, false, "open the query result in interactive mode")
-	query.Flags().StringP(startFlag, startFlagShort, defaultStart, "Start time for query. Takes date as '2023-10-12T07:20:50.52Z' or string like '10m', '1hr'")
-	query.Flags().StringP(endFlag, endFlagShort, defaultEnd, "End time for query. Takes date as '2023-10-12T07:20:50.52Z' or 'now'")
+	query.Flags().StringP(startFlag, startFlagShort, defaultStart, "Start time for query. Takes date as '2024-10-12T07:20:50.52Z' or string like '10m', '1hr'")
+	query.Flags().StringP(endFlag, endFlagShort, defaultEnd, "End time for query. Takes date as '2024-10-12T07:20:50.52Z' or 'now'")
 	return query
 }()
 

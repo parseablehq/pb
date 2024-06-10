@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Cloudnatively Services Pvt Ltd
+// Copyright (c) 2024 Parseable, Inc
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -21,9 +21,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"pb/pkg/model/role"
 	"strings"
 	"sync"
+
+	"pb/pkg/model/role"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"

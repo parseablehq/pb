@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Cloudnatively Services Pvt Ltd
+// Copyright (c) 2024 Parseable, Inc
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+
 	"pb/pkg/config"
 	"pb/pkg/model/credential"
 	"pb/pkg/model/defaultprofile"

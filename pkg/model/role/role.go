@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Cloudnatively Services Pvt Ltd
+// Copyright (c) 2024 Parseable, Inc
 //
 //
 // This program is free software: you can redistribute it and/or modify
@@ -18,9 +18,10 @@ package role
 
 import (
 	"fmt"
+	"strings"
+
 	"pb/pkg/model/button"
 	"pb/pkg/model/selection"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"

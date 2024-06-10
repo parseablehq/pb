@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Cloudnatively Services Pvt Ltd
+// Copyright (c) 2024 Parseable, Inc
 //
 //
 // This program is free software: you can redistribute it and/or modify
@@ -18,8 +18,9 @@ package model
 
 import (
 	"fmt"
-	"pb/pkg/model/datetime"
 	"time"
+
+	"pb/pkg/model/datetime"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"

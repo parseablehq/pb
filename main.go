@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Cloudnatively Services Pvt Ltd
+// Copyright (c) 2024 Parseable, Inc
 //
 //
 // This program is free software: you can redistribute it and/or modify
@@ -19,6 +19,7 @@ package main
 import (
 	"errors"
 	"os"
+
 	"pb/cmd"
 	"pb/pkg/config"
 
