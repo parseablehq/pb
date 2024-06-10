@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Cloudnatively Services Pvt Ltd
+// Copyright (c) 2024 Parseable, Inc
 //
 //
 // This program is free software: you can redistribute it and/or modify
@@ -38,7 +38,7 @@ var TailCmd = &cobra.Command{
 	Short:   "Stream live events from a log stream",
 	Args:    cobra.ExactArgs(1),
 	PreRunE: PreRunDefaultProfile,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
 		profile := DefaultProfile
 		return tail(profile, name)

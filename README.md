@@ -51,7 +51,7 @@ pb query "select * from backend" --from=1m --to=now
 or specifying time range in rfc3999
 
 ```bash
-pb query "select * from backend" --from=2023-01-00T01:40:00.000Z --to=2023-01-00T01:55:00.000Z
+pb query "select * from backend" --from=2024-01-00T01:40:00.000Z --to=2024-01-00T01:55:00.000Z
 ```
 
 You can use tools like `jq` and `grep` to further process and filter the output. Some examples:

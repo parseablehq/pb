@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Cloudnatively Services Pvt Ltd
+// Copyright (c) 2024 Parseable, Inc
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -122,7 +122,7 @@ var RemoveUserCmd = &cobra.Command{
 	Example: "  pb user remove bob",
 	Short:   "Delete a user",
 	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
 		client := DefaultClient()
 		req, err := client.NewRequest("DELETE", "user/"+name, nil)
@@ -156,13 +156,13 @@ var SetUserRoleCmd = &cobra.Command{
 	Use:     "set-role user-name roles",
 	Short:   "Set roles for a user",
 	Example: "  pb user set-role bob admin,developer",
-	PreRunE: func(cmd *cobra.Command, args []string) error {
+	PreRunE: func(_ *cobra.Command, args []string) error {
 		if len(args) < 2 {
 			return fmt.Errorf("requires at least 2 arguments")
 		}
 		return nil
 	},
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
 
 		client := DefaultClient()
@@ -232,7 +232,7 @@ var ListUserCmd = &cobra.Command{
 	Use:     "list",
 	Short:   "List all users",
 	Example: "  pb user list",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		client := DefaultClient()
 		users, err := fetchUsers(&client)
 		if err != nil {

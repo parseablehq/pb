@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Cloudnatively Services Pvt Ltd
+// Copyright (c) 2024 Parseable, Inc
 //
 //
 // This program is free software: you can redistribute it and/or modify
@@ -49,7 +49,7 @@ var cli = &cobra.Command{
 	Use:   "pb",
 	Short: "\nParseable command line interface",
 	Long:  "\npb is the command line interface for Parseable",
-	RunE: func(command *cobra.Command, args []string) error {
+	RunE: func(command *cobra.Command, _ []string) error {
 		if p, _ := command.Flags().GetBool(versionFlag); p {
 			cmd.PrintVersion(Version, Commit)
 			return nil
@@ -113,7 +113,7 @@ func main() {
 	cli.AddCommand(cmd.TailCmd)
 
 	// Set as command
-	cmd.VersionCmd.Run = func(_ *cobra.Command, args []string) {
+	cmd.VersionCmd.Run = func(_ *cobra.Command, _ []string) {
 		cmd.PrintVersion(Version, Commit)
 	}
 	cli.AddCommand(cmd.VersionCmd)

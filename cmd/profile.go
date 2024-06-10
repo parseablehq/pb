@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Cloudnatively Services Pvt Ltd
+// Copyright (c) 2024 Parseable, Inc
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -65,7 +65,7 @@ var AddProfileCmd = &cobra.Command{
 		}
 		return cobra.MaximumNArgs(4)(cmd, args)
 	},
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
 		url, err := url.Parse(args[1])
 		if err != nil {
@@ -126,7 +126,7 @@ var RemoveProfileCmd = &cobra.Command{
 	Example: "  pb profile remove local_parseable",
 	Args:    cobra.ExactArgs(1),
 	Short:   "Delete a profile",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
 		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
@@ -154,7 +154,7 @@ var DefaultProfileCmd = &cobra.Command{
 	Args:    cobra.MaximumNArgs(1),
 	Short:   "Set default profile to use with all commands",
 	Example: "  pb profile default local_parseable",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		var name string
 
 		fileConfig, err := config.ReadConfigFromFile()
@@ -199,7 +199,7 @@ var ListProfileCmd = &cobra.Command{
 	Use:     "list profiles",
 	Short:   "List all added profiles",
 	Example: "  pb profile list",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
 			return nil

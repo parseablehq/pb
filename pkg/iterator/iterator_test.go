@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Cloudnatively Services Pvt Ltd
+// Copyright (c) 2024 Parseable, Inc
 //
 //
 // This program is free software: you can redistribute it and/or modify
@@ -53,13 +53,13 @@ func (d *DummyQueryProvider) EndTime() time.Time {
 }
 
 func (*DummyQueryProvider) QueryRunnerFunc() func(time.Time, time.Time) ([]map[string]interface{}, error) {
-	return func(t1, t2 time.Time) ([]map[string]interface{}, error) {
+	return func(_, _ time.Time) ([]map[string]interface{}, error) {
 		return make([]map[string]interface{}, 0), nil
 	}
 }
 
 func (d *DummyQueryProvider) HasDataFunc() func(time.Time, time.Time) bool {
-	return func(t1, t2 time.Time) bool {
+	return func(t1, _ time.Time) bool {
 		val, isExists := d.state[t1.Format(time.RFC822Z)]
 		if isExists && val > 0 {
 			return true

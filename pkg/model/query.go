@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Cloudnatively Services Pvt Ltd
+// Copyright (c) 2024 Parseable, Inc
 //
 //
 // This program is free software: you can redistribute it and/or modify
@@ -177,7 +177,7 @@ func createIteratorFromModel(m *QueryModel) *iterator.QueryIterator[QueryData, F
 				}
 				return fetchData(client, &m.profile, m.query.Value(), t1.UTC().Format(time.RFC3339), t2.UTC().Format(time.RFC3339))
 			},
-			func(t1, t2 time.Time) bool {
+			func(_, _ time.Time) bool {
 				client := &http.Client{
 					Timeout: time.Second * 50,
 				}
