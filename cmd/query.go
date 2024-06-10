@@ -22,9 +22,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
-
 	"pb/pkg/model"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
