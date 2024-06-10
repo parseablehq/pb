@@ -67,7 +67,7 @@ var AddRoleCmd = &cobra.Command{
 	Example: "  pb role add ingestors",
 	Short:   "Add a new role",
 	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
 
 		// check if the role already exists
@@ -158,7 +158,7 @@ var RemoveRoleCmd = &cobra.Command{
 	Example: "  pb role remove ingestor",
 	Short:   "Delete a role",
 	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
 		client := DefaultClient()
 		req, err := client.NewRequest("DELETE", "role/"+name, nil)
@@ -192,7 +192,7 @@ var ListRoleCmd = &cobra.Command{
 	Use:     "list",
 	Short:   "List all roles",
 	Example: "  pb role list",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		var roles []string
 		client := DefaultClient()
 		err := fetchRoles(&client, &roles)

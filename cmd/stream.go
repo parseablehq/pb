@@ -97,7 +97,7 @@ var AddStreamCmd = &cobra.Command{
 	Example: "  pb stream add backend_logs",
 	Short:   "Create a new stream",
 	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
 		client := DefaultClient()
 		req, err := client.NewRequest("PUT", "logstream/"+name, nil)
@@ -132,7 +132,7 @@ var StatStreamCmd = &cobra.Command{
 	Example: "  pb stream info backend_logs",
 	Short:   "Get statistics for a stream",
 	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
 		client := DefaultClient()
 
@@ -212,7 +212,7 @@ var RemoveStreamCmd = &cobra.Command{
 	Example: " pb stream remove backend_logs",
 	Short:   "Delete a stream",
 	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
 		client := DefaultClient()
 		req, err := client.NewRequest("DELETE", "logstream/"+name, nil)
@@ -246,7 +246,7 @@ var ListStreamCmd = &cobra.Command{
 	Use:     "list",
 	Short:   "List all streams",
 	Example: " pb stream list",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		client := DefaultClient()
 		req, err := client.NewRequest("GET", "logstream", nil)
 		if err != nil {

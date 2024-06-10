@@ -178,7 +178,7 @@ func createIteratorFromModel(m *QueryModel) *iterator.QueryIterator[QueryData, F
 				}
 				return fetchData(client, &m.profile, m.query.Value(), t1.UTC().Format(time.RFC3339), t2.UTC().Format(time.RFC3339))
 			},
-			func(t1, t2 time.Time) bool {
+			func(_, _ time.Time) bool {
 				client := &http.Client{
 					Timeout: time.Second * 50,
 				}
