@@ -113,3 +113,27 @@ Version command prints the version of pb and the Parseable Server it is configur
 ```bash
 pb version
 ```
+
+### Add Autocomplete
+
+To enable autocomplete for pb, run the following command according to your shell:
+
+For bash:
+```bash
+pb autocomplete bash > /etc/bash_completion.d/pb
+source /etc/bash_completion.d/pb
+```
+
+For zsh:
+```zsh
+pb autocomplete zsh > /usr/local/share/zsh/site-functions/_pb
+autoload -U compinit && compinit
+```
+
+For powershell
+```powershell
+pb autocomplete powershell > $env:USERPROFILE\Documents\PowerShell\pb_complete.ps1
+. $PROFILE
+```
+
+
