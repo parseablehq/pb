@@ -112,6 +112,8 @@ func main() {
 	cli.AddCommand(role)
 	cli.AddCommand(cmd.TailCmd)
 
+	cli.AddCommand(cmd.AutocompleteCmd)
+
 	// Set as command
 	cmd.VersionCmd.Run = func(_ *cobra.Command, _ []string) {
 		cmd.PrintVersion(Version, Commit)
