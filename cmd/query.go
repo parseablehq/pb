@@ -55,13 +55,10 @@ var query = &cobra.Command{
 		// if no query is provided set it to default "select * from <steam-name>"
 		// <steam-name> here is the first stream that server returns
 		if len(args) == 0 || args[0] == "" || args[0] == " " {
-			stream, err := fetchFirstStream()
-			if err != nil {
-				return err
-			}
-			query = fmt.Sprintf("select * from %s", stream)
-		} else {
-			query = args[0]
+			fmt.Println("please enter your query")
+			fmt.Printf("Example:\n  pb query \"select * from frontend\" --from=10m --to=now")
+			return nil
+
 		}
 
 		start, err := command.Flags().GetString(startFlag)
