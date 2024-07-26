@@ -38,7 +38,7 @@ var (
 
 func defaultInitialProfile() config.Profile {
 	return config.Profile{
-		URL:      "https://demo.parseable.io",
+		URL:      "https://demo.parseable.com",
 		Username: "admin",
 		Password: "admin",
 	}
