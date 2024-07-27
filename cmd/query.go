@@ -22,7 +22,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"pb/pkg/config"
 	"pb/pkg/model"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -38,13 +40,17 @@ var (
 	endFlagShort = "t"
 	defaultEnd   = "now"
 
+	saveFilterFlag = "save-as"
+
+	saveFilterTimeFlag = "keep-time"
+
 	interactiveFlag      = "interactive"
 	interactiveFlagShort = "i"
 )
 
 var query = &cobra.Command{
-	Use:     "query [query] [flags]",
-	Example: "  pb query \"select * from frontend\" --from=10m --to=now",
+	Use:     "run [query] [flags]",
+	Example: "  pb query run \"select * from frontend\" --from=10m --to=now",
 	Short:   "Run SQL query on a log stream",
 	Long:    "\nRun SQL query on a log stream. Default output format is json. Use -i flag to open interactive table view.",
 	Args:    cobra.MaximumNArgs(1),
@@ -58,7 +64,8 @@ var query = &cobra.Command{
 			fmt.Println("please enter your query")
 			fmt.Printf("Example:\n  pb query \"select * from frontend\" --from=10m --to=now")
 			return nil
-
+		} else{
+			query = args[0]
 		}
 
 		start, err := command.Flags().GetString(startFlag)
@@ -87,6 +94,17 @@ var query = &cobra.Command{
 			return err
 		}
 
+		keepTime, err := command.Flags().GetBool(saveFilterTimeFlag)
+		if err != nil{
+			return err
+		}
+
+		filterName, err := command.Flags().GetString(saveFilterFlag)
+		filterNameTrimmed := strings.Trim(filterName," ")
+		if err !=nil{
+			return err
+		}
+
 		if interactive {
 			p := tea.NewProgram(model.NewQueryModel(DefaultProfile, query, startTime, endTime), tea.WithAltScreen())
 			if _, err := p.Run(); err != nil {
@@ -96,15 +114,28 @@ var query = &cobra.Command{
 			return nil
 		}
 
+		if len(filterNameTrimmed) == 0 {
+			fmt.Println("Enter a filter name")
+			return nil
+		} else {
+			if keepTime{
+			saveFilter(query, filterNameTrimmed,start, end)
+			} else{
+				saveFilter(query,filterNameTrimmed, "1m", "now")
+			}
+		}
+
 		client := DefaultClient()
 		return fetchData(&client, query, start, end)
 	},
 }
 
 var QueryCmd = func() *cobra.Command {
+	query.Flags().Bool(saveFilterTimeFlag, false, "Save the time range associated in the query to the filter")
 	query.Flags().BoolP(interactiveFlag, interactiveFlagShort, false, "open the query result in interactive mode")
 	query.Flags().StringP(startFlag, startFlagShort, defaultStart, "Start time for query. Takes date as '2024-10-12T07:20:50.52Z' or string like '10m', '1hr'")
 	query.Flags().StringP(endFlag, endFlagShort, defaultEnd, "End time for query. Takes date as '2024-10-12T07:20:50.52Z' or 'now'")
+	query.Flags().String(saveFilterFlag,"DEFAULT_FILTER_NAME", "Save a query filter")
 	return query
 }()
 
@@ -193,4 +224,100 @@ func parseTime(start, end string) (time.Time, time.Time, error) {
 	}
 
 	return startTime, endTime, nil
+}
+
+
+
+func saveFilter( query string,filterName string, startTime string, endTime string) (err error) {
+	client := DefaultClient();
+	userConfig,err := config.ReadConfigFromFile()
+	if err != nil{
+		return err
+	}
+	var userName string
+	if profile, ok := userConfig.Profiles[userConfig.DefaultProfile]; ok {
+        userName = profile.Username
+    } else {
+        fmt.Println("Default profile not found.")
+		return
+    }
+	index := strings.Index(query, "from")
+	streamName := strings.TrimSpace(query[index+len("from"):])
+
+	start,end,err := parseTimeToUTC(startTime,endTime)
+	if err !=nil{
+		fmt.Println("Oops something went wrong!!!!")
+		return
+	}
+
+	queryTemplate := `{
+		"filter_type":"sql",
+		"filter_query": "%s"
+		}`
+
+	timeTemplate := `{
+        "from": "%s",
+        "to":  "%s"
+    }`
+
+	saveFilterTemplate := `
+	{
+    "stream_name": "%s",
+    "filter_name": "%s",
+    "user_id": "%s",
+    "query": %s,
+    "time_filter": %s  
+    }`
+
+	queryField := fmt.Sprintf(queryTemplate,query)
+	timeField := fmt.Sprintf(timeTemplate, start, end)
+	final := fmt.Sprintf(saveFilterTemplate, streamName, filterName,userName,queryField,timeField)
+
+	req, err := client.NewRequest("POST", "filters", bytes.NewBuffer([]byte(final)))
+	if err != nil {
+		return
+	}
+
+	resp, err := client.client.Do(req)
+	if err != nil {
+		return
+	}
+
+	if resp.StatusCode == 200 {
+		fmt.Printf("\n%s filter saved\n", filterName)
+	}
+
+		return err
+}
+
+
+func parseTimeToUTC(start, end string) (time.Time, time.Time, error) {
+    if start == defaultStart && end == defaultEnd {
+        now := time.Now().UTC()
+        return now.Add(-1 * time.Minute), now, nil
+    }
+
+    startTime, err := time.Parse(time.RFC3339, start)
+    if err != nil {
+        duration, err := time.ParseDuration(start)
+        if err != nil {
+            return time.Time{}, time.Time{}, err
+        }
+        startTime = time.Now().Add(-1 * duration).UTC()
+    } else {
+        startTime = startTime.UTC()
+    }
+
+    endTime, err := time.Parse(time.RFC3339, end)
+    if err != nil {
+        if end == "now" {
+            endTime = time.Now().UTC()
+        } else {
+            return time.Time{}, time.Time{}, err
+        }
+    } else {
+        endTime = endTime.UTC()
+    }
+
+    return startTime, endTime, nil
 }

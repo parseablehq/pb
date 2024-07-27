@@ -85,6 +85,13 @@ var stream = &cobra.Command{
 	PersistentPreRunE: cmd.PreRunDefaultProfile,
 }
 
+var query = &cobra.Command{
+	Use: 		"query",
+	Short:   "Run SQL query on a log stream",
+	Long:    "\nRun SQL query on a log stream. Default output format is json. Use -i flag to open interactive table view.",
+	PersistentPreRunE: cmd.PreRunDefaultProfile,
+}
+
 func main() {
 	profile.AddCommand(cmd.AddProfileCmd)
 	profile.AddCommand(cmd.RemoveProfileCmd)
@@ -105,8 +112,10 @@ func main() {
 	stream.AddCommand(cmd.ListStreamCmd)
 	stream.AddCommand(cmd.StatStreamCmd)
 
+	query.AddCommand(cmd.QueryCmd)
+
 	cli.AddCommand(profile)
-	cli.AddCommand(cmd.QueryCmd)
+	cli.AddCommand(query)
 	cli.AddCommand(stream)
 	cli.AddCommand(user)
 	cli.AddCommand(role)
