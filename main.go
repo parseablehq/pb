@@ -86,9 +86,9 @@ var stream = &cobra.Command{
 }
 
 var query = &cobra.Command{
-	Use: 		"query",
-	Short:   "Run SQL query on a log stream",
-	Long:    "\nRun SQL query on a log stream. Default output format is json. Use -i flag to open interactive table view.",
+	Use:               "query",
+	Short:             "Run SQL query on a log stream",
+	Long:              "\nRun SQL query on a log stream. Default output format is json. Use -i flag to open interactive table view.",
 	PersistentPreRunE: cmd.PreRunDefaultProfile,
 }
 
@@ -140,17 +140,17 @@ func main() {
 			DefaultProfile: "demo",
 		}
 		config.WriteConfigToFile(&conf)
-	} else{ 
+	} else {
 		//updates the demo profile for existing users
-		_,exists := previousConfig.Profiles["demo"]; 
-		if exists{
+		_, exists := previousConfig.Profiles["demo"]
+		if exists {
 			conf := config.Config{
 				Profiles:       map[string]config.Profile{"demo": defaultInitialProfile()},
 				DefaultProfile: "demo",
 			}
 			config.WriteConfigToFile(&conf)
 		}
-}
+	}
 
 	err := cli.Execute()
 	if err != nil {
