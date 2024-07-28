@@ -141,6 +141,7 @@ func main() {
 		}
 		config.WriteConfigToFile(&conf)
 	} else{ 
+		//updates the demo profile for existing users
 		_,exists := previousConfig.Profiles["demo"]; 
 		if exists{
 			conf := config.Config{
