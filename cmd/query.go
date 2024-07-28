@@ -125,7 +125,6 @@ var query = &cobra.Command{
 			} else {
 				saveFilter(query, filterNameTrimmed, "1m", "now")
 			}
-			return nil
 		}
 
 		client := DefaultClient()
