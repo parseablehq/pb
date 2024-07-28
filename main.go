@@ -134,13 +134,22 @@ func main() {
 	cli.CompletionOptions.HiddenDefaultCmd = true
 
 	// create a default profile if file does not exist
-	if _, err := config.ReadConfigFromFile(); os.IsNotExist(err) {
+	if previousConfig, err := config.ReadConfigFromFile(); os.IsNotExist(err) {
 		conf := config.Config{
 			Profiles:       map[string]config.Profile{"demo": defaultInitialProfile()},
 			DefaultProfile: "demo",
 		}
 		config.WriteConfigToFile(&conf)
-	}
+	} else{ 
+		_,exists := previousConfig.Profiles["demo"]; 
+		if exists{
+			conf := config.Config{
+				Profiles:       map[string]config.Profile{"demo": defaultInitialProfile()},
+				DefaultProfile: "demo",
+			}
+			config.WriteConfigToFile(&conf)
+		}
+}
 
 	err := cli.Execute()
 	if err != nil {

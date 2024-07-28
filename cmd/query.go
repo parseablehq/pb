@@ -40,8 +40,8 @@ var (
 	endFlagShort = "t"
 	defaultEnd   = "now"
 
+	// save filter flags
 	saveFilterFlag = "save-as"
-
 	saveFilterTimeFlag = "keep-time"
 
 	interactiveFlag      = "interactive"
@@ -62,7 +62,7 @@ var query = &cobra.Command{
 		// <steam-name> here is the first stream that server returns
 		if len(args) == 0 || args[0] == "" || args[0] == " " {
 			fmt.Println("please enter your query")
-			fmt.Printf("Example:\n  pb query \"select * from frontend\" --from=10m --to=now")
+			fmt.Printf("Example:\n  pb query run \"select * from frontend\" --from=10m --to=now\n")
 			return nil
 		} else{
 			query = args[0]
@@ -114,16 +114,20 @@ var query = &cobra.Command{
 			return nil
 		}
 
+		// Checks if there is filter name which is not empty. Empty filter name wont be allowed
 		if len(filterNameTrimmed) == 0 {
 			fmt.Println("Enter a filter name")
 			return nil
-		} else {
+		} else if filterName != "DEFAULT_FILTER_NAME" { 
 			if keepTime{
 			saveFilter(query, filterNameTrimmed,start, end)
+
 			} else{
 				saveFilter(query,filterNameTrimmed, "1m", "now")
 			}
-		}
+			return nil
+		} 
+
 
 		client := DefaultClient()
 		return fetchData(&client, query, start, end)
@@ -131,11 +135,11 @@ var query = &cobra.Command{
 }
 
 var QueryCmd = func() *cobra.Command {
-	query.Flags().Bool(saveFilterTimeFlag, false, "Save the time range associated in the query to the filter")
+	query.Flags().Bool(saveFilterTimeFlag, false, "Save the time range associated in the query to the filter") // save time for a filter flag; default value = false (boolean type)
 	query.Flags().BoolP(interactiveFlag, interactiveFlagShort, false, "open the query result in interactive mode")
 	query.Flags().StringP(startFlag, startFlagShort, defaultStart, "Start time for query. Takes date as '2024-10-12T07:20:50.52Z' or string like '10m', '1hr'")
 	query.Flags().StringP(endFlag, endFlagShort, defaultEnd, "End time for query. Takes date as '2024-10-12T07:20:50.52Z' or 'now'")
-	query.Flags().String(saveFilterFlag,"DEFAULT_FILTER_NAME", "Save a query filter")
+	query.Flags().String(saveFilterFlag,"DEFAULT_FILTER_NAME", "Save a query filter") // save filter flag. Default value = DEFAULT_FILTER_NAME (type string)
 	return query
 }()
 
@@ -227,7 +231,7 @@ func parseTime(start, end string) (time.Time, time.Time, error) {
 }
 
 
-
+// fires a request to the server to save the filter with the associated user and stream
 func saveFilter( query string,filterName string, startTime string, endTime string) (err error) {
 	client := DefaultClient();
 	userConfig,err := config.ReadConfigFromFile()
@@ -291,6 +295,8 @@ func saveFilter( query string,filterName string, startTime string, endTime strin
 }
 
 
+
+// parses a time duration to supported utc format
 func parseTimeToUTC(start, end string) (time.Time, time.Time, error) {
     if start == defaultStart && end == defaultEnd {
         now := time.Now().UTC()
