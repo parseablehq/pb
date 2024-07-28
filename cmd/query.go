@@ -17,8 +17,6 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -170,35 +168,7 @@ func fetchData(client *HTTPClient, query string, startTime string, endTime strin
 	return
 }
 
-func fetchFirstStream() (string, error) {
-	client := DefaultClient()
-	req, err := client.NewRequest("GET", "logstream", nil)
-	if err != nil {
-		return "", err
-	}
 
-	resp, err := client.client.Do(req)
-	if err != nil {
-		return "", err
-	}
-
-	if resp.StatusCode == 200 {
-		items := []map[string]string{}
-		if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
-			return "", err
-		}
-		defer resp.Body.Close()
-
-		if len(items) == 0 {
-			return "", errors.New("no stream found on the server, please create a stream to proceed")
-		}
-		// return with the first stream that is present in the list
-		for _, v := range items {
-			return v["name"], nil
-		}
-	}
-	return "", fmt.Errorf("received error status code %d from server", resp.StatusCode)
-}
 
 // Returns start and end time for query in RFC3339 format
 func parseTime(start, end string) (time.Time, time.Time, error) {
@@ -243,7 +213,8 @@ func saveFilter(query string, filterName string, startTime string, endTime strin
 		return
 	}
 	index := strings.Index(query, "from")
-	streamName := strings.TrimSpace(query[index+len("from"):])
+	fromPart := strings.TrimSpace(query[index+len("from"):])
+	streamName := strings.Fields(fromPart)[0]
 
 	start, end, err := parseTimeToUTC(startTime, endTime)
 	if err != nil {
@@ -284,8 +255,8 @@ func saveFilter(query string, filterName string, startTime string, endTime strin
 		return
 	}
 
-	if resp.StatusCode == 200 {
-		fmt.Printf("\n%s filter saved\n", filterName)
+	if resp.StatusCode != 200 {
+		fmt.Printf("\nSomething went wrong")
 	}
 
 	return err
