@@ -130,7 +130,7 @@ var query = &cobra.Command{
 		} else if filterName == "FILTER_NAME" && keepTime{
 			 fmt.Println("filter name was not found")
 			 command.Help()
-			 fmt.Printf("\n")
+			 return nil
 		}
 
 		client := DefaultClient()
