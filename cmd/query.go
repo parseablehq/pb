@@ -135,9 +135,6 @@ var query = &cobra.Command{
 			 fmt.Println("please provide a filter name")
 			 command.Help()
 			 return nil
-		}else if filterName=="DEFAULT_FILTER_NAME"{
-			fmt.Println("please provide a filter name")
-			return nil
 		}
 
 		client := DefaultClient()
