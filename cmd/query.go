@@ -40,7 +40,10 @@ var (
 
 	// save filter flags
 	saveFilterFlag     = "save-as"
-	saveFilterTimeFlag = "keep-time"
+	saveFilterShort	   = "s"
+	//save filter with time flags
+	saveFilterTimeFlag = "with-time"
+	saveFilterTimeShort = "w"
 
 	interactiveFlag      = "interactive"
 	interactiveFlagShort = "i"
@@ -116,13 +119,18 @@ var query = &cobra.Command{
 		if len(filterNameTrimmed) == 0 {
 			fmt.Println("Enter a filter name")
 			return nil
-		} else if filterName != "DEFAULT_FILTER_NAME" {
+		} else if filterName != "FILTER_NAME" {
 			if keepTime {
-				saveFilter(query, filterNameTrimmed, start, end)
+				createFilterWithTime(query, filterNameTrimmed, start, end)
 
 			} else {
-				saveFilter(query, filterNameTrimmed, "1m", "now")
+				// if there is no keep time filter pass empty values for startTime and endTime
+				createFilter(query, filterNameTrimmed)
 			}
+		} else if filterName == "FILTER_NAME" && keepTime{
+			 fmt.Println("filter name was not found")
+			 command.Help()
+			 fmt.Printf("\n")
 		}
 
 		client := DefaultClient()
@@ -131,11 +139,11 @@ var query = &cobra.Command{
 }
 
 var QueryCmd = func() *cobra.Command {
-	query.Flags().Bool(saveFilterTimeFlag, false, "Save the time range associated in the query to the filter") // save time for a filter flag; default value = false (boolean type)
+	query.Flags().BoolP(saveFilterTimeFlag, saveFilterTimeShort,false, "Save the time range associated in the query to the filter") // save time for a filter flag; default value = false (boolean type)
 	query.Flags().BoolP(interactiveFlag, interactiveFlagShort, false, "open the query result in interactive mode")
 	query.Flags().StringP(startFlag, startFlagShort, defaultStart, "Start time for query. Takes date as '2024-10-12T07:20:50.52Z' or string like '10m', '1hr'")
 	query.Flags().StringP(endFlag, endFlagShort, defaultEnd, "End time for query. Takes date as '2024-10-12T07:20:50.52Z' or 'now'")
-	query.Flags().String(saveFilterFlag, "DEFAULT_FILTER_NAME", "Save a query filter") // save filter flag. Default value = DEFAULT_FILTER_NAME (type string)
+	query.Flags().StringP(saveFilterFlag, saveFilterShort ,"FILTER_NAME", "Save a query filter") // save filter flag. Default value = FILTER_NAME (type string)
 	return query
 }()
 
@@ -168,8 +176,6 @@ func fetchData(client *HTTPClient, query string, startTime string, endTime strin
 	return
 }
 
-
-
 // Returns start and end time for query in RFC3339 format
 func parseTime(start, end string) (time.Time, time.Time, error) {
 	if start == defaultStart && end == defaultEnd {
@@ -198,13 +204,14 @@ func parseTime(start, end string) (time.Time, time.Time, error) {
 	return startTime, endTime, nil
 }
 
-// fires a request to the server to save the filter with the associated user and stream
-func saveFilter(query string, filterName string, startTime string, endTime string) (err error) {
-	client := DefaultClient()
+// create a request body for saving filter without time_filter
+func createFilter(query string, filterName string) (err error) {
+
 	userConfig, err := config.ReadConfigFromFile()
 	if err != nil {
 		return err
 	}
+
 	var userName string
 	if profile, ok := userConfig.Profiles[userConfig.DefaultProfile]; ok {
 		userName = profile.Username
@@ -212,6 +219,50 @@ func saveFilter(query string, filterName string, startTime string, endTime strin
 		fmt.Println("Default profile not found.")
 		return
 	}
+
+	index := strings.Index(query, "from")
+	fromPart := strings.TrimSpace(query[index+len("from"):])
+	streamName := strings.Fields(fromPart)[0]
+
+	queryTemplate := `{
+		"filter_type":"sql",
+		"filter_query": "%s"
+		}`
+
+	saveFilterTemplate := `
+	{
+    "stream_name": "%s",
+    "filter_name": "%s",
+    "user_id": "%s",
+    "query": %s,
+    "time_filter": null 
+    }`
+
+	queryField := fmt.Sprintf(queryTemplate, query)
+
+	finalQuery := fmt.Sprintf(saveFilterTemplate, streamName, filterName, userName, queryField)
+
+	saveFilterToServer(finalQuery)
+
+	return err
+
+}
+
+// create a request body for saving filter with time_filter
+func createFilterWithTime(query string, filterName string, startTime string, endTime string) (err error) {
+	userConfig, err := config.ReadConfigFromFile()
+	if err != nil {
+		return err
+	}
+
+	var userName string
+	if profile, ok := userConfig.Profiles[userConfig.DefaultProfile]; ok {
+		userName = profile.Username
+	} else {
+		fmt.Println("Default profile not found.")
+		return
+	}
+
 	index := strings.Index(query, "from")
 	fromPart := strings.TrimSpace(query[index+len("from"):])
 	streamName := strings.Fields(fromPart)[0]
@@ -219,7 +270,7 @@ func saveFilter(query string, filterName string, startTime string, endTime strin
 	start, end, err := parseTimeToUTC(startTime, endTime)
 	if err != nil {
 		fmt.Println("Oops something went wrong!!!!")
-		return
+		return err
 	}
 
 	queryTemplate := `{
@@ -228,9 +279,10 @@ func saveFilter(query string, filterName string, startTime string, endTime strin
 		}`
 
 	timeTemplate := `{
-        "from": "%s",
-        "to":  "%s"
-    }`
+			"from": "%s",
+			"to":  "%s"
+		}`
+	timeField := fmt.Sprintf(timeTemplate, start, end)
 
 	saveFilterTemplate := `
 	{
@@ -242,10 +294,19 @@ func saveFilter(query string, filterName string, startTime string, endTime strin
     }`
 
 	queryField := fmt.Sprintf(queryTemplate, query)
-	timeField := fmt.Sprintf(timeTemplate, start, end)
-	final := fmt.Sprintf(saveFilterTemplate, streamName, filterName, userName, queryField, timeField)
 
-	req, err := client.NewRequest("POST", "filters", bytes.NewBuffer([]byte(final)))
+	finalQuery := fmt.Sprintf(saveFilterTemplate, streamName, filterName, userName, queryField, timeField)
+
+	saveFilterToServer(finalQuery)
+
+	return err
+}
+
+// fires a request to the server to save the filter with the associated user and stream
+func saveFilterToServer(finalQuery string) (err error) {
+	client := DefaultClient()
+
+	req, err := client.NewRequest("POST", "filters", bytes.NewBuffer([]byte(finalQuery)))
 	if err != nil {
 		return
 	}
