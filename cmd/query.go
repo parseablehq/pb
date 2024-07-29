@@ -39,10 +39,10 @@ var (
 	defaultEnd   = "now"
 
 	// save filter flags
-	saveFilterFlag     = "save-as"
-	saveFilterShort	   = "s"
+	saveFilterFlag  = "save-as"
+	saveFilterShort = "s"
 	//save filter with time flags
-	saveFilterTimeFlag = "with-time"
+	saveFilterTimeFlag  = "with-time"
 	saveFilterTimeShort = "w"
 
 	interactiveFlag      = "interactive"
@@ -104,11 +104,7 @@ var query = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if filterName=="" {
-			filterName = "DEFAULT_FILTER_NAME"
-		}
 		filterNameTrimmed := strings.Trim(filterName, " ")
-
 
 		if interactive {
 			p := tea.NewProgram(model.NewQueryModel(DefaultProfile, query, startTime, endTime), tea.WithAltScreen())
@@ -120,21 +116,24 @@ var query = &cobra.Command{
 		}
 
 		// Checks if there is filter name which is not empty. Empty filter name wont be allowed
-		if len(filterNameTrimmed) == 0 {
-			fmt.Println("please provide a filter name")
-			return nil
-		} else if filterName != "DEFAULT_FILTER_NAME" {
-			if keepTime {
-				createFilterWithTime(query, filterNameTrimmed, start, end)
+		if command.Flags().Changed(saveFilterFlag) {
+			if filterName == "" || len(filterNameTrimmed) == 0 || filterName == "=" {
+				fmt.Println("please provide a filter name")
+				command.Help()
+				return nil
+			} else if filterName != "" {
+				if keepTime {
+					createFilterWithTime(query, filterNameTrimmed, start, end)
 
-			} else {
-				// if there is no keep time filter pass empty values for startTime and endTime
-				createFilter(query, filterNameTrimmed)
+				} else {
+					// if there is no keep time filter pass empty values for startTime and endTime
+					createFilter(query, filterNameTrimmed)
+				}
 			}
-		} else if filterName == "DEFAULT_FILTER_NAME" && keepTime{
-			 fmt.Println("please provide a filter name")
-			 command.Help()
-			 return nil
+		} else if filterName == "" && keepTime {
+			fmt.Println("please provide a filter name")
+			command.Help()
+			return nil
 		}
 
 		client := DefaultClient()
@@ -143,11 +142,11 @@ var query = &cobra.Command{
 }
 
 var QueryCmd = func() *cobra.Command {
-	query.Flags().BoolP(saveFilterTimeFlag, saveFilterTimeShort,false, "Save the time range associated in the query to the filter") // save time for a filter flag; default value = false (boolean type)
+	query.Flags().BoolP(saveFilterTimeFlag, saveFilterTimeShort, false, "Save the time range associated in the query to the filter") // save time for a filter flag; default value = false (boolean type)
 	query.Flags().BoolP(interactiveFlag, interactiveFlagShort, false, "open the query result in interactive mode")
 	query.Flags().StringP(startFlag, startFlagShort, defaultStart, "Start time for query. Takes date as '2024-10-12T07:20:50.52Z' or string like '10m', '1hr'")
 	query.Flags().StringP(endFlag, endFlagShort, defaultEnd, "End time for query. Takes date as '2024-10-12T07:20:50.52Z' or 'now'")
-	query.Flags().StringP(saveFilterFlag, saveFilterShort , "", "Save a query filter") // save filter flag. Default value = FILTER_NAME (type string)
+	query.Flags().StringP(saveFilterFlag, saveFilterShort, "", "Save a query filter") // save filter flag. Default value = FILTER_NAME (type string)
 	return query
 }()
 
