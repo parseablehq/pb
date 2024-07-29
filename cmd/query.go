@@ -101,10 +101,14 @@ var query = &cobra.Command{
 		}
 
 		filterName, err := command.Flags().GetString(saveFilterFlag)
-		filterNameTrimmed := strings.Trim(filterName, " ")
 		if err != nil {
 			return err
 		}
+		if filterName=="" {
+			filterName = "DEFAULT_FILTER_NAME"
+		}
+		filterNameTrimmed := strings.Trim(filterName, " ")
+
 
 		if interactive {
 			p := tea.NewProgram(model.NewQueryModel(DefaultProfile, query, startTime, endTime), tea.WithAltScreen())
@@ -117,9 +121,9 @@ var query = &cobra.Command{
 
 		// Checks if there is filter name which is not empty. Empty filter name wont be allowed
 		if len(filterNameTrimmed) == 0 {
-			fmt.Println("Enter a filter name")
+			fmt.Println("please provide a filter name")
 			return nil
-		} else if filterName != "FILTER_NAME" {
+		} else if filterName != "DEFAULT_FILTER_NAME" {
 			if keepTime {
 				createFilterWithTime(query, filterNameTrimmed, start, end)
 
@@ -127,10 +131,13 @@ var query = &cobra.Command{
 				// if there is no keep time filter pass empty values for startTime and endTime
 				createFilter(query, filterNameTrimmed)
 			}
-		} else if filterName == "FILTER_NAME" && keepTime{
-			 fmt.Println("filter name was not found")
+		} else if filterName == "DEFAULT_FILTER_NAME" && keepTime{
+			 fmt.Println("please provide a filter name")
 			 command.Help()
 			 return nil
+		}else if filterName=="DEFAULT_FILTER_NAME"{
+			fmt.Println("please provide a filter name")
+			return nil
 		}
 
 		client := DefaultClient()
@@ -143,7 +150,7 @@ var QueryCmd = func() *cobra.Command {
 	query.Flags().BoolP(interactiveFlag, interactiveFlagShort, false, "open the query result in interactive mode")
 	query.Flags().StringP(startFlag, startFlagShort, defaultStart, "Start time for query. Takes date as '2024-10-12T07:20:50.52Z' or string like '10m', '1hr'")
 	query.Flags().StringP(endFlag, endFlagShort, defaultEnd, "End time for query. Takes date as '2024-10-12T07:20:50.52Z' or 'now'")
-	query.Flags().StringP(saveFilterFlag, saveFilterShort ,"FILTER_NAME", "Save a query filter") // save filter flag. Default value = FILTER_NAME (type string)
+	query.Flags().StringP(saveFilterFlag, saveFilterShort , "", "Save a query filter") // save filter flag. Default value = FILTER_NAME (type string)
 	return query
 }()
 
