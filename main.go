@@ -85,6 +85,13 @@ var stream = &cobra.Command{
 	PersistentPreRunE: cmd.PreRunDefaultProfile,
 }
 
+var query = &cobra.Command{
+	Use:               "query",
+	Short:             "Run SQL query on a log stream",
+	Long:              "\nRun SQL query on a log stream. Default output format is json. Use -i flag to open interactive table view.",
+	PersistentPreRunE: cmd.PreRunDefaultProfile,
+}
+
 func main() {
 	profile.AddCommand(cmd.AddProfileCmd)
 	profile.AddCommand(cmd.RemoveProfileCmd)
@@ -105,8 +112,10 @@ func main() {
 	stream.AddCommand(cmd.ListStreamCmd)
 	stream.AddCommand(cmd.StatStreamCmd)
 
+	query.AddCommand(cmd.QueryCmd)
+
 	cli.AddCommand(profile)
-	cli.AddCommand(cmd.QueryCmd)
+	cli.AddCommand(query)
 	cli.AddCommand(stream)
 	cli.AddCommand(user)
 	cli.AddCommand(role)
@@ -125,12 +134,22 @@ func main() {
 	cli.CompletionOptions.HiddenDefaultCmd = true
 
 	// create a default profile if file does not exist
-	if _, err := config.ReadConfigFromFile(); os.IsNotExist(err) {
+	if previousConfig, err := config.ReadConfigFromFile(); os.IsNotExist(err) {
 		conf := config.Config{
 			Profiles:       map[string]config.Profile{"demo": defaultInitialProfile()},
 			DefaultProfile: "demo",
 		}
 		config.WriteConfigToFile(&conf)
+	} else {
+		//updates the demo profile for existing users
+		_, exists := previousConfig.Profiles["demo"]
+		if exists {
+			conf := config.Config{
+				Profiles:       map[string]config.Profile{"demo": defaultInitialProfile()},
+				DefaultProfile: "demo",
+			}
+			config.WriteConfigToFile(&conf)
+		}
 	}
 
 	err := cli.Execute()
