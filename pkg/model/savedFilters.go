@@ -20,11 +20,18 @@ import (
 	"io"
 	"net/http"
 	"pb/pkg/config"
+	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+)
+
+const (
+	applyFilterButton ="a"
+	deleteFilterButton ="d"
 )
 
 var docStyle = lipgloss.NewStyle().Margin(1, 2)
@@ -42,6 +49,75 @@ type item struct {
 	id,title, stream, desc, from, to string
 }
 
+var (
+	titleStyles			= lipgloss.NewStyle().PaddingLeft(0).Bold(true).Foreground(lipgloss.Color("9"))
+	queryStyle			=	lipgloss.NewStyle().PaddingLeft(0).Foreground(lipgloss.Color("7"))
+	itemStyle			= lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("8"))
+	// selectedItemStyle = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("170"))
+	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(1).Foreground(lipgloss.AdaptiveColor{Light: "16", Dark: "226"})
+)
+
+type itemDelegate struct{}
+
+func (d itemDelegate) Height() int                             { return 4 }
+func (d itemDelegate) Spacing() int                            { return 1 }
+func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
+func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	i, ok := listItem.(item)
+	if !ok {
+		return
+	}
+	var str string
+
+	if i.from != "" || i.to != ""{
+	str = fmt.Sprintf("From: %s\nTo: %s",i.from, i.to)
+	}else{
+		str = ""
+	}
+
+	fn := itemStyle.Render
+	tr := titleStyles.Render
+	qr := queryStyle.Render
+	if index == m.Index() {
+		tr = func(s ...string) string {
+			return selectedItemStyle.Render("> " + strings.Join(s, " "))
+		}
+	}
+
+	fmt.Fprint(w, fn(tr(i.title)+"\n"+qr(i.desc)+"\n"+str))
+}
+
+
+func (d itemDelegate) ShortHelp() []key.Binding {
+    return []key.Binding{
+        key.NewBinding(
+            key.WithKeys(applyFilterButton),
+            key.WithHelp(applyFilterButton, "apply selected filter"),
+        ),
+        key.NewBinding(
+            key.WithKeys(deleteFilterButton),
+            key.WithHelp(deleteFilterButton, "delete selected filter"),
+        ),
+    }
+}
+
+// FullHelp returns the extended list of keybindings.
+func (d itemDelegate) FullHelp() [][]key.Binding {
+    return [][]key.Binding{
+        {
+            key.NewBinding(
+				key.WithKeys(applyFilterButton),
+				key.WithHelp(applyFilterButton, "apply selected filter"),
+            ),
+            key.NewBinding(
+				key.WithKeys(deleteFilterButton),
+				key.WithHelp(deleteFilterButton, "delete selected filter"),
+            ),
+        },
+    }
+}
+
+
 
 
 var selectedFilterApply item
@@ -52,9 +128,8 @@ func (i item) Title() string { return fmt.Sprintf("Filter:%s, Query:%s",i.title,
 func (i item) Description() string {
 	if i.to =="" || i.from==""{
 		return ""
-	}else{
+	}
 	 return fmt.Sprintf("From:%s To:%s",i.from,i.to)
-	} 
 	}
 
 func (i item) FilterValue() string { return i.title }
@@ -117,7 +192,7 @@ func UiApp() *tea.Program {
 	}
 	userFilters := fetchFilters(client, &userProfile)
 
-	m := modelFilter{list: list.New(userFilters, list.NewDefaultDelegate(), 0, 6)}
+	m := modelFilter{list: list.New(userFilters, itemDelegate{}, 0, 0)}
 	m.list.Title = fmt.Sprintf("Saved Filters for User: %s", userProfile.Username)
 
 	return tea.NewProgram(m, tea.WithAltScreen())
