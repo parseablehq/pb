@@ -21,11 +21,11 @@ import (
 	"io"
 	"os"
 	"pb/pkg/config"
-	"pb/pkg/model"
+	// "pb/pkg/model"
 	"strings"
 	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
+	//! This dependancy is required by the interactive flag Do not remove
+	// tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
@@ -45,8 +45,8 @@ var (
 	saveFilterTimeFlag  = "with-time"
 	saveFilterTimeShort = "w"
 
-	interactiveFlag      = "interactive"
-	interactiveFlagShort = "i"
+	// interactiveFlag      = "interactive"
+	// interactiveFlagShort = "i"
 )
 
 var query = &cobra.Command{
@@ -85,15 +85,16 @@ var query = &cobra.Command{
 			end = defaultEnd
 		}
 
-		interactive, err := command.Flags().GetBool(interactiveFlag)
-		if err != nil {
-			return err
-		}
+		//TODO: Interactive Flag disabled 
+		// interactive, err := command.Flags().GetBool(interactiveFlag)
+		// if err != nil {
+		// 	return err
+		// }
 
-		startTime, endTime, err := parseTime(start, end)
-		if err != nil {
-			return err
-		}
+		// startTime, endTime, err := parseTime(start, end)
+		// if err != nil {
+		// 	return err
+		// }
 
 		keepTime, err := command.Flags().GetBool(saveFilterTimeFlag)
 		if err != nil {
@@ -106,14 +107,15 @@ var query = &cobra.Command{
 		}
 		filterNameTrimmed := strings.Trim(filterName, " ")
 
-		if interactive {
-			p := tea.NewProgram(model.NewQueryModel(DefaultProfile, query, startTime, endTime), tea.WithAltScreen())
-			if _, err := p.Run(); err != nil {
-				fmt.Printf("there's been an error: %v", err)
-				os.Exit(1)
-			}
-			return nil
-		}
+		//TODO: Interactive Flag disabled 
+		// if interactive {
+		// 	p := tea.NewProgram(model.NewQueryModel(DefaultProfile, query, startTime, endTime), tea.WithAltScreen())
+		// 	if _, err := p.Run(); err != nil {
+		// 		fmt.Printf("there's been an error: %v", err)
+		// 		os.Exit(1)
+		// 	}
+		// 	return nil
+		// }
 
 		// Checks if there is filter name which is not empty. Empty filter name wont be allowed
 		if command.Flags().Changed(saveFilterFlag) {
@@ -143,7 +145,7 @@ var query = &cobra.Command{
 
 var QueryCmd = func() *cobra.Command {
 	query.Flags().BoolP(saveFilterTimeFlag, saveFilterTimeShort, false, "Save the time range associated in the query to the filter") // save time for a filter flag; default value = false (boolean type)
-	query.Flags().BoolP(interactiveFlag, interactiveFlagShort, false, "open the query result in interactive mode")
+	// query.Flags().BoolP(interactiveFlag, interactiveFlagShort, false, "open the query result in interactive mode")
 	query.Flags().StringP(startFlag, startFlagShort, defaultStart, "Start time for query. Takes date as '2024-10-12T07:20:50.52Z' or string like '10m', '1hr'")
 	query.Flags().StringP(endFlag, endFlagShort, defaultEnd, "End time for query. Takes date as '2024-10-12T07:20:50.52Z' or 'now'")
 	query.Flags().StringP(saveFilterFlag, saveFilterShort, "", "Save a query filter") // save filter flag. Default value = FILTER_NAME (type string)

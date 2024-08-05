@@ -1,6 +1,5 @@
 // Copyright (c) 2024 Parseable, Inc
 //
-//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -45,18 +44,24 @@ type item struct {
 
 
 
+var selectedFilterApply item
+var selectedFilterDelete item
 
-func (i item) Title() string { return i.title }
+func (i item) Title() string { return fmt.Sprintf("Filter:%s, Query:%s",i.title,i.desc) }
 
 func (i item) Description() string {
-	if i.to == "" || i.from==""{
-		return i.desc
+	if i.to =="" || i.from==""{
+		return ""
 	}else{
-	 return fmt.Sprintf("%s From:%s To:%s",i.desc,i.from,i.to)
+	 return fmt.Sprintf("From:%s To:%s",i.from,i.to)
 	} 
 	}
 
 func (i item) FilterValue() string { return i.title }
+func (i item) FilterId() string { return i.id }
+func (i item) Stream() string { return i.desc}
+func (i item) StartTime() string { return i.from }
+func (i item) EndTime() string { return i.to }
 
 type modelFilter struct {
 	list list.Model
@@ -72,6 +77,15 @@ func (m modelFilter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
+		if msg.String() == "a" ||msg.Type == tea.KeyEnter{
+			selectedFilterApply = m.list.SelectedItem().(item)
+			return m, tea.Quit
+		}
+		if msg.String() == "d" {
+			selectedFilterDelete = m.list.SelectedItem().(item)
+			return m, tea.Quit
+			
+		}
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
@@ -86,6 +100,7 @@ func (m modelFilter) View() string {
 	return docStyle.Render(m.list.View())
 }
 
+// Interactive list for the user to display all the available filters (only saved SQL filters )
 func UiApp() *tea.Program {
 
 	userConfig, err := config.ReadConfigFromFile()
@@ -102,7 +117,7 @@ func UiApp() *tea.Program {
 	}
 	userFilters := fetchFilters(client, &userProfile)
 
-	m := modelFilter{list: list.New(userFilters, list.NewDefaultDelegate(), 0, 0)}
+	m := modelFilter{list: list.New(userFilters, list.NewDefaultDelegate(), 0, 6)}
 	m.list.Title = fmt.Sprintf("Saved Filters for User: %s", userProfile.Username)
 
 	return tea.NewProgram(m, tea.WithAltScreen())
@@ -166,4 +181,13 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 	}
 	return userFilters
 
+}
+
+// returns the selected filter by user in the iteractive list
+func FilterToApply() item{
+	return selectedFilterApply
+}
+// returns the selected filter by user in the iteractive list
+func FilterToDelete() item{
+	return selectedFilterDelete
 }
