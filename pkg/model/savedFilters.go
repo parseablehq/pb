@@ -30,8 +30,8 @@ import (
 )
 
 const (
-	applyFilterButton ="a"
-	deleteFilterButton ="d"
+	applyFilterButton  = "a"
+	deleteFilterButton = "d"
 )
 
 var docStyle = lipgloss.NewStyle().Margin(1, 2)
@@ -46,13 +46,13 @@ type FilterDetails struct {
 }
 
 type item struct {
-	id,title, stream, desc, from, to string
+	id, title, stream, desc, from, to string
 }
 
 var (
-	titleStyles			= lipgloss.NewStyle().PaddingLeft(0).Bold(true).Foreground(lipgloss.Color("9"))
-	queryStyle			=	lipgloss.NewStyle().PaddingLeft(0).Foreground(lipgloss.Color("7"))
-	itemStyle			= lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("8"))
+	titleStyles = lipgloss.NewStyle().PaddingLeft(0).Bold(true).Foreground(lipgloss.Color("9"))
+	queryStyle  = lipgloss.NewStyle().PaddingLeft(0).Foreground(lipgloss.Color("7"))
+	itemStyle   = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("8"))
 	// selectedItemStyle = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("170"))
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(1).Foreground(lipgloss.AdaptiveColor{Light: "16", Dark: "226"})
 )
@@ -69,9 +69,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 	var str string
 
-	if i.from != "" || i.to != ""{
-	str = fmt.Sprintf("From: %s\nTo: %s",i.from, i.to)
-	}else{
+	if i.from != "" || i.to != "" {
+		str = fmt.Sprintf("From: %s\nTo: %s", i.from, i.to)
+	} else {
 		str = ""
 	}
 
@@ -87,56 +87,52 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprint(w, fn(tr(i.title)+"\n"+qr(i.desc)+"\n"+str))
 }
 
-
 func (d itemDelegate) ShortHelp() []key.Binding {
-    return []key.Binding{
-        key.NewBinding(
-            key.WithKeys(applyFilterButton),
-            key.WithHelp(applyFilterButton, "apply selected filter"),
-        ),
-        key.NewBinding(
-            key.WithKeys(deleteFilterButton),
-            key.WithHelp(deleteFilterButton, "delete selected filter"),
-        ),
-    }
+	return []key.Binding{
+		key.NewBinding(
+			key.WithKeys(applyFilterButton),
+			key.WithHelp(applyFilterButton, "apply selected filter"),
+		),
+		key.NewBinding(
+			key.WithKeys(deleteFilterButton),
+			key.WithHelp(deleteFilterButton, "delete selected filter"),
+		),
+	}
 }
 
 // FullHelp returns the extended list of keybindings.
 func (d itemDelegate) FullHelp() [][]key.Binding {
-    return [][]key.Binding{
-        {
-            key.NewBinding(
+	return [][]key.Binding{
+		{
+			key.NewBinding(
 				key.WithKeys(applyFilterButton),
 				key.WithHelp(applyFilterButton, "apply selected filter"),
-            ),
-            key.NewBinding(
+			),
+			key.NewBinding(
 				key.WithKeys(deleteFilterButton),
 				key.WithHelp(deleteFilterButton, "delete selected filter"),
-            ),
-        },
-    }
+			),
+		},
+	}
 }
-
-
-
 
 var selectedFilterApply item
 var selectedFilterDelete item
 
-func (i item) Title() string { return fmt.Sprintf("Filter:%s, Query:%s",i.title,i.desc) }
+func (i item) Title() string { return fmt.Sprintf("Filter:%s, Query:%s", i.title, i.desc) }
 
 func (i item) Description() string {
-	if i.to =="" || i.from==""{
+	if i.to == "" || i.from == "" {
 		return ""
 	}
-	 return fmt.Sprintf("From:%s To:%s",i.from,i.to)
-	}
+	return fmt.Sprintf("From:%s To:%s", i.from, i.to)
+}
 
 func (i item) FilterValue() string { return i.title }
-func (i item) FilterId() string { return i.id }
-func (i item) Stream() string { return i.desc}
-func (i item) StartTime() string { return i.from }
-func (i item) EndTime() string { return i.to }
+func (i item) FilterId() string    { return i.id }
+func (i item) Stream() string      { return i.desc }
+func (i item) StartTime() string   { return i.from }
+func (i item) EndTime() string     { return i.to }
 
 type modelFilter struct {
 	list list.Model
@@ -152,14 +148,14 @@ func (m modelFilter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
-		if msg.String() == "a" ||msg.Type == tea.KeyEnter{
+		if msg.String() == "a" || msg.Type == tea.KeyEnter {
 			selectedFilterApply = m.list.SelectedItem().(item)
 			return m, tea.Quit
 		}
 		if msg.String() == "d" {
 			selectedFilterDelete = m.list.SelectedItem().(item)
 			return m, tea.Quit
-			
+
 		}
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
@@ -244,25 +240,28 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 			to = fmt.Sprintf("%v", toValue)
 		}
 		// filtering only SQL type filters Filter_name is tile and Stream Name is desc
-		if string(queryBytes) != "null" {userFilter = item{
-			id:filter.FilterId,
-			title: filter.FilterName,
-			stream: filter.StreamName,
-			desc: string(queryBytes),
-			from: from,
-			to: to,
+		if string(queryBytes) != "null" {
+			userFilter = item{
+				id:     filter.FilterId,
+				title:  filter.FilterName,
+				stream: filter.StreamName,
+				desc:   string(queryBytes),
+				from:   from,
+				to:     to,
+			}
+			userFilters = append(userFilters, userFilter)
 		}
-		userFilters = append(userFilters, userFilter)}
 	}
 	return userFilters
 
 }
 
 // returns the selected filter by user in the iteractive list
-func FilterToApply() item{
+func FilterToApply() item {
 	return selectedFilterApply
 }
+
 // returns the selected filter by user in the iteractive list
-func FilterToDelete() item{
+func FilterToDelete() item {
 	return selectedFilterDelete
 }

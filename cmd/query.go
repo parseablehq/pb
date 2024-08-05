@@ -65,9 +65,8 @@ var query = &cobra.Command{
 			fmt.Println("please enter your query")
 			fmt.Printf("Example:\n  pb query run \"select * from frontend\" --from=10m --to=now\n")
 			return nil
-		} else {
-			query = args[0]
 		}
+		query = args[0]
 
 		start, err := command.Flags().GetString(startFlag)
 		if err != nil {
@@ -85,7 +84,7 @@ var query = &cobra.Command{
 			end = defaultEnd
 		}
 
-		//TODO: Interactive Flag disabled 
+		//TODO: Interactive Flag disabled
 		// interactive, err := command.Flags().GetBool(interactiveFlag)
 		// if err != nil {
 		// 	return err
@@ -107,7 +106,7 @@ var query = &cobra.Command{
 		}
 		filterNameTrimmed := strings.Trim(filterName, " ")
 
-		//TODO: Interactive Flag disabled 
+		//TODO: Interactive Flag disabled
 		// if interactive {
 		// 	p := tea.NewProgram(model.NewQueryModel(DefaultProfile, query, startTime, endTime), tea.WithAltScreen())
 		// 	if _, err := p.Run(); err != nil {

@@ -33,30 +33,29 @@ var FilterList = &cobra.Command{
 	PreRunE: PreRunDefaultProfile,
 	Run: func(command *cobra.Command, args []string) {
 		client := DefaultClient()
-		
-	
-		p:= model.UiApp()
-		_,err := p.Run(); if err != nil {
-		os.Exit(1)
+
+		p := model.UiApp()
+		_, err := p.Run()
+		if err != nil {
+			os.Exit(1)
 		}
 
-		a:= model.FilterToApply()
-		d:= model.FilterToDelete()
-		if a.Stream()!="" {
-		filterToPbQuery(a.Stream(), a.StartTime(), a.EndTime())
+		a := model.FilterToApply()
+		d := model.FilterToDelete()
+		if a.Stream() != "" {
+			filterToPbQuery(a.Stream(), a.StartTime(), a.EndTime())
 		}
-		if d.FilterId() != ""{
-		deleteFilter(&client,d.FilterId())
+		if d.FilterId() != "" {
+			deleteFilter(&client, d.FilterId())
 		}
-},
-		
+	},
 }
 
 // Delete a saved filter from the list of filter
-func deleteFilter(client *HTTPClient, filterID string){
-	deleteUrl:= `filters/filter/`+filterID
-	req,err := client.NewRequest("DELETE",deleteUrl, nil)
-	if err != nil{
+func deleteFilter(client *HTTPClient, filterID string) {
+	deleteUrl := `filters/filter/` + filterID
+	req, err := client.NewRequest("DELETE", deleteUrl, nil)
+	if err != nil {
 		fmt.Println("Error deleting the filter")
 	}
 
@@ -72,70 +71,69 @@ func deleteFilter(client *HTTPClient, filterID string){
 }
 
 // Convert a filter to executable pb query
-func filterToPbQuery( query string, start string, end string){
+func filterToPbQuery(query string, start string, end string) {
 	var timeStamps string
-if start=="" || end ==""{
-timeStamps=``
-}else{
-	startFormatted:= formatToRFC3339(start)
-	endFormatted:= formatToRFC3339(end)
-	timeStamps= ` --from=`+startFormatted+` --to=`+endFormatted
+	if start == "" || end == "" {
+		timeStamps = ``
+	} else {
+		startFormatted := formatToRFC3339(start)
+		endFormatted := formatToRFC3339(end)
+		timeStamps = ` --from=` + startFormatted + ` --to=` + endFormatted
+	}
+	queryTemplate := `pb query run ` + query + timeStamps
+	fmt.Printf("\nCopy and paste the command")
+	fmt.Printf("\n\n%s\n\n", queryTemplate)
 }
-queryTemplate:= `pb query run `+query+timeStamps
-fmt.Printf("\nCopy and paste the command")
-fmt.Printf("\n\n%s\n\n",queryTemplate)
-}
-
 
 // Parses all UTC time format from string to time interface
 func parseTimeToFormat(input string) (time.Time, error) {
-    // List of possible formats
-    formats := []string{
-        time.RFC3339,                          
-        "2006-01-02 15:04:05",                 
-        "2006-01-02",                          
-        "01/02/2006 15:04:05",                 
-        "02-Jan-2006 15:04:05 MST",            
-        "2006-01-02T15:04:05Z",                
-        "02-Jan-2006",                         
-    }
+	// List of possible formats
+	formats := []string{
+		time.RFC3339,
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+		"01/02/2006 15:04:05",
+		"02-Jan-2006 15:04:05 MST",
+		"2006-01-02T15:04:05Z",
+		"02-Jan-2006",
+	}
 
-    var err error
-    var t time.Time
+	var err error
+	var t time.Time
 
-    for _, format := range formats {
-        t, err = time.Parse(format, input)
-        if err == nil {
-            return t, nil
-        }
-    }
+	for _, format := range formats {
+		t, err = time.Parse(format, input)
+		if err == nil {
+			return t, nil
+		}
+	}
 
-    return t, fmt.Errorf("unable to parse time: %s", input)
+	return t, fmt.Errorf("unable to parse time: %s", input)
 }
 
 // Converts to RFC3339
 func convertTime(input string) (string, error) {
-    t, err := parseTimeToFormat(input)
-    if err != nil {
-        return "", err
-    }
+	t, err := parseTimeToFormat(input)
+	if err != nil {
+		return "", err
+	}
 
-    return t.Format(time.RFC3339), nil
+	return t.Format(time.RFC3339), nil
 }
 
 // Converts User inputted time to string type RFC3339 time
-func formatToRFC3339(time string) string{
+func formatToRFC3339(time string) string {
 	var formattedTime string
 	if len(strings.Fields(time)) > 1 {
-		newTime:= strings.Fields(time)[0:2]
-		rfc39990time, err:=convertTime(strings.Join(newTime, " "))
-		if err != nil{
+		newTime := strings.Fields(time)[0:2]
+		rfc39990time, err := convertTime(strings.Join(newTime, " "))
+		if err != nil {
 			fmt.Println("error formatting time")
 		}
 		formattedTime = rfc39990time
-	}else{
-		rfc39990time, err:=convertTime(time)
-		if err != nil{
+	} else {
+		rfc39990time, err := convertTime(time)
+		if err != nil {
 			fmt.Println("error formatting time")
 		}
 		formattedTime = rfc39990time
