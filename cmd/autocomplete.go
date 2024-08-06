@@ -1,4 +1,3 @@
-
 // Copyright (c) 2024 Parseable, Inc
 //
 //
@@ -18,35 +17,35 @@
 package cmd
 
 import (
-    "fmt"
-    "os"
+	"fmt"
+	"os"
 
-    "github.com/spf13/cobra"
+	"github.com/spf13/cobra"
 )
 
 // AutocompleteCmd represents the autocomplete command
 var AutocompleteCmd = &cobra.Command{
-    Use:   "autocomplete [bash|zsh|powershell]",
-    Short: "Generate autocomplete script",
-    Long:  `Generate autocomplete script for bash, zsh, or powershell`,
-    Args:  cobra.ExactArgs(1),
-    RunE: func(cmd *cobra.Command, args []string) error {
-        var err error
-        switch args[0] {
-        case "bash":
-            err = cmd.Root().GenBashCompletion(os.Stdout)
-        case "zsh":
-            err = cmd.Root().GenZshCompletion(os.Stdout)
-        case "powershell":
-            err = cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
-        default:
-            err = fmt.Errorf("unsupported shell type: %s. Only bash, zsh, and powershell are supported", args[0])
-        }
+	Use:   "autocomplete [bash|zsh|powershell]",
+	Short: "Generate autocomplete script",
+	Long:  `Generate autocomplete script for bash, zsh, or powershell`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var err error
+		switch args[0] {
+		case "bash":
+			err = cmd.Root().GenBashCompletion(os.Stdout)
+		case "zsh":
+			err = cmd.Root().GenZshCompletion(os.Stdout)
+		case "powershell":
+			err = cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
+		default:
+			err = fmt.Errorf("unsupported shell type: %s. Only bash, zsh, and powershell are supported", args[0])
+		}
 
-        if err != nil {
-            return fmt.Errorf("error generating autocomplete script: %w", err)
-        }
+		if err != nil {
+			return fmt.Errorf("error generating autocomplete script: %w", err)
+		}
 
-        return nil
-    },
+		return nil
+	},
 }
