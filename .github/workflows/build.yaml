@@ -2,7 +2,7 @@ name: Go Build and Test
 
 on:
   pull_request_target:
-    types: [opened,synchronize]
+    types: [opened,closed,synchronize]
 
 jobs:
   build:
@@ -14,7 +14,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.22.4'
+          go-version: '1.22.5'
 
       - name: make verification
         run: make verifiers
