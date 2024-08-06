@@ -20,8 +20,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"pb/pkg/config"
 	"time"
+
+	"pb/pkg/config"
 )
 
 type HTTPClient struct {
