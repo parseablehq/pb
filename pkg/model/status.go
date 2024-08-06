@@ -24,19 +24,19 @@ import (
 var (
 	commonStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#000000"})
 
-	titleStyle = commonStyle.Copy().
+	titleStyle = commonStyle.
 			Background(lipgloss.AdaptiveColor{Light: "#134074", Dark: "#FFADAD"}).
 			Padding(0, 1)
 
-	hostStyle = commonStyle.Copy().
+	hostStyle = commonStyle.
 			Background(lipgloss.AdaptiveColor{Light: "#13315C", Dark: "#FFD6A5"}).
 			Padding(0, 1)
 
-	infoStyle = commonStyle.Copy().
+	infoStyle = commonStyle.
 			Background(lipgloss.AdaptiveColor{Light: "#212529", Dark: "#CAFFBF"}).
 			AlignHorizontal(lipgloss.Right)
 
-	errorStyle = commonStyle.Copy().
+	errorStyle = commonStyle.
 			Background(lipgloss.AdaptiveColor{Light: "#5A2A27", Dark: "#D4A373"}).
 			AlignHorizontal(lipgloss.Right)
 )

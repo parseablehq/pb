@@ -90,8 +90,8 @@ func NewTimeRangeModel() list.Model {
 	list.SetShowHelp(false)
 	list.SetShowFilter(false)
 	list.SetShowTitle(true)
-	list.Styles.TitleBar = baseStyle.Copy()
-	list.Styles.Title = baseStyle.Copy().MarginBottom(1)
+	list.Styles.TitleBar = baseStyle
+	list.Styles.Title = baseStyle.MarginBottom(1)
 	list.Styles.TitleBar.Align(lipgloss.Left)
 	list.Title = "Select Time Range"
 	list.SetShowStatusBar(false)
