@@ -18,10 +18,9 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"pb/pkg/model"
 	"strings"
 	"time"
-
-	"pb/pkg/model"
 
 	"github.com/spf13/cobra"
 )
@@ -32,10 +31,10 @@ var FilterList = &cobra.Command{
 	Short:   "List of saved filter for a stream",
 	Long:    "\nShow a list of saved filter for a stream ",
 	PreRunE: PreRunDefaultProfile,
-	Run: func(command *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		client := DefaultClient()
 
-		p := model.UiApp()
+		p := model.UIApp()
 		_, err := p.Run()
 		if err != nil {
 			os.Exit(1)
@@ -46,16 +45,16 @@ var FilterList = &cobra.Command{
 		if a.Stream() != "" {
 			filterToPbQuery(a.Stream(), a.StartTime(), a.EndTime())
 		}
-		if d.FilterId() != "" {
-			deleteFilter(&client, d.FilterId())
+		if d.FilterID() != "" {
+			deleteFilter(&client, d.FilterID())
 		}
 	},
 }
 
 // Delete a saved filter from the list of filter
 func deleteFilter(client *HTTPClient, filterID string) {
-	deleteUrl := `filters/filter/` + filterID
-	req, err := client.NewRequest("DELETE", deleteUrl, nil)
+	deleteURL := `filters/filter/` + filterID
+	req, err := client.NewRequest("DELETE", deleteURL, nil)
 	if err != nil {
 		fmt.Println("Error deleting the filter")
 	}
