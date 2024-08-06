@@ -113,6 +113,7 @@ func main() {
 	stream.AddCommand(cmd.StatStreamCmd)
 
 	query.AddCommand(cmd.QueryCmd)
+	query.AddCommand(cmd.FilterList)
 
 	cli.AddCommand(profile)
 	cli.AddCommand(query)
@@ -141,7 +142,7 @@ func main() {
 		}
 		config.WriteConfigToFile(&conf)
 	} else {
-		//updates the demo profile for existing users
+		// updates the demo profile for existing users
 		_, exists := previousConfig.Profiles["demo"]
 		if exists {
 			conf := config.Config{
