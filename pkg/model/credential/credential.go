@@ -71,7 +71,7 @@ func New() Model {
 	var t textinput.Model
 	for i := range m.inputs {
 		t = textinput.New()
-		t.Cursor.Style = focusedStyle.Copy()
+		t.Cursor.Style = focusedStyle
 		t.CharLimit = 32
 
 		switch i {
