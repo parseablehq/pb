@@ -91,11 +91,11 @@ func (d itemDelegate) ShortHelp() []key.Binding {
 	return []key.Binding{
 		key.NewBinding(
 			key.WithKeys(applyFilterButton),
-			key.WithHelp(applyFilterButton, "apply selected filter"),
+			key.WithHelp(applyFilterButton, "apply"),
 		),
 		key.NewBinding(
 			key.WithKeys(deleteFilterButton),
-			key.WithHelp(deleteFilterButton, "delete selected filter"),
+			key.WithHelp(deleteFilterButton, "delete"),
 		),
 	}
 }
@@ -106,11 +106,11 @@ func (d itemDelegate) FullHelp() [][]key.Binding {
 		{
 			key.NewBinding(
 				key.WithKeys(applyFilterButton),
-				key.WithHelp(applyFilterButton, "apply selected filter"),
+				key.WithHelp(applyFilterButton, "apply"),
 			),
 			key.NewBinding(
 				key.WithKeys(deleteFilterButton),
-				key.WithHelp(deleteFilterButton, "delete selected filter"),
+				key.WithHelp(deleteFilterButton, "delete"),
 			),
 		},
 	}
