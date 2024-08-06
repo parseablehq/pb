@@ -66,6 +66,7 @@ var query = &cobra.Command{
 			fmt.Printf("Example:\n  pb query run \"select * from frontend\" --from=10m --to=now\n")
 			return nil
 		}
+		
 		query = args[0]
 
 		start, err := command.Flags().GetString(startFlag)
