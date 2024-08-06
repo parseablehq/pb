@@ -18,9 +18,10 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"pb/pkg/model"
 	"strings"
 	"time"
+
+	"pb/pkg/model"
 
 	"github.com/spf13/cobra"
 )

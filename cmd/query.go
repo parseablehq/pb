@@ -20,10 +20,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"pb/pkg/config"
-	// "pb/pkg/model"
 	"strings"
 	"time"
+
+	"pb/pkg/config"
+	// "pb/pkg/model"
+
 	//! This dependancy is required by the interactive flag Do not remove
 	// tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -41,7 +43,7 @@ var (
 	// save filter flags
 	saveFilterFlag  = "save-as"
 	saveFilterShort = "s"
-	//save filter with time flags
+	// save filter with time flags
 	saveFilterTimeFlag  = "with-time"
 	saveFilterTimeShort = "w"
 
@@ -66,7 +68,7 @@ var query = &cobra.Command{
 			fmt.Printf("Example:\n  pb query run \"select * from frontend\" --from=10m --to=now\n")
 			return nil
 		}
-		
+
 		query = args[0]
 
 		start, err := command.Flags().GetString(startFlag)
@@ -85,7 +87,7 @@ var query = &cobra.Command{
 			end = defaultEnd
 		}
 
-		//TODO: Interactive Flag disabled
+		// TODO: Interactive Flag disabled
 		// interactive, err := command.Flags().GetBool(interactiveFlag)
 		// if err != nil {
 		// 	return err
@@ -107,7 +109,7 @@ var query = &cobra.Command{
 		}
 		filterNameTrimmed := strings.Trim(filterName, " ")
 
-		//TODO: Interactive Flag disabled
+		// TODO: Interactive Flag disabled
 		// if interactive {
 		// 	p := tea.NewProgram(model.NewQueryModel(DefaultProfile, query, startTime, endTime), tea.WithAltScreen())
 		// 	if _, err := p.Run(); err != nil {
@@ -126,7 +128,6 @@ var query = &cobra.Command{
 			} else if filterName != "" {
 				if keepTime {
 					createFilterWithTime(query, filterNameTrimmed, start, end)
-
 				} else {
 					// if there is no keep time filter pass empty values for startTime and endTime
 					createFilter(query, filterNameTrimmed)
@@ -211,7 +212,6 @@ func parseTime(start, end string) (time.Time, time.Time, error) {
 
 // create a request body for saving filter without time_filter
 func createFilter(query string, filterName string) (err error) {
-
 	userConfig, err := config.ReadConfigFromFile()
 	if err != nil {
 		return err
@@ -250,7 +250,6 @@ func createFilter(query string, filterName string) (err error) {
 	saveFilterToServer(finalQuery)
 
 	return err
-
 }
 
 // create a request body for saving filter with time_filter

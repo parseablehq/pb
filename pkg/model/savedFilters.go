@@ -19,9 +19,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"pb/pkg/config"
 	"strings"
 	"time"
+
+	"pb/pkg/config"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -116,8 +117,10 @@ func (d itemDelegate) FullHelp() [][]key.Binding {
 	}
 }
 
-var selectedFilterApply item
-var selectedFilterDelete item
+var (
+	selectedFilterApply  item
+	selectedFilterDelete item
+)
 
 func (i item) Title() string { return fmt.Sprintf("Filter:%s, Query:%s", i.title, i.desc) }
 
@@ -173,7 +176,6 @@ func (m modelFilter) View() string {
 
 // Interactive list for the user to display all the available filters (only saved SQL filters )
 func UiApp() *tea.Program {
-
 	userConfig, err := config.ReadConfigFromFile()
 	if err != nil {
 		fmt.Println("Error reading Default Profile")
@@ -192,12 +194,10 @@ func UiApp() *tea.Program {
 	m.list.Title = fmt.Sprintf("Saved Filters for User: %s", userProfile.Username)
 
 	return tea.NewProgram(m, tea.WithAltScreen())
-
 }
 
 // fetchFilters fetches filters from the server and sends them to the channel
 func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
-
 	endpoint := fmt.Sprintf("%s/%s/%s", profile.URL, "api/v1/filters", profile.Username)
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
@@ -253,7 +253,6 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 		}
 	}
 	return userFilters
-
 }
 
 // returns the selected filter by user in the iteractive list

@@ -19,6 +19,7 @@ package main
 import (
 	"errors"
 	"os"
+
 	"pb/cmd"
 	"pb/pkg/config"
 
@@ -142,7 +143,7 @@ func main() {
 		}
 		config.WriteConfigToFile(&conf)
 	} else {
-		//updates the demo profile for existing users
+		// updates the demo profile for existing users
 		_, exists := previousConfig.Profiles["demo"]
 		if exists {
 			conf := config.Config{
