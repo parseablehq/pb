@@ -12,6 +12,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 package model
 
 import (
@@ -19,10 +20,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"pb/pkg/config"
 	"strings"
 	"time"
-
-	"pb/pkg/config"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -39,14 +39,15 @@ var docStyle = lipgloss.NewStyle().Margin(1, 2)
 
 // FilterDetails represents the structure of filter data
 type FilterDetails struct {
-	FilterId   string                 `json:"filter_id"`
+	FilterID   string                 `json:"filter_id"`
 	FilterName string                 `json:"filter_name"`
 	StreamName string                 `json:"stream_name"`
 	QueryField map[string]interface{} `json:"query"`
 	TimeFilter map[string]interface{} `json:"time_filter"`
 }
 
-type item struct {
+// Item represents the structure of the filter item
+type Item struct {
 	id, title, stream, desc, from, to string
 }
 
@@ -64,7 +65,7 @@ func (d itemDelegate) Height() int                             { return 4 }
 func (d itemDelegate) Spacing() int                            { return 1 }
 func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	i, ok := listItem.(item)
+	i, ok := listItem.(Item)
 	if !ok {
 		return
 	}
@@ -118,24 +119,24 @@ func (d itemDelegate) FullHelp() [][]key.Binding {
 }
 
 var (
-	selectedFilterApply  item
-	selectedFilterDelete item
+	selectedFilterApply  Item
+	selectedFilterDelete Item
 )
 
-func (i item) Title() string { return fmt.Sprintf("Filter:%s, Query:%s", i.title, i.desc) }
+func (i Item) Title() string { return fmt.Sprintf("Filter:%s, Query:%s", i.title, i.desc) }
 
-func (i item) Description() string {
+func (i Item) Description() string {
 	if i.to == "" || i.from == "" {
 		return ""
 	}
 	return fmt.Sprintf("From:%s To:%s", i.from, i.to)
 }
 
-func (i item) FilterValue() string { return i.title }
-func (i item) FilterId() string    { return i.id }
-func (i item) Stream() string      { return i.desc }
-func (i item) StartTime() string   { return i.from }
-func (i item) EndTime() string     { return i.to }
+func (i Item) FilterValue() string { return i.title }
+func (i Item) FilterID() string    { return i.id }
+func (i Item) Stream() string      { return i.desc }
+func (i Item) StartTime() string   { return i.from }
+func (i Item) EndTime() string     { return i.to }
 
 type modelFilter struct {
 	list list.Model
@@ -152,11 +153,11 @@ func (m modelFilter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if msg.String() == "a" || msg.Type == tea.KeyEnter {
-			selectedFilterApply = m.list.SelectedItem().(item)
+			selectedFilterApply = m.list.SelectedItem().(Item)
 			return m, tea.Quit
 		}
 		if msg.String() == "d" {
-			selectedFilterDelete = m.list.SelectedItem().(item)
+			selectedFilterDelete = m.list.SelectedItem().(Item)
 			return m, tea.Quit
 
 		}
@@ -174,8 +175,8 @@ func (m modelFilter) View() string {
 	return docStyle.Render(m.list.View())
 }
 
-// Interactive list for the user to display all the available filters (only saved SQL filters )
-func UiApp() *tea.Program {
+// UIApp lists interactive list for the user to display all the available filters (only saved SQL filters )
+func UIApp() *tea.Program {
 	userConfig, err := config.ReadConfigFromFile()
 	if err != nil {
 		fmt.Println("Error reading Default Profile")
@@ -223,12 +224,12 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 	var filters []FilterDetails
 	err = json.Unmarshal(body, &filters)
 	if err != nil {
-		fmt.Println("Error unmarshaling response:", err)
+		fmt.Println("Error unmarshalling response:", err)
 		return nil
 	}
 	var userFilters []list.Item
 	for _, filter := range filters {
-		var userFilter item
+		var userFilter Item
 		queryBytes, _ := json.Marshal(filter.QueryField["filter_query"])
 
 		// Extract "from" and "to" from time_filter
@@ -241,8 +242,8 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 		}
 		// filtering only SQL type filters Filter_name is tile and Stream Name is desc
 		if string(queryBytes) != "null" {
-			userFilter = item{
-				id:     filter.FilterId,
+			userFilter = Item{
+				id:     filter.FilterID,
 				title:  filter.FilterName,
 				stream: filter.StreamName,
 				desc:   string(queryBytes),
@@ -255,12 +256,12 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 	return userFilters
 }
 
-// returns the selected filter by user in the iteractive list
-func FilterToApply() item {
+// FilterToApply returns the selected filter by user in the interactive list to apply
+func FilterToApply() Item {
 	return selectedFilterApply
 }
 
-// returns the selected filter by user in the iteractive list
-func FilterToDelete() item {
+// FilterToDelete returns the selected filter by user in the interactive list to delete
+func FilterToDelete() Item {
 	return selectedFilterDelete
 }

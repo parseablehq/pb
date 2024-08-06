@@ -18,10 +18,9 @@ package role
 
 import (
 	"fmt"
-	"strings"
-
 	"pb/pkg/model/button"
 	"pb/pkg/model/selection"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"

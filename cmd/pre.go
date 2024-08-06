@@ -19,7 +19,6 @@ package cmd
 import (
 	"errors"
 	"os"
-
 	"pb/pkg/config"
 
 	"github.com/spf13/cobra"
