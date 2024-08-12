@@ -40,7 +40,7 @@ const (
 
 var (
 	docStyle = lipgloss.NewStyle().Margin(1, 2)
-	delete   bool
+	deleteFilterState   bool
 )
 
 // FilterDetails represents the structure of filter data
@@ -96,7 +96,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 func (d itemDelegate) ShortHelp() []key.Binding {
-	if delete {
+	if deleteFilterState {
 		return []key.Binding{
 			key.NewBinding(
 				key.WithKeys(confirmDelete),
@@ -176,7 +176,7 @@ func (m modelFilter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.String() == "d" {
 			// selectedFilterDelete = m.list.SelectedItem().(Item)
-			delete = true
+			deleteFilterState = true
 			return m, nil
 
 		}
@@ -185,7 +185,7 @@ func (m modelFilter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if msg.String() == "n" {
-			delete = false
+			deleteFilterState = false
 			return m, nil
 		}
 	case tea.WindowSizeMsg:
