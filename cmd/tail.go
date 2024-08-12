@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+
 	"pb/pkg/config"
 
 	"github.com/apache/arrow/go/v13/arrow/array"

@@ -18,9 +18,10 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"pb/pkg/model"
 	"strings"
 	"time"
+
+	"pb/pkg/model"
 
 	"github.com/spf13/cobra"
 )
@@ -53,6 +54,9 @@ var FilterList = &cobra.Command{
 
 // Delete a saved filter from the list of filter
 func deleteFilter(client *HTTPClient, filterID string) {
+	if filterID == "" {
+		return
+	}
 	deleteURL := `filters/filter/` + filterID
 	req, err := client.NewRequest("DELETE", deleteURL, nil)
 	if err != nil {
@@ -72,6 +76,9 @@ func deleteFilter(client *HTTPClient, filterID string) {
 
 // Convert a filter to executable pb query
 func filterToPbQuery(query string, start string, end string) {
+	if query == "" {
+		return
+	}
 	var timeStamps string
 	if start == "" || end == "" {
 		timeStamps = ``

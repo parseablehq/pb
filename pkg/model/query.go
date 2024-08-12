@@ -23,11 +23,12 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"pb/pkg/config"
-	"pb/pkg/iterator"
 	"strings"
 	"sync"
 	"time"
+
+	"pb/pkg/config"
+	"pb/pkg/iterator"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
