@@ -39,8 +39,8 @@ const (
 )
 
 var (
-	docStyle = lipgloss.NewStyle().Margin(1, 2)
-	deleteFilterState   bool
+	docStyle          = lipgloss.NewStyle().Margin(1, 2)
+	deleteFilterState bool
 )
 
 // FilterDetails represents the structure of filter data
