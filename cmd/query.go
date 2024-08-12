@@ -45,9 +45,12 @@ var (
 	saveFilterFlag  = "save-as"
 	saveFilterShort = "s"
 	// save filter with time flags
+	// save filter with time flags
 	saveFilterTimeFlag  = "with-time"
 	saveFilterTimeShort = "w"
 
+	// interactiveFlag      = "interactive"
+	// interactiveFlagShort = "i"
 	// interactiveFlag      = "interactive"
 	// interactiveFlagShort = "i"
 )

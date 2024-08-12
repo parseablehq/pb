@@ -32,6 +32,3 @@ issues:
     - should have comment or be unexported
     - time-naming
     - error strings should not be capitalized or end with punctuation or a newline
-
-service:
-  golangci-lint-version: 1.43.0 # use the fixed version to not introduce new linters unexpectedly

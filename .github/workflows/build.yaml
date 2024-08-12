@@ -1,26 +1,23 @@
 name: Go Build and Test
 
 on:
-  pull_request_target:
-    types: [opened,synchronize]
+  pull_request
 
 jobs:
-  build:
 
+  build-and-test:
+    name: Build and Test the Go code
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-
+      - name: Checkout the code
+        uses: actions/checkout@v4
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.22'
-
+          go-version: '1.22.5'
       - name: make verification
         run: make verifiers
-
       - name: Build
         run: go build -v ./...
-
       - name: Test
         run: go test -v ./...
