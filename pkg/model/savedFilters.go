@@ -38,7 +38,7 @@ const (
 )
 
 var (
-	docStyle               = lipgloss.NewStyle().Margin(1, 2)
+	docStyle          = lipgloss.NewStyle().Margin(1, 2)
 	deleteFilterState = false
 )
 
