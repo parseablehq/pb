@@ -181,9 +181,9 @@ func (m modelFilter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			deleteFilterState = true
 			return m, nil
 		}
-		if msg.String() != "d"{
+		if msg.String() != "d" {
 			deleteFilterState = false
-			return m,nil
+			return m, nil
 		}
 		if msg.String() == "y" {
 			selectedFilterDelete = m.list.SelectedItem().(Item)
