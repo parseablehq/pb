@@ -20,10 +20,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"pb/pkg/config"
 	"strings"
 	"time"
-
-	"pb/pkg/config"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -40,7 +39,7 @@ const (
 
 var (
 	docStyle               = lipgloss.NewStyle().Margin(1, 2)
-	deleteFilterState bool = false
+	deleteFilterState = false
 )
 
 // FilterDetails represents the structure of filter data
