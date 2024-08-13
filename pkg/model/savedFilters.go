@@ -40,7 +40,7 @@ const (
 
 var (
 	docStyle          = lipgloss.NewStyle().Margin(1, 2)
-	deleteFilterState = false
+	deleteFilterState bool = false
 )
 
 // FilterDetails represents the structure of filter data
@@ -58,8 +58,7 @@ type Item struct {
 }
 
 var (
-	titleStyles = lipgloss.NewStyle().PaddingLeft(0).Bold(true).Foreground(lipgloss.Color("9"))
-
+	titleStyles       = lipgloss.NewStyle().PaddingLeft(0).Bold(true).Foreground(lipgloss.Color("9"))
 	queryStyle        = lipgloss.NewStyle().PaddingLeft(0).Foreground(lipgloss.Color("7"))
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("8"))
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(1).Foreground(lipgloss.AdaptiveColor{Light: "16", Dark: "226"})
@@ -171,9 +170,6 @@ func (m modelFilter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
-		if msg.String() == "q" {
-			return m, tea.Quit
-		}
 		if msg.String() == "a" || msg.Type == tea.KeyEnter {
 			selectedFilterApply = m.list.SelectedItem().(Item)
 			return m, tea.Quit
@@ -182,9 +178,8 @@ func (m modelFilter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			deleteFilterState = true
 			return m, nil
 		}
-		if msg.String() != "d" {
-			deleteFilterState = false
-			return m, nil
+		if msg.String() != "d"{
+			deleteFilterState = false;
 		}
 		if msg.String() == "y" {
 			selectedFilterDelete = m.list.SelectedItem().(Item)
