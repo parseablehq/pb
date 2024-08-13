@@ -254,6 +254,8 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 		fmt.Println("Error unmarshalling response:", err)
 		return nil
 	}
+
+	// This returns only the SQL type filters
 	var userFilters []list.Item
 	for _, filter := range filters {
 		var userFilter Item

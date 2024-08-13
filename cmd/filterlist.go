@@ -28,15 +28,14 @@ import (
 var FilterList = &cobra.Command{
 	Use:     "list",
 	Example: "pb query list ",
-	Short:   "List of saved filter for a stream",
-	Long:    "\nShow a list of saved filter for a stream ",
+	Short:   "List of saved filters",
+	Long:    "\nShow the list of saved filters for current user",
 	PreRunE: PreRunDefaultProfile,
 	Run: func(_ *cobra.Command, _ []string) {
 		client := DefaultClient()
 
 		p := model.UIApp()
-		_, err := p.Run()
-		if err != nil {
+		if _, err := p.Run(); err != nil {
 			os.Exit(1)
 		}
 
@@ -46,17 +45,18 @@ var FilterList = &cobra.Command{
 			filterToPbQuery(a.Stream(), a.StartTime(), a.EndTime())
 		}
 		if d.FilterID() != "" {
-			deleteFilter(&client, d.FilterID())
+			deleteFilter(&client, d.FilterID(), d.Title())
 		}
 	},
 }
 
 // Delete a saved filter from the list of filter
-func deleteFilter(client *HTTPClient, filterID string) {
+func deleteFilter(client *HTTPClient, filterID, title string) {
+	fmt.Printf("\nAttempting to delete '%s'", title)
 	deleteURL := `filters/filter/` + filterID
 	req, err := client.NewRequest("DELETE", deleteURL, nil)
 	if err != nil {
-		fmt.Println("Error deleting the filter")
+		fmt.Println("Failed to delete the filter with error: ", err)
 	}
 
 	resp, err := client.client.Do(req)
@@ -66,7 +66,7 @@ func deleteFilter(client *HTTPClient, filterID string) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 200 {
-		fmt.Printf("\n\nFilter Deleted")
+		fmt.Printf("\nFilter deleted\n\n")
 	}
 }
 
