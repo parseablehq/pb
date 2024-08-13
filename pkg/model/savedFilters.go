@@ -39,7 +39,7 @@ const (
 )
 
 var (
-	docStyle          = lipgloss.NewStyle().Margin(1, 2)
+	docStyle               = lipgloss.NewStyle().Margin(1, 2)
 	deleteFilterState bool = false
 )
 
@@ -178,8 +178,8 @@ func (m modelFilter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			deleteFilterState = true
 			return m, nil
 		}
-		if msg.String() != "d"{
-			deleteFilterState = false;
+		if msg.String() != "d" {
+			deleteFilterState = false
 		}
 		if msg.String() == "y" {
 			selectedFilterDelete = m.list.SelectedItem().(Item)
