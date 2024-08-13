@@ -170,15 +170,20 @@ func (m modelFilter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
+		if msg.String() == "q" {
+			return m, tea.Quit
+		}
 		if msg.String() == "a" || msg.Type == tea.KeyEnter {
 			selectedFilterApply = m.list.SelectedItem().(Item)
 			return m, tea.Quit
 		}
 		if msg.String() == "d" {
-			// selectedFilterDelete = m.list.SelectedItem().(Item)
 			deleteFilterState = true
 			return m, nil
-
+		}
+		if msg.String() != "d"{
+			deleteFilterState = false
+			return m,nil
 		}
 		if msg.String() == "y" {
 			selectedFilterDelete = m.list.SelectedItem().(Item)
