@@ -20,9 +20,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"pb/pkg/config"
 	"strings"
 	"time"
+
+	"pb/pkg/config"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -33,9 +34,14 @@ import (
 const (
 	applyFilterButton  = "a"
 	deleteFilterButton = "d"
+	confirmDelete      = "y"
+	cancelDelete       = "n"
 )
 
-var docStyle = lipgloss.NewStyle().Margin(1, 2)
+var (
+	docStyle          = lipgloss.NewStyle().Margin(1, 2)
+	deleteFilterState bool
+)
 
 // FilterDetails represents the structure of filter data
 type FilterDetails struct {
@@ -52,11 +58,11 @@ type Item struct {
 }
 
 var (
-	titleStyles = lipgloss.NewStyle().PaddingLeft(0).Bold(true).Foreground(lipgloss.Color("9"))
-	queryStyle  = lipgloss.NewStyle().PaddingLeft(0).Foreground(lipgloss.Color("7"))
-	itemStyle   = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("8"))
-	// selectedItemStyle = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("170"))
+	titleStyles       = lipgloss.NewStyle().PaddingLeft(0).Bold(true).Foreground(lipgloss.Color("9"))
+	queryStyle        = lipgloss.NewStyle().PaddingLeft(0).Foreground(lipgloss.Color("7"))
+	itemStyle         = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("8"))
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(1).Foreground(lipgloss.AdaptiveColor{Light: "16", Dark: "226"})
+	confirmModal      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "16", Dark: "226"})
 )
 
 type itemDelegate struct{}
@@ -90,6 +96,18 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 func (d itemDelegate) ShortHelp() []key.Binding {
+	if deleteFilterState {
+		return []key.Binding{
+			key.NewBinding(
+				key.WithKeys(confirmDelete),
+				key.WithHelp(confirmDelete, confirmModal.Render("confirm delete")),
+			),
+			key.NewBinding(
+				key.WithKeys(cancelDelete),
+				key.WithHelp(cancelDelete, confirmModal.Render("cancel delete")),
+			),
+		}
+	}
 	return []key.Binding{
 		key.NewBinding(
 			key.WithKeys(applyFilterButton),
@@ -157,9 +175,18 @@ func (m modelFilter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if msg.String() == "d" {
+			// selectedFilterDelete = m.list.SelectedItem().(Item)
+			deleteFilterState = true
+			return m, nil
+
+		}
+		if msg.String() == "y" {
 			selectedFilterDelete = m.list.SelectedItem().(Item)
 			return m, tea.Quit
-
+		}
+		if msg.String() == "n" {
+			deleteFilterState = false
+			return m, nil
 		}
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
