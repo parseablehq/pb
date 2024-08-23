@@ -34,10 +34,6 @@ pb profile default local
 
 ### Query
 
-Query can be run in plaintext or interactive mode. Plaintext emits simple json data to stdout. Interactive mode opens a TUI based interface to view the data.
-
-#### Plaintext output
-
 By default `pb` sends json data to stdout.
 
 ```bash
