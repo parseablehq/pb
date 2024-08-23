@@ -14,11 +14,7 @@ To install pb, download the binary for your platform, un-tar the binary and plac
 
 ## Usage
 
-pb is configured with `demo` profile as the default. This means you can directly start using pb against the [demo Parseable Server](https://demo.parseable.io). For example, to query:
-
-```bash
-pb query -i
-```
+pb is configured with `demo` profile as the default. This means you can directly start using pb against the [demo Parseable Server](https://demo.parseable.com).
 
 ### Profiles
 
@@ -45,30 +41,38 @@ Query can be run in plaintext or interactive mode. Plaintext emits simple json d
 By default `pb` sends json data to stdout.
 
 ```bash
-pb query "select * from backend" --from=1m --to=now
+pb query run "select * from backend" --from=1m --to=now
 ```
 
 or specifying time range in rfc3999
 
 ```bash
-pb query "select * from backend" --from=2024-01-00T01:40:00.000Z --to=2024-01-00T01:55:00.000Z
+pb query run "select * from backend" --from=2024-01-00T01:40:00.000Z --to=2024-01-00T01:55:00.000Z
 ```
 
 You can use tools like `jq` and `grep` to further process and filter the output. Some examples:
 
 ```bash
-pb query "select * from backend" --from=1m --to=now | jq .
-pb query "select host, id, method, status from backend where status = 500" --from=1m --to=now | jq . > 500.json
-pb query "select host, id, method, status from backend where status = 500" | jq '. | select(.method == "PATCH")'
-pb query "select host, id, method, status from backend where status = 500" --from=1m --to=now | grep "POST" | jq . | less
+pb query run "select * from backend" --from=1m --to=now | jq .
+pb query run "select host, id, method, status from backend where status = 500" --from=1m --to=now | jq . > 500.json
+pb query run "select host, id, method, status from backend where status = 500" | jq '. | select(.method == "PATCH")'
+pb query run "select host, id, method, status from backend where status = 500" --from=1m --to=now | grep "POST" | jq . | less
 ```
 
-#### Interactive mode
+#### Save Filter
 
-To run queries in interactive TUI mode use the `-i` flag with the query command. For example:
+To save a query as a filter use the `--save-as` flag followed by a name for the filter. For example:
 
 ```bash
-pb query "select * from backend" --from=1m --to=now -i
+pb query run "select * from backend" --from=1m --to=now --save-as=FilterName
+```
+
+### List Filter
+
+To list all filter for the active user run:
+
+```bash
+pb query list
 ```
 
 ### Live Tail
@@ -119,21 +123,22 @@ pb version
 To enable autocomplete for pb, run the following command according to your shell:
 
 For bash:
+
 ```bash
 pb autocomplete bash > /etc/bash_completion.d/pb
 source /etc/bash_completion.d/pb
 ```
 
 For zsh:
+
 ```zsh
 pb autocomplete zsh > /usr/local/share/zsh/site-functions/_pb
 autoload -U compinit && compinit
 ```
 
 For powershell
+
 ```powershell
 pb autocomplete powershell > $env:USERPROFILE\Documents\PowerShell\pb_complete.ps1
 . $PROFILE
 ```
-
-
