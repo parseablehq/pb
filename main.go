@@ -113,7 +113,7 @@ func main() {
 	stream.AddCommand(cmd.StatStreamCmd)
 
 	query.AddCommand(cmd.QueryCmd)
-	query.AddCommand(cmd.FilterList)
+	query.AddCommand(cmd.SavedQueryList)
 
 	cli.AddCommand(profile)
 	cli.AddCommand(query)

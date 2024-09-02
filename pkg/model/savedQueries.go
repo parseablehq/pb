@@ -31,27 +31,27 @@ import (
 )
 
 const (
-	applyFilterButton  = "a"
-	deleteFilterButton = "d"
+	applyQueryButton  = "a"
+	deleteQueryButton = "d"
 	confirmDelete      = "y"
 	cancelDelete       = "n"
 )
 
 var (
 	docStyle          = lipgloss.NewStyle().Margin(1, 2)
-	deleteFilterState = false
+	deleteSavedQueryState = false
 )
 
-// FilterDetails represents the structure of filter data
+// FilterDetails represents the struct of filter data
 type FilterDetails struct {
-	FilterID   string                 `json:"filter_id"`
-	FilterName string                 `json:"filter_name"`
+	SavedQueryID   string                 `json:"filter_id"`
+	SavedQueryName string                 `json:"filter_name"`
 	StreamName string                 `json:"stream_name"`
 	QueryField map[string]interface{} `json:"query"`
 	TimeFilter map[string]interface{} `json:"time_filter"`
 }
 
-// Item represents the structure of the filter item
+// Item represents the struct of the saved query item
 type Item struct {
 	id, title, stream, desc, from, to string
 }
@@ -95,7 +95,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 func (d itemDelegate) ShortHelp() []key.Binding {
-	if deleteFilterState {
+	if deleteSavedQueryState {
 		return []key.Binding{
 			key.NewBinding(
 				key.WithKeys(confirmDelete),
@@ -109,12 +109,12 @@ func (d itemDelegate) ShortHelp() []key.Binding {
 	}
 	return []key.Binding{
 		key.NewBinding(
-			key.WithKeys(applyFilterButton),
-			key.WithHelp(applyFilterButton, "apply"),
+			key.WithKeys(applyQueryButton),
+			key.WithHelp(applyQueryButton, "apply"),
 		),
 		key.NewBinding(
-			key.WithKeys(deleteFilterButton),
-			key.WithHelp(deleteFilterButton, "delete"),
+			key.WithKeys(deleteQueryButton),
+			key.WithHelp(deleteQueryButton, "delete"),
 		),
 	}
 }
@@ -124,23 +124,23 @@ func (d itemDelegate) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{
 			key.NewBinding(
-				key.WithKeys(applyFilterButton),
-				key.WithHelp(applyFilterButton, "apply"),
+				key.WithKeys(applyQueryButton),
+				key.WithHelp(applyQueryButton, "apply"),
 			),
 			key.NewBinding(
-				key.WithKeys(deleteFilterButton),
-				key.WithHelp(deleteFilterButton, "delete"),
+				key.WithKeys(deleteQueryButton),
+				key.WithHelp(deleteQueryButton, "delete"),
 			),
 		},
 	}
 }
 
 var (
-	selectedFilterApply  Item
-	selectedFilterDelete Item
+	selectedQueryApply  Item
+	selectedQueryDelete Item
 )
 
-func (i Item) Title() string { return fmt.Sprintf("Filter:%s, Query:%s", i.title, i.desc) }
+func (i Item) Title() string { return fmt.Sprintf("Title:%s, Query:%s", i.title, i.desc) }
 
 func (i Item) Description() string {
 	if i.to == "" || i.from == "" {
@@ -150,7 +150,7 @@ func (i Item) Description() string {
 }
 
 func (i Item) FilterValue() string { return i.title }
-func (i Item) FilterID() string    { return i.id }
+func (i Item) SavedQueryID() string    { return i.id }
 func (i Item) Stream() string      { return i.desc }
 func (i Item) StartTime() string   { return i.from }
 func (i Item) EndTime() string     { return i.to }
@@ -170,22 +170,22 @@ func (m modelFilter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if msg.String() == "a" || msg.Type == tea.KeyEnter {
-			selectedFilterApply = m.list.SelectedItem().(Item)
+			selectedQueryApply = m.list.SelectedItem().(Item)
 			return m, tea.Quit
 		}
 		if msg.String() == "d" {
-			deleteFilterState = true
+			deleteSavedQueryState = true
 			return m, nil
 		}
 		if msg.String() != "d" {
-			deleteFilterState = false
+			deleteSavedQueryState = false
 		}
 		if msg.String() == "y" {
-			selectedFilterDelete = m.list.SelectedItem().(Item)
+			selectedQueryDelete = m.list.SelectedItem().(Item)
 			return m, tea.Quit
 		}
 		if msg.String() == "n" {
-			deleteFilterState = false
+			deleteSavedQueryState = false
 			return m, nil
 		}
 	case tea.WindowSizeMsg:
@@ -202,8 +202,8 @@ func (m modelFilter) View() string {
 	return docStyle.Render(m.list.View())
 }
 
-// UIApp lists interactive list for the user to display all the available filters (only saved SQL filters )
-func UIApp() *tea.Program {
+// TUI which lists all available saved queries for the active user (only SQL queries )
+func SavedQueriesMenu() *tea.Program {
 	userConfig, err := config.ReadConfigFromFile()
 	if err != nil {
 		fmt.Println("Error reading Default Profile")
@@ -216,9 +216,9 @@ func UIApp() *tea.Program {
 	client := &http.Client{
 		Timeout: time.Second * 60,
 	}
-	userFilters := fetchFilters(client, &userProfile)
+	userSavedQueries := fetchFilters(client, &userProfile)
 
-	m := modelFilter{list: list.New(userFilters, itemDelegate{}, 0, 0)}
+	m := modelFilter{list: list.New(userSavedQueries, itemDelegate{}, 0, 0)}
 	m.list.Title = fmt.Sprintf("Saved Filters for User: %s", userProfile.Username)
 
 	return tea.NewProgram(m, tea.WithAltScreen())
@@ -256,9 +256,9 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 	}
 
 	// This returns only the SQL type filters
-	var userFilters []list.Item
+	var userSavedQueries []list.Item
 	for _, filter := range filters {
-		var userFilter Item
+		var userSavedQuery Item
 		queryBytes, _ := json.Marshal(filter.QueryField["filter_query"])
 
 		// Extract "from" and "to" from time_filter
@@ -271,26 +271,26 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 		}
 		// filtering only SQL type filters Filter_name is tile and Stream Name is desc
 		if string(queryBytes) != "null" {
-			userFilter = Item{
-				id:     filter.FilterID,
-				title:  filter.FilterName,
+			userSavedQuery = Item{
+				id:     filter.SavedQueryID,
+				title:  filter.SavedQueryName,
 				stream: filter.StreamName,
 				desc:   string(queryBytes),
 				from:   from,
 				to:     to,
 			}
-			userFilters = append(userFilters, userFilter)
+			userSavedQueries = append(userSavedQueries, userSavedQuery)
 		}
 	}
-	return userFilters
+	return userSavedQueries
 }
 
-// FilterToApply returns the selected filter by user in the interactive list to apply
-func FilterToApply() Item {
-	return selectedFilterApply
+// QueryToApply returns the selected saved query by user in the interactive list to apply
+func QueryToApply() Item {
+	return selectedQueryApply
 }
 
-// FilterToDelete returns the selected filter by user in the interactive list to delete
-func FilterToDelete() Item {
-	return selectedFilterDelete
+// QueryToDelete returns the selected saved query by user in the interactive list to delete
+func QueryToDelete() Item {
+	return selectedQueryDelete
 }
