@@ -42,7 +42,7 @@ var (
 	deleteSavedQueryState = false
 )
 
-// FilterDetails represents the struct of filter data
+// FilterDetails represents the struct of filter data fetched from the server
 type FilterDetails struct {
 	SavedQueryID   string                 `json:"filter_id"`
 	SavedQueryName string                 `json:"filter_name"`
@@ -155,15 +155,15 @@ func (i Item) Stream() string      { return i.desc }
 func (i Item) StartTime() string   { return i.from }
 func (i Item) EndTime() string     { return i.to }
 
-type modelFilter struct {
+type modelSavedQueries struct {
 	list list.Model
 }
 
-func (m modelFilter) Init() tea.Cmd {
+func (m modelSavedQueries) Init() tea.Cmd {
 	return nil
 }
 
-func (m modelFilter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
@@ -198,7 +198,7 @@ func (m modelFilter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m modelFilter) View() string {
+func (m modelSavedQueries) View() string {
 	return docStyle.Render(m.list.View())
 }
 
@@ -218,13 +218,13 @@ func SavedQueriesMenu() *tea.Program {
 	}
 	userSavedQueries := fetchFilters(client, &userProfile)
 
-	m := modelFilter{list: list.New(userSavedQueries, itemDelegate{}, 0, 0)}
-	m.list.Title = fmt.Sprintf("Saved Filters for User: %s", userProfile.Username)
+	m := modelSavedQueries{list: list.New(userSavedQueries, itemDelegate{}, 0, 0)}
+	m.list.Title = fmt.Sprintf("Saved Queries for User: %s", userProfile.Username)
 
 	return tea.NewProgram(m, tea.WithAltScreen())
 }
 
-// fetchFilters fetches filters from the server and sends them to the channel
+// fetchFilters fetches saved SQL queries for the active user from the server
 func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 	endpoint := fmt.Sprintf("%s/%s/%s", profile.URL, "api/v1/filters", profile.Username)
 	req, err := http.NewRequest("GET", endpoint, nil)
@@ -269,7 +269,7 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 		if toValue, exists := filter.TimeFilter["to"]; exists {
 			to = fmt.Sprintf("%v", toValue)
 		}
-		// filtering only SQL type filters Filter_name is tile and Stream Name is desc
+		// filtering only SQL type filters..  **Filter_name is title and Stream Name is desc
 		if string(queryBytes) != "null" {
 			userSavedQuery = Item{
 				id:     filter.SavedQueryID,
