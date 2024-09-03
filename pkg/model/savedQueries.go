@@ -202,7 +202,7 @@ func (m modelSavedQueries) View() string {
 	return docStyle.Render(m.list.View())
 }
 
-// TUI which lists all available saved queries for the active user (only SQL queries )
+// SavedQueriesMenu is a TUI which lists all available saved queries for the active user (only SQL queries )
 func SavedQueriesMenu() *tea.Program {
 	userConfig, err := config.ReadConfigFromFile()
 	if err != nil {
