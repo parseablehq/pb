@@ -20,9 +20,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"pb/pkg/config"
 	"strings"
 	"time"
+
+	"pb/pkg/config"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -33,12 +34,12 @@ import (
 const (
 	applyQueryButton  = "a"
 	deleteQueryButton = "d"
-	confirmDelete      = "y"
-	cancelDelete       = "n"
+	confirmDelete     = "y"
+	cancelDelete      = "n"
 )
 
 var (
-	docStyle          = lipgloss.NewStyle().Margin(1, 2)
+	docStyle              = lipgloss.NewStyle().Margin(1, 2)
 	deleteSavedQueryState = false
 )
 
@@ -46,9 +47,9 @@ var (
 type FilterDetails struct {
 	SavedQueryID   string                 `json:"filter_id"`
 	SavedQueryName string                 `json:"filter_name"`
-	StreamName string                 `json:"stream_name"`
-	QueryField map[string]interface{} `json:"query"`
-	TimeFilter map[string]interface{} `json:"time_filter"`
+	StreamName     string                 `json:"stream_name"`
+	QueryField     map[string]interface{} `json:"query"`
+	TimeFilter     map[string]interface{} `json:"time_filter"`
 }
 
 // Item represents the struct of the saved query item
@@ -149,11 +150,11 @@ func (i Item) Description() string {
 	return fmt.Sprintf("From:%s To:%s", i.from, i.to)
 }
 
-func (i Item) FilterValue() string { return i.title }
-func (i Item) SavedQueryID() string    { return i.id }
-func (i Item) Stream() string      { return i.desc }
-func (i Item) StartTime() string   { return i.from }
-func (i Item) EndTime() string     { return i.to }
+func (i Item) FilterValue() string  { return i.title }
+func (i Item) SavedQueryID() string { return i.id }
+func (i Item) Stream() string       { return i.desc }
+func (i Item) StartTime() string    { return i.from }
+func (i Item) EndTime() string      { return i.to }
 
 type modelSavedQueries struct {
 	list list.Model
