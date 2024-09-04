@@ -1,10 +1,8 @@
 name: Go Build and Test
 
-on:
-  pull_request
+on: pull_request
 
 jobs:
-
   build-and-test:
     name: Build and Test the Go code
     runs-on: ubuntu-latest
@@ -14,7 +12,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.22.5'
+          go-version: "1.22.5"
+      - name: Install gofumpt
+        run: go install mvdan.cc/gofumpt@vlatest
+      - name: Run gofumpt
+        run: gofumpt -l -w .
       - name: make verification
         run: make verifiers
       - name: Build
