@@ -14,7 +14,7 @@ jobs:
         with:
           go-version: "1.22.5"
       - name: Install gofumpt
-        run: go install mvdan.cc/gofumpt@vlatest
+        run: go install mvdan.cc/gofumpt@latest
       - name: Run gofumpt
         run: gofumpt -l -w .
       - name: make verification
