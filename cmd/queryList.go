@@ -25,38 +25,38 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var FilterList = &cobra.Command{
+var SavedQueryList = &cobra.Command{
 	Use:     "list",
 	Example: "pb query list ",
-	Short:   "List of saved filters",
-	Long:    "\nShow the list of saved filters for current user",
+	Short:   "List of saved queries",
+	Long:    "\nShow the list of saved quries for active user",
 	PreRunE: PreRunDefaultProfile,
 	Run: func(_ *cobra.Command, _ []string) {
 		client := DefaultClient()
 
-		p := model.UIApp()
+		p := model.SavedQueriesMenu()
 		if _, err := p.Run(); err != nil {
 			os.Exit(1)
 		}
 
-		a := model.FilterToApply()
-		d := model.FilterToDelete()
+		a := model.QueryToApply()
+		d := model.QueryToDelete()
 		if a.Stream() != "" {
-			filterToPbQuery(a.Stream(), a.StartTime(), a.EndTime())
+			savedQueryToPbQuery(a.Stream(), a.StartTime(), a.EndTime())
 		}
-		if d.FilterID() != "" {
-			deleteFilter(&client, d.FilterID(), d.Title())
+		if d.SavedQueryID() != "" {
+			deleteSavedQuery(&client, d.SavedQueryID(), d.Title())
 		}
 	},
 }
 
-// Delete a saved filter from the list of filter
-func deleteFilter(client *HTTPClient, filterID, title string) {
+// Delete a saved query from the list.
+func deleteSavedQuery(client *HTTPClient, savedQueryID, title string) {
 	fmt.Printf("\nAttempting to delete '%s'", title)
-	deleteURL := `filters/filter/` + filterID
+	deleteURL := `filters/filter/` + savedQueryID
 	req, err := client.NewRequest("DELETE", deleteURL, nil)
 	if err != nil {
-		fmt.Println("Failed to delete the filter with error: ", err)
+		fmt.Println("Failed to delete the saved query with error: ", err)
 	}
 
 	resp, err := client.client.Do(req)
@@ -66,12 +66,12 @@ func deleteFilter(client *HTTPClient, filterID, title string) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 200 {
-		fmt.Printf("\nFilter deleted\n\n")
+		fmt.Printf("\nSaved Query deleted\n\n")
 	}
 }
 
-// Convert a filter to executable pb query
-func filterToPbQuery(query string, start string, end string) {
+// Convert a saved query to executable pb query
+func savedQueryToPbQuery(query string, start string, end string) {
 	var timeStamps string
 	if start == "" || end == "" {
 		timeStamps = ``
