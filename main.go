@@ -134,13 +134,25 @@ func main() {
 
 	cli.CompletionOptions.HiddenDefaultCmd = true
 
-	// create a default profile if file does not exist
-	if _, err := config.ReadConfigFromFile(); os.IsNotExist(err) {
+		// create a default profile if file does not exist
+	if previousConfig, err := config.ReadConfigFromFile(); os.IsNotExist(err) {
 		conf := config.Config{
 			Profiles:       map[string]config.Profile{"demo": defaultInitialProfile()},
 			DefaultProfile: "demo",
 		}
 		config.WriteConfigToFile(&conf)
+	} else {
+		// updates the demo profile for existing users
+		_, exists := previousConfig.Profiles["demo"]
+		if exists {
+			conf := config.Profile{
+				URL:      "http://demo.parseable.com",
+				Username: "admin",
+				Password: "admin",
+			}
+			previousConfig.Profiles["demo"] = conf
+			config.WriteConfigToFile(previousConfig)
+		}
 	}
 
 	err := cli.Execute()
