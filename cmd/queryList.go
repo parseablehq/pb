@@ -53,7 +53,7 @@ var SavedQueryList = &cobra.Command{
 // Delete a saved query from the list.
 func deleteSavedQuery(client *HTTPClient, savedQueryID, title string) {
 	fmt.Printf("\nAttempting to delete '%s'", title)
-	deleteURL := `filters/filter/` + savedQueryID
+	deleteURL := `filters/` + savedQueryID
 	req, err := client.NewRequest("DELETE", deleteURL, nil)
 	if err != nil {
 		fmt.Println("Failed to delete the saved query with error: ", err)

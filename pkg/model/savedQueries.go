@@ -227,7 +227,7 @@ func SavedQueriesMenu() *tea.Program {
 
 // fetchFilters fetches saved SQL queries for the active user from the server
 func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
-	endpoint := fmt.Sprintf("%s/%s/%s", profile.URL, "api/v1/filters", profile.Username)
+	endpoint := fmt.Sprintf("%s/%s", profile.URL, "api/v1/filters")
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		fmt.Println("Error creating request:", err)
