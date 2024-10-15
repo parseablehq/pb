@@ -22,17 +22,36 @@ import (
 	"io"
 )
 
+// Define the struct
 type About struct {
-	Commit          string `json:"commit"`
-	DeploymentID    string `json:"deploymentId"`
-	LatestVersion   any    `json:"latestVersion"`
-	License         string `json:"license"`
-	Mode            string `json:"mode"`
-	Staging         string `json:"staging"`
-	Store           string `json:"store"`
-	GrpcPort        uint16 `json:"grpcPort"`
-	UpdateAvailable bool   `json:"updateAvailable"`
-	Version         string `json:"version"`
+	Version         string    `json:"version"`
+	UIVersion       string    `json:"uiVersion"`
+	Commit          string    `json:"commit"`
+	DeploymentID    string    `json:"deploymentId"`
+	UpdateAvailable bool      `json:"updateAvailable"`
+	LatestVersion   string    `json:"latestVersion"`
+	LLMActive       bool      `json:"llmActive"`
+	LLMProvider     string    `json:"llmProvider"`
+	OIDCActive      bool      `json:"oidcActive"`
+	License         string    `json:"license"`
+	Mode            string    `json:"mode"`
+	Staging         string    `json:"staging"`
+	HotTier         string    `json:"hotTier"`
+	GRPCPort        int       `json:"grpcPort"`
+	Store           Store     `json:"store"`
+	Analytics       Analytics `json:"analytics"`
+	QueryEngine     string    `json:"queryEngine"`
+}
+
+// Define the Store struct
+type Store struct {
+	Type string `json:"type"`
+	Path string `json:"path"`
+}
+
+// Define the Analytics struct
+type Analytics struct {
+	ClarityTag string `json:"clarityTag"`
 }
 
 func FetchAbout(client *HTTPClient) (about About, err error) {
