@@ -22,7 +22,7 @@ import (
 	"io"
 )
 
-// Define the struct
+// About struct
 type About struct {
 	Version         string    `json:"version"`
 	UIVersion       string    `json:"uiVersion"`
@@ -43,13 +43,13 @@ type About struct {
 	QueryEngine     string    `json:"queryEngine"`
 }
 
-// Define the Store struct
+// Store struct
 type Store struct {
 	Type string `json:"type"`
 	Path string `json:"path"`
 }
 
-// Define the Analytics struct
+// Analytics struct
 type Analytics struct {
 	ClarityTag string `json:"clarityTag"`
 }
