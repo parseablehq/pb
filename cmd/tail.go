@@ -58,7 +58,7 @@ func tail(profile config.Profile, stream string) error {
 	if err != nil {
 		return err
 	}
-	url := profile.GrpcAddr(fmt.Sprint(about.GrpcPort))
+	url := profile.GrpcAddr(fmt.Sprint(about.GRPCPort))
 
 	client, err := flight.NewClientWithMiddleware(url, nil, nil, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
