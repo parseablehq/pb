@@ -90,12 +90,18 @@ func WriteConfigToFile(config *Config) error {
 func ReadConfigFromFile() (config *Config, err error) {
 	filePath, err := Path()
 	if err != nil {
-		return
+		return &Config{}, err
 	}
+
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return
+		return &Config{}, err
 	}
-	toml.Unmarshal(data, &config)
-	return
+
+	err = toml.Unmarshal(data, &config)
+	if err != nil {
+		return &Config{}, err
+	}
+
+	return config, nil
 }

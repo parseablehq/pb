@@ -114,7 +114,14 @@ var AddProfileCmd = &cobra.Command{
 		if fileConfig.DefaultProfile == "" {
 			fileConfig.DefaultProfile = name
 		}
-		config.WriteConfigToFile(fileConfig)
+
+		err = config.WriteConfigToFile(fileConfig)
+		if err != nil {
+			fmt.Printf("add profile %s failed\n, err: %v\n", StyleBold.Render(name), err)
+			return err
+		} else {
+			fmt.Printf("Added profile %s\n", StyleBold.Render(name))
+		}
 
 		return nil
 	},
@@ -139,7 +146,11 @@ var RemoveProfileCmd = &cobra.Command{
 			if len(fileConfig.Profiles) == 0 {
 				fileConfig.DefaultProfile = ""
 			}
-			config.WriteConfigToFile(fileConfig)
+			err = config.WriteConfigToFile(fileConfig)
+			if err != nil {
+				fmt.Printf("delete profile %s failed\n, err: %v\n", StyleBold.Render(name), err)
+				return err
+			}
 			fmt.Printf("Deleted profile %s\n", StyleBold.Render(name))
 		} else {
 			fmt.Printf("No profile found with the name: %s", StyleBold.Render(name))
