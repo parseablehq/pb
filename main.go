@@ -160,6 +160,13 @@ func main() {
 			previousConfig.Profiles["demo"] = defaultInitialProfile()
 			previousConfig.DefaultProfile = "demo" // Optional: set as default if needed
 		}
+
+		// Write the updated configuration back to file
+		err = config.WriteConfigToFile(previousConfig)
+		if err != nil {
+			fmt.Printf("failed to write to existing file %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	err := cli.Execute()
