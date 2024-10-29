@@ -119,9 +119,8 @@ var AddProfileCmd = &cobra.Command{
 		if err != nil {
 			fmt.Printf("add profile %s failed\n, err: %v\n", StyleBold.Render(name), err)
 			return err
-		} else {
-			fmt.Printf("Added profile %s\n", StyleBold.Render(name))
 		}
+		fmt.Printf("Added profile %s\n", StyleBold.Render(name))
 
 		return nil
 	},
