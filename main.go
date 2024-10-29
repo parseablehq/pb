@@ -18,6 +18,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"pb/cmd"
 	"pb/pkg/config"
@@ -140,18 +141,31 @@ func main() {
 			Profiles:       map[string]config.Profile{"demo": defaultInitialProfile()},
 			DefaultProfile: "demo",
 		}
-		config.WriteConfigToFile(&conf)
+		err = config.WriteConfigToFile(&conf)
+		if err != nil {
+			fmt.Printf("failed to write to file %v\n", err)
+			os.Exit(1)
+		}
 	} else {
-		// updates the demo profile for existing users
-		_, exists := previousConfig.Profiles["demo"]
+		// Only update the "demo" profile without overwriting other profiles
+		demoProfile, exists := previousConfig.Profiles["demo"]
 		if exists {
-			conf := config.Profile{
-				URL:      "http://demo.parseable.com",
-				Username: "admin",
-				Password: "admin",
-			}
-			previousConfig.Profiles["demo"] = conf
-			config.WriteConfigToFile(previousConfig)
+			// Update fields in the demo profile only
+			demoProfile.URL = "http://demo.parseable.com"
+			demoProfile.Username = "admin"
+			demoProfile.Password = "admin"
+			previousConfig.Profiles["demo"] = demoProfile
+		} else {
+			// Add the "demo" profile if it doesn't exist
+			previousConfig.Profiles["demo"] = defaultInitialProfile()
+			previousConfig.DefaultProfile = "demo" // Optional: set as default if needed
+		}
+
+		// Write the updated configuration back to file
+		err = config.WriteConfigToFile(previousConfig)
+		if err != nil {
+			fmt.Printf("failed to write to existing file %v\n", err)
+			os.Exit(1)
 		}
 	}
 
