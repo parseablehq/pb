@@ -16,10 +16,12 @@
 package model
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -39,17 +41,47 @@ const (
 )
 
 var (
-	docStyle              = lipgloss.NewStyle().Margin(1, 2)
+	docStyle              = lipgloss.NewStyle().Margin(1, 2, 3)
 	deleteSavedQueryState = false
 )
 
-// FilterDetails represents the struct of filter data fetched from the server
-type FilterDetails struct {
-	SavedQueryID   string                 `json:"filter_id"`
-	SavedQueryName string                 `json:"filter_name"`
-	StreamName     string                 `json:"stream_name"`
-	QueryField     map[string]interface{} `json:"query"`
-	TimeFilter     map[string]interface{} `json:"time_filter"`
+type Filter struct {
+	Version    string     `json:"version"`
+	UserID     string     `json:"user_id"`
+	StreamName string     `json:"stream_name"`
+	FilterName string     `json:"filter_name"`
+	FilterID   string     `json:"filter_id"`
+	Query      Query      `json:"query"`
+	TimeFilter TimeFilter `json:"time_filter"`
+}
+
+type TimeFilter struct {
+	To   string `json:"to"`
+	From string `json:"from"`
+}
+type Query struct {
+	FilterType    string         `json:"filter_type"`
+	FilterQuery   *string        `json:"filter_query,omitempty"`   // SQL query as string or null
+	FilterBuilder *FilterBuilder `json:"filter_builder,omitempty"` // Builder or null
+}
+
+type FilterBuilder struct {
+	ID         string    `json:"id"`
+	Combinator string    `json:"combinator"`
+	Rules      []RuleSet `json:"rules"`
+}
+
+type RuleSet struct {
+	ID         string `json:"id"`
+	Combinator string `json:"combinator"`
+	Rules      []Rule `json:"rules"`
+}
+
+type Rule struct {
+	ID       string `json:"id"`
+	Field    string `json:"field"`
+	Value    string `json:"value"`
+	Operator string `json:"operator"`
 }
 
 // Item represents the struct of the saved query item
@@ -157,11 +189,48 @@ func (i Item) StartTime() string    { return i.from }
 func (i Item) EndTime() string      { return i.to }
 
 type modelSavedQueries struct {
-	list list.Model
+	list          list.Model
+	commandOutput string
 }
 
 func (m modelSavedQueries) Init() tea.Cmd {
 	return nil
+}
+
+// Define a message type for command results
+type commandResultMsg string
+
+// RunCommand executes a command based on the selected item
+func RunCommand(item Item) (string, error) {
+	// Clean the description by removing any backslashes
+	cleaned := strings.ReplaceAll(item.desc, "\\", "") // Remove any backslashes
+	cleaned = strings.TrimSpace(cleaned)               // Trim any leading/trailing whitespace
+	cleanedStr := strings.ReplaceAll(cleaned, `"`, "")
+
+	// Prepare the command with the cleaned SQL query
+	fmt.Printf("Executing command: pb query run %s\n", cleanedStr) // Log the command for debugging
+	//qExecuting command: pb query run "SELECT * FROM "frontend" LIMIT 1000"
+	// Execute the command without adding extra quotes
+	// TODO: add timestamp
+	cmd := exec.Command("pb", "query", "run", cleanedStr) // Directly pass cleaned
+
+	// Set up pipes to capture stdout and stderr
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output // Capture both stdout and stderr in the same buffer
+
+	// Run the command
+	err := cmd.Run()
+	if err != nil {
+		return "", fmt.Errorf("error executing command: %v, output: %s", err, output.String())
+	}
+
+	// Log the raw output for debugging
+	fmt.Printf("Raw output: %s\n", output.String())
+
+	time.Sleep(10 * time.Second)
+	// Return the output as a string
+	return output.String(), nil
 }
 
 func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -172,7 +241,17 @@ func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.String() == "a" || msg.Type == tea.KeyEnter {
 			selectedQueryApply = m.list.SelectedItem().(Item)
-			return m, tea.Quit
+
+			// Run the command and capture the output in a function
+			cmd := func() tea.Msg {
+				output, err := RunCommand(selectedQueryApply)
+				if err != nil {
+					return commandResultMsg(fmt.Sprintf("Error: %s", err))
+				}
+				return commandResultMsg(output)
+			}
+
+			return m, cmd
 		}
 		if msg.String() == "d" {
 			deleteSavedQueryState = true
@@ -192,6 +271,11 @@ func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
+
+	// Handle the command result
+	case commandResultMsg:
+		m.commandOutput = string(msg) // Set the output in the model for display
+		return m, nil
 	}
 
 	var cmd tea.Cmd
@@ -200,7 +284,10 @@ func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m modelSavedQueries) View() string {
-	return docStyle.Render(m.list.View())
+	if m.commandOutput != "" {
+		return fmt.Sprintf("Command output:%s\nPress any key to go back.", m.commandOutput)
+	}
+	return m.list.View()
 }
 
 // SavedQueriesMenu is a TUI which lists all available saved queries for the active user (only SQL queries )
@@ -224,6 +311,78 @@ func SavedQueriesMenu() *tea.Program {
 
 	return tea.NewProgram(m, tea.WithAltScreen())
 }
+
+// // Convert a saved query to executable pb query
+// func savedQueryToPbQuery(query string, start string, end string) string {
+// 	var timeStamps string
+// 	if start == "" || end == "" {
+// 		timeStamps = ``
+// 	} else {
+// 		startFormatted := formatToRFC3339(start)
+// 		endFormatted := formatToRFC3339(end)
+// 		timeStamps = ` --from=` + startFormatted + ` --to=` + endFormatted
+// 	}
+// 	queryTemplate := "pb query run" + query + timeStamps
+// 	fmt.Printf("\nCopy and paste the command")
+// 	fmt.Printf("%s", queryTemplate)
+// 	return queryTemplate
+// }
+
+// // Parses all UTC time format from string to time interface
+// func parseTimeToFormat(input string) (time.Time, error) {
+// 	// List of possible formats
+// 	formats := []string{
+// 		time.RFC3339,
+// 		"2006-01-02 15:04:05",
+// 		"2006-01-02",
+// 		"01/02/2006 15:04:05",
+// 		"02-Jan-2006 15:04:05 MST",
+// 		"2006-01-02T15:04:05Z",
+// 		"02-Jan-2006",
+// 	}
+
+// 	var err error
+// 	var t time.Time
+
+// 	for _, format := range formats {
+// 		t, err = time.Parse(format, input)
+// 		if err == nil {
+// 			return t, nil
+// 		}
+// 	}
+
+// 	return t, fmt.Errorf("unable to parse time: %s", input)
+// }
+
+// // Converts to RFC3339
+// func convertTime(input string) (string, error) {
+// 	t, err := parseTimeToFormat(input)
+// 	if err != nil {
+// 		return "", err
+// 	}
+
+// 	return t.Format(time.RFC3339), nil
+// }
+
+// // Converts User inputted time to string type RFC3339 time
+// func formatToRFC3339(time string) string {
+// 	var formattedTime string
+// 	if len(strings.Fields(time)) > 1 {
+// 		newTime := strings.Fields(time)[0:2]
+// 		rfc39990time, err := convertTime(strings.Join(newTime, " "))
+// 		if err != nil {
+// 			fmt.Println("error formatting time")
+// 		}
+// 		formattedTime = rfc39990time
+// 	} else {
+// 		rfc39990time, err := convertTime(time)
+// 		if err != nil {
+// 			fmt.Println("error formatting time")
+// 		}
+// 		formattedTime = rfc39990time
+// 	}
+// 	return formattedTime
+// }
 
 // fetchFilters fetches saved SQL queries for the active user from the server
 func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
@@ -249,7 +408,7 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 		return nil
 	}
 
-	var filters []FilterDetails
+	var filters []Filter
 	err = json.Unmarshal(body, &filters)
 	if err != nil {
 		fmt.Println("Error unmarshalling response:", err)
@@ -259,29 +418,32 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 	// This returns only the SQL type filters
 	var userSavedQueries []list.Item
 	for _, filter := range filters {
-		var userSavedQuery Item
-		queryBytes, _ := json.Marshal(filter.QueryField["filter_query"])
 
+		//var userSavedQuery Item
+
+		queryBytes, _ := json.Marshal(filter.Query.FilterQuery)
+
+		fmt.Println(string(queryBytes))
 		// Extract "from" and "to" from time_filter
-		var from, to string
-		if fromValue, exists := filter.TimeFilter["from"]; exists {
-			from = fmt.Sprintf("%v", fromValue)
-		}
-		if toValue, exists := filter.TimeFilter["to"]; exists {
-			to = fmt.Sprintf("%v", toValue)
-		}
+		// var from, to string
+		// if fromValue, exists := filter.TimeFilter["from"]; exists {
+		// 	from = fmt.Sprintf("%v", fromValue)
+		// }
+		// if toValue, exists := filter.TimeFilter["to"]; exists {
+		// 	to = fmt.Sprintf("%v", toValue)
+		// }
 		// filtering only SQL type filters..  **Filter_name is title and Stream Name is desc
-		if string(queryBytes) != "null" {
-			userSavedQuery = Item{
-				id:     filter.SavedQueryID,
-				title:  filter.SavedQueryName,
-				stream: filter.StreamName,
-				desc:   string(queryBytes),
-				from:   from,
-				to:     to,
-			}
-			userSavedQueries = append(userSavedQueries, userSavedQuery)
+		//if string(queryBytes) != "null" {
+		userSavedQuery := Item{
+			id:     filter.FilterID,
+			title:  filter.FilterName,
+			stream: filter.StreamName,
+			desc:   string(queryBytes),
+			from:   filter.TimeFilter.From,
+			to:     filter.TimeFilter.To,
 		}
+		userSavedQueries = append(userSavedQueries, userSavedQuery)
+		//}
 	}
 	return userSavedQueries
 }

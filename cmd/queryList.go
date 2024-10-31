@@ -82,7 +82,7 @@ func savedQueryToPbQuery(query string, start string, end string) {
 	}
 	queryTemplate := `pb query run ` + query + timeStamps
 	fmt.Printf("\nCopy and paste the command")
-	fmt.Printf("\n\n%s\n\n", queryTemplate)
+	fmt.Printf("%s", queryTemplate)
 }
 
 // Parses all UTC time format from string to time interface
