@@ -228,9 +228,19 @@ func RunCommand(item Item) (string, error) {
 	// Log the raw output for debugging
 	fmt.Printf("Raw output: %s\n", output.String())
 
-	time.Sleep(10 * time.Second)
+	// Format the output as pretty-printed JSON
+	var jsonResponse interface{}
+	if err := json.Unmarshal(output.Bytes(), &jsonResponse); err != nil {
+		return "", fmt.Errorf("invalid JSON output: %s, error: %v", output.String(), err)
+	}
+
+	prettyOutput, err := json.MarshalIndent(jsonResponse, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("error formatting JSON output: %v", err)
+	}
+
 	// Return the output as a string
-	return output.String(), nil
+	return string(prettyOutput), nil
 }
 
 func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
