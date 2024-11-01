@@ -16,8 +16,12 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"pb/pkg/config"
 	"pb/pkg/model"
 	"strings"
 	"time"
@@ -25,15 +29,75 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var outputFlag string
+
 var SavedQueryList = &cobra.Command{
 	Use:     "list",
-	Example: "pb query list ",
+	Example: "pb query list [-o | --output]",
 	Short:   "List of saved queries",
-	Long:    "\nShow the list of saved quries for active user",
+	Long:    "\nShow the list of saved queries for active user",
 	PreRunE: PreRunDefaultProfile,
 	Run: func(_ *cobra.Command, _ []string) {
 		client := DefaultClient()
 
+		// Check if the output flag is set
+		if outputFlag != "" {
+			// Display all filters if output flag is set
+			userConfig, err := config.ReadConfigFromFile()
+			if err != nil {
+				fmt.Println("Error reading Default Profile")
+			}
+			var userProfile config.Profile
+			if profile, ok := userConfig.Profiles[userConfig.DefaultProfile]; ok {
+				userProfile = profile
+			}
+
+			client := &http.Client{
+				Timeout: time.Second * 60,
+			}
+			userSavedQueries := fetchFilters(client, &userProfile)
+			// Collect all filter titles in a slice and join with commas
+			var filterDetails []string
+
+			if outputFlag == "json" {
+				// If JSON output is requested, marshal the saved queries to JSON
+				jsonOutput, err := json.MarshalIndent(userSavedQueries, "", "  ")
+				if err != nil {
+					fmt.Println("Error converting saved queries to JSON:", err)
+					return
+				}
+				fmt.Println(string(jsonOutput))
+			} else {
+				for _, query := range userSavedQueries {
+					// Build the line conditionally
+					var parts []string
+					if query.Title != "" {
+						parts = append(parts, query.Title)
+					}
+					if query.Stream != "" {
+						parts = append(parts, query.Stream)
+					}
+					if query.Desc != "" {
+						parts = append(parts, query.Desc)
+					}
+					if query.From != "" {
+						parts = append(parts, query.From)
+					}
+					if query.To != "" {
+						parts = append(parts, query.To)
+					}
+
+					// Join parts with commas and print each query on a new line
+					fmt.Println(strings.Join(parts, ", "))
+				}
+			}
+			// Print all titles as a single line, comma-separated
+			fmt.Println(strings.Join(filterDetails, " "))
+			return
+
+		}
+
+		// Normal Saved Queries Menu if output flag not set
 		p := model.SavedQueriesMenu()
 		if _, err := p.Run(); err != nil {
 			os.Exit(1)
@@ -80,9 +144,7 @@ func savedQueryToPbQuery(query string, start string, end string) {
 		endFormatted := formatToRFC3339(end)
 		timeStamps = ` --from=` + startFormatted + ` --to=` + endFormatted
 	}
-	queryTemplate := `pb query run ` + query + timeStamps
-	fmt.Printf("\nCopy and paste the command")
-	fmt.Printf("%s", queryTemplate)
+	_ = `pb query run ` + query + timeStamps
 }
 
 // Parses all UTC time format from string to time interface
@@ -139,4 +201,68 @@ func formatToRFC3339(time string) string {
 		formattedTime = rfc39990time
 	}
 	return formattedTime
+}
+
+func init() {
+	// Add the output flag to the SavedQueryList command
+	SavedQueryList.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format (text or json)")
+}
+
+type Item struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Stream string `json:"stream"`
+	Desc   string `json:"desc"`
+	From   string `json:"from,omitempty"`
+	To     string `json:"to,omitempty"`
+}
+
+func fetchFilters(client *http.Client, profile *config.Profile) []Item {
+	endpoint := fmt.Sprintf("%s/%s", profile.URL, "api/v1/filters")
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		fmt.Println("Error creating request:", err)
+		return nil
+	}
+
+	req.SetBasicAuth(profile.Username, profile.Password)
+	req.Header.Add("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Println("Error making request:", err)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("Error reading response body:", err)
+		return nil
+	}
+
+	var filters []model.Filter
+	err = json.Unmarshal(body, &filters)
+	if err != nil {
+		fmt.Println("Error unmarshalling response:", err)
+		return nil
+	}
+
+	// This returns only the SQL type filters
+	var userSavedQueries []Item
+	for _, filter := range filters {
+
+		queryBytes, _ := json.Marshal(filter.Query.FilterQuery)
+
+		userSavedQuery := Item{
+			ID:     filter.FilterID,
+			Title:  filter.FilterName,
+			Stream: filter.StreamName,
+			Desc:   string(queryBytes),
+			From:   filter.TimeFilter.From,
+			To:     filter.TimeFilter.To,
+		}
+		userSavedQueries = append(userSavedQueries, userSavedQuery)
+
+	}
+	return userSavedQueries
 }

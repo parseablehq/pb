@@ -29,20 +29,20 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 const (
-	applyQueryButton  = "a"
-	deleteQueryButton = "d"
-	confirmDelete     = "y"
-	cancelDelete      = "n"
+	applyQueryButton = "a"
+	backButton       = "b"
+	confirmDelete    = "y"
+	cancelDelete     = "n"
 )
 
 var (
-	docStyle              = lipgloss.NewStyle().Margin(1, 2, 3)
-	deleteSavedQueryState = false
+	docStyle = lipgloss.NewStyle().Margin(1, 2, 3)
 )
 
 type Filter struct {
@@ -94,7 +94,6 @@ var (
 	queryStyle        = lipgloss.NewStyle().PaddingLeft(0).Foreground(lipgloss.Color("7"))
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("8"))
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(1).Foreground(lipgloss.AdaptiveColor{Light: "16", Dark: "226"})
-	confirmModal      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "16", Dark: "226"})
 )
 
 type itemDelegate struct{}
@@ -127,32 +126,21 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprint(w, fn(tr(i.title)+"\n"+qr(i.desc)+"\n"+str))
 }
 
+// Implement itemDelegate ShortHelp to show only relevant bindings.
 func (d itemDelegate) ShortHelp() []key.Binding {
-	if deleteSavedQueryState {
-		return []key.Binding{
-			key.NewBinding(
-				key.WithKeys(confirmDelete),
-				key.WithHelp(confirmDelete, confirmModal.Render("confirm delete")),
-			),
-			key.NewBinding(
-				key.WithKeys(cancelDelete),
-				key.WithHelp(cancelDelete, confirmModal.Render("cancel delete")),
-			),
-		}
-	}
 	return []key.Binding{
 		key.NewBinding(
 			key.WithKeys(applyQueryButton),
 			key.WithHelp(applyQueryButton, "apply"),
 		),
 		key.NewBinding(
-			key.WithKeys(deleteQueryButton),
-			key.WithHelp(deleteQueryButton, "delete"),
+			key.WithKeys(backButton),
+			key.WithHelp(backButton, "back"),
 		),
 	}
 }
 
-// FullHelp returns the extended list of keybindings.
+// Implement FullHelp to show only "apply" and "back" key bindings.
 func (d itemDelegate) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{
@@ -161,8 +149,8 @@ func (d itemDelegate) FullHelp() [][]key.Binding {
 				key.WithHelp(applyQueryButton, "apply"),
 			),
 			key.NewBinding(
-				key.WithKeys(deleteQueryButton),
-				key.WithHelp(deleteQueryButton, "delete"),
+				key.WithKeys(backButton),
+				key.WithHelp(backButton, "back"),
 			),
 		},
 	}
@@ -191,6 +179,7 @@ func (i Item) EndTime() string      { return i.to }
 type modelSavedQueries struct {
 	list          list.Model
 	commandOutput string
+	viewport      viewport.Model
 }
 
 func (m modelSavedQueries) Init() tea.Cmd {
@@ -209,9 +198,10 @@ func RunCommand(item Item) (string, error) {
 
 	// Prepare the command with the cleaned SQL query
 	fmt.Printf("Executing command: pb query run %s\n", cleanedStr) // Log the command for debugging
-	//qExecuting command: pb query run "SELECT * FROM "frontend" LIMIT 1000"
-	// Execute the command without adding extra quotes
-	// TODO: add timestamp
+
+	if item.StartTime() != "" && item.EndTime() != "" {
+		cleanedStr = cleanedStr + " --from=" + item.StartTime() + " --to=" + item.EndTime()
+	}
 	cmd := exec.Command("pb", "query", "run", cleanedStr) // Directly pass cleaned
 
 	// Set up pipes to capture stdout and stderr
@@ -246,13 +236,12 @@ func RunCommand(item Item) (string, error) {
 func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
+		switch msg.String() {
+		case "ctrl+c":
 			return m, tea.Quit
-		}
-		if msg.String() == "a" || msg.Type == tea.KeyEnter {
+		case "a", "enter":
+			// Apply the selected query
 			selectedQueryApply = m.list.SelectedItem().(Item)
-
-			// Run the command and capture the output in a function
 			cmd := func() tea.Msg {
 				output, err := RunCommand(selectedQueryApply)
 				if err != nil {
@@ -260,31 +249,25 @@ func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return commandResultMsg(output)
 			}
-
 			return m, cmd
-		}
-		if msg.String() == "d" {
-			deleteSavedQueryState = true
+		case "b": // 'b' to go back to the saved query list
+			m.commandOutput = ""      // Clear the command output
+			m.viewport.SetContent("") // Clear viewport content
+			m.viewport.GotoTop()      // Reset viewport to the top
 			return m, nil
-		}
-		if msg.String() != "d" {
-			deleteSavedQueryState = false
-		}
-		if msg.String() == "y" {
-			selectedQueryDelete = m.list.SelectedItem().(Item)
-			return m, tea.Quit
-		}
-		if msg.String() == "n" {
-			deleteSavedQueryState = false
-			return m, nil
+		case "down", "j":
+			m.viewport.LineDown(1) // Scroll down in the viewport
+		case "up", "k":
+			m.viewport.LineUp(1) // Scroll up in the viewport
 		}
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
-
-	// Handle the command result
+		m.viewport.Width = msg.Width - h
+		m.viewport.Height = msg.Height - v
 	case commandResultMsg:
-		m.commandOutput = string(msg) // Set the output in the model for display
+		m.commandOutput = string(msg)
+		m.viewport.SetContent(m.commandOutput) // Update viewport content with command output
 		return m, nil
 	}
 
@@ -295,7 +278,7 @@ func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m modelSavedQueries) View() string {
 	if m.commandOutput != "" {
-		return fmt.Sprintf("Command output:%s\nPress any key to go back.", m.commandOutput)
+		return m.viewport.View()
 	}
 	return m.list.View()
 }
@@ -321,78 +304,6 @@ func SavedQueriesMenu() *tea.Program {
 
 	return tea.NewProgram(m, tea.WithAltScreen())
 }
-
-// // Convert a saved query to executable pb query
-// func savedQueryToPbQuery(query string, start string, end string) string {
-// 	var timeStamps string
-// 	if start == "" || end == "" {
-// 		timeStamps = ``
-// 	} else {
-// 		startFormatted := formatToRFC3339(start)
-// 		endFormatted := formatToRFC3339(end)
-// 		timeStamps = ` --from=` + startFormatted + ` --to=` + endFormatted
-// 	}
-// 	queryTemplate := "pb query run" + query + timeStamps
-// 	fmt.Printf("\nCopy and paste the command")
-// 	fmt.Printf("%s", queryTemplate)
-// 	return queryTemplate
-// }
-
-// // Parses all UTC time format from string to time interface
-// func parseTimeToFormat(input string) (time.Time, error) {
-// 	// List of possible formats
-// 	formats := []string{
-// 		time.RFC3339,
-// 		"2006-01-02 15:04:05",
-// 		"2006-01-02",
-// 		"01/02/2006 15:04:05",
-// 		"02-Jan-2006 15:04:05 MST",
-// 		"2006-01-02T15:04:05Z",
-// 		"02-Jan-2006",
-// 	}
-
-// 	var err error
-// 	var t time.Time
-
-// 	for _, format := range formats {
-// 		t, err = time.Parse(format, input)
-// 		if err == nil {
-// 			return t, nil
-// 		}
-// 	}
-
-// 	return t, fmt.Errorf("unable to parse time: %s", input)
-// }
-
-// // Converts to RFC3339
-// func convertTime(input string) (string, error) {
-// 	t, err := parseTimeToFormat(input)
-// 	if err != nil {
-// 		return "", err
-// 	}
-
-// 	return t.Format(time.RFC3339), nil
-// }
-
-// // Converts User inputted time to string type RFC3339 time
-// func formatToRFC3339(time string) string {
-// 	var formattedTime string
-// 	if len(strings.Fields(time)) > 1 {
-// 		newTime := strings.Fields(time)[0:2]
-// 		rfc39990time, err := convertTime(strings.Join(newTime, " "))
-// 		if err != nil {
-// 			fmt.Println("error formatting time")
-// 		}
-// 		formattedTime = rfc39990time
-// 	} else {
-// 		rfc39990time, err := convertTime(time)
-// 		if err != nil {
-// 			fmt.Println("error formatting time")
-// 		}
-// 		formattedTime = rfc39990time
-// 	}
-// 	return formattedTime
-// }
 
 // fetchFilters fetches saved SQL queries for the active user from the server
 func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
@@ -429,21 +340,8 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 	var userSavedQueries []list.Item
 	for _, filter := range filters {
 
-		//var userSavedQuery Item
-
 		queryBytes, _ := json.Marshal(filter.Query.FilterQuery)
 
-		fmt.Println(string(queryBytes))
-		// Extract "from" and "to" from time_filter
-		// var from, to string
-		// if fromValue, exists := filter.TimeFilter["from"]; exists {
-		// 	from = fmt.Sprintf("%v", fromValue)
-		// }
-		// if toValue, exists := filter.TimeFilter["to"]; exists {
-		// 	to = fmt.Sprintf("%v", toValue)
-		// }
-		// filtering only SQL type filters..  **Filter_name is title and Stream Name is desc
-		//if string(queryBytes) != "null" {
 		userSavedQuery := Item{
 			id:     filter.FilterID,
 			title:  filter.FilterName,
@@ -453,7 +351,7 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 			to:     filter.TimeFilter.To,
 		}
 		userSavedQueries = append(userSavedQueries, userSavedQuery)
-		//}
+
 	}
 	return userSavedQueries
 }
