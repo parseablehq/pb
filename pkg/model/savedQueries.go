@@ -339,7 +339,9 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 	// This returns only the SQL type filters
 	var userSavedQueries []list.Item
 	for _, filter := range filters {
-
+		if filter.Query.FilterQuery == nil {
+			continue // Skip this filter if FilterQuery is null
+		}
 		queryBytes, _ := json.Marshal(filter.Query.FilterQuery)
 
 		userSavedQuery := Item{
