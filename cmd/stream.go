@@ -59,36 +59,48 @@ type StreamRetentionData []struct {
 	Duration    string `json:"duration"`
 }
 
-// StreamAlertData is the data structure for stream alerts
-type StreamAlertData struct {
-	Alerts []struct {
-		Message string `json:"message"`
-		Name    string `json:"name"`
-		Rule    struct {
-			Config struct {
-				Column   string `json:"column"`
-				Operator string `json:"operator"`
-				Repeats  int    `json:"repeats"`
-				Value    int    `json:"value"`
-			} `json:"config"`
-			Type string `json:"type"`
-		} `json:"rule"`
-		Targets []struct {
-			Endpoint string `json:"endpoint"`
-			Password string `json:"password,omitempty"`
-			Repeat   struct {
-				Interval string `json:"interval"`
-				Times    int    `json:"times"`
-			} `json:"repeat"`
-			SkipTLSCheck bool   `json:"skip_tls_check,omitempty"`
-			Type         string `json:"type"`
-			Username     string `json:"username,omitempty"`
-			Headers      struct {
-				Authorization string `json:"Authorization"`
-			} `json:"headers,omitempty"`
-		} `json:"targets"`
-	} `json:"alerts"`
-	Version string `json:"version"`
+// Root structure
+type AlertConfig struct {
+	Version string  `json:"version"`
+	Alerts  []Alert `json:"alerts"`
+}
+
+// Alert structure
+type Alert struct {
+	Targets []Target `json:"targets"`
+	Name    string   `json:"name"`
+	Message string   `json:"message"`
+	Rule    Rule     `json:"rule"`
+}
+
+// Target structure
+type Target struct {
+	Type         string            `json:"type"`
+	Endpoint     string            `json:"endpoint"`
+	Headers      map[string]string `json:"headers"`
+	SkipTLSCheck bool              `json:"skip_tls_check"`
+	Repeat       Repeat            `json:"repeat"`
+}
+
+// Repeat structure
+type Repeat struct {
+	Interval string `json:"interval"`
+	Times    int    `json:"times"`
+}
+
+// Rule structure
+type Rule struct {
+	Type   string     `json:"type"`
+	Config RuleConfig `json:"config"`
+}
+
+// RuleConfig structure
+type RuleConfig struct {
+	Column     string      `json:"column"`
+	Operator   string      `json:"operator"`
+	IgnoreCase bool        `json:"ignoreCase"`
+	Value      interface{} `json:"value"`
+	Repeats    int         `json:"repeats"`
 }
 
 // AddStreamCmd is the parent command for stream
@@ -176,6 +188,7 @@ var StatStreamCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
 		alerts := alertsData.Alerts
 
 		isAlertsSet := len(alerts) > 0
@@ -345,7 +358,7 @@ func fetchRetention(client *HTTPClient, name string) (data StreamRetentionData, 
 	return
 }
 
-func fetchAlerts(client *HTTPClient, name string) (data StreamAlertData, err error) {
+func fetchAlerts(client *HTTPClient, name string) (data AlertConfig, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("logstream/%s/alert", name), nil)
 	if err != nil {
 		return
