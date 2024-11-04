@@ -59,7 +59,7 @@ type StreamRetentionData []struct {
 	Duration    string `json:"duration"`
 }
 
-// Root structure
+// AlertConfig structure
 type AlertConfig struct {
 	Version string  `json:"version"`
 	Alerts  []Alert `json:"alerts"`
