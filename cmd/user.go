@@ -324,11 +324,6 @@ var ListUserCmd = &cobra.Command{
 	},
 }
 
-func init() {
-	// Add the --output flag with shorthand -o, defaulting to empty for default layout
-	ListUserCmd.Flags().StringP("output", "o", "", "Output format: 'text' or 'json'")
-}
-
 func fetchUsers(client *HTTPClient) (res []UserData, err error) {
 	req, err := client.NewRequest("GET", "user", nil)
 	if err != nil {
@@ -377,4 +372,9 @@ func fetchUserRoles(client *HTTPClient, user string) (res UserRoleData, err erro
 
 	err = json.Unmarshal(body, &res)
 	return
+}
+
+func init() {
+	// Add the --output flag with shorthand -o, defaulting to empty for default layout
+	ListUserCmd.Flags().StringP("output", "o", "", "Output format: 'text' or 'json'")
 }
