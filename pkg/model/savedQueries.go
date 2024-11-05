@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -180,6 +179,7 @@ type modelSavedQueries struct {
 	list          list.Model
 	commandOutput string
 	viewport      viewport.Model
+	queryExecuted bool // New field to track query execution
 }
 
 func (m modelSavedQueries) Init() tea.Cmd {
@@ -189,51 +189,6 @@ func (m modelSavedQueries) Init() tea.Cmd {
 // Define a message type for command results
 type commandResultMsg string
 
-// RunCommand executes a command based on the selected item
-func RunCommand(item Item) (string, error) {
-
-	// Clean the description by removing any backslashes
-	cleaned := strings.ReplaceAll(item.desc, "\\", "") // Remove any backslashes
-	cleaned = strings.TrimSpace(cleaned)               // Trim any leading/trailing whitespace
-	cleanedStr := strings.ReplaceAll(cleaned, `"`, "")
-
-	// Prepare the command with the cleaned SQL query
-	fmt.Printf("Executing command: pb query run %s\n", cleanedStr) // Log the command for debugging
-
-	if item.StartTime() != "" && item.EndTime() != "" {
-		cleanedStr = cleanedStr + " --from=" + item.StartTime() + " --to=" + item.EndTime()
-	}
-	cmd := exec.Command("pb", "query", "run", cleanedStr) // Directly pass cleaned
-
-	// Set up pipes to capture stdout and stderr
-	var output bytes.Buffer
-	cmd.Stdout = &output
-	cmd.Stderr = &output // Capture both stdout and stderr in the same buffer
-
-	// Run the command
-	err := cmd.Run()
-	if err != nil {
-		return "", fmt.Errorf("error executing command: %v, output: %s", err, output.String())
-	}
-
-	// Log the raw output for debugging
-	fmt.Printf("Raw output: %s\n", output.String())
-
-	// Format the output as pretty-printed JSON
-	var jsonResponse interface{}
-	if err := json.Unmarshal(output.Bytes(), &jsonResponse); err != nil {
-		return "", fmt.Errorf("invalid JSON output: %s, error: %v", output.String(), err)
-	}
-
-	prettyOutput, err := json.MarshalIndent(jsonResponse, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("error formatting JSON output: %v", err)
-	}
-
-	// Return the output as a string
-	return string(prettyOutput), nil
-}
-
 func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -242,8 +197,13 @@ func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "a", "enter":
-			// Apply the selected query
+			// Only execute if a query hasn't already been run
+			if m.queryExecuted {
+				return m, nil // Skip execution if already executed
+			}
 			selectedQueryApply := m.list.SelectedItem().(Item)
+			m.queryExecuted = true // Mark as executed
+
 			cmd := func() tea.Msg {
 				// Load user profile configuration
 				userConfig, err := config.ReadConfigFromFile()
@@ -289,6 +249,7 @@ func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.commandOutput = ""      // Clear the command output
 			m.viewport.SetContent("") // Clear viewport content
 			m.viewport.GotoTop()      // Reset viewport to the top
+			m.queryExecuted = false   // Reset the execution flag to allow a new query
 			return m, nil
 
 		case "down", "j":
@@ -315,7 +276,6 @@ func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.list, cmd = m.list.Update(msg)
 	return m, cmd
 }
-
 func (m modelSavedQueries) View() string {
 	if m.commandOutput != "" {
 		return m.viewport.View()
