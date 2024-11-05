@@ -16,10 +16,12 @@
 package model
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -27,29 +29,59 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 const (
-	applyQueryButton  = "a"
-	deleteQueryButton = "d"
-	confirmDelete     = "y"
-	cancelDelete      = "n"
+	applyQueryButton = "a"
+	backButton       = "b"
+	confirmDelete    = "y"
+	cancelDelete     = "n"
 )
 
 var (
-	docStyle              = lipgloss.NewStyle().Margin(1, 2)
-	deleteSavedQueryState = false
+	docStyle = lipgloss.NewStyle().Margin(1, 2, 3)
 )
 
-// FilterDetails represents the struct of filter data fetched from the server
-type FilterDetails struct {
-	SavedQueryID   string                 `json:"filter_id"`
-	SavedQueryName string                 `json:"filter_name"`
-	StreamName     string                 `json:"stream_name"`
-	QueryField     map[string]interface{} `json:"query"`
-	TimeFilter     map[string]interface{} `json:"time_filter"`
+type Filter struct {
+	Version    string     `json:"version"`
+	UserID     string     `json:"user_id"`
+	StreamName string     `json:"stream_name"`
+	FilterName string     `json:"filter_name"`
+	FilterID   string     `json:"filter_id"`
+	Query      Query      `json:"query"`
+	TimeFilter TimeFilter `json:"time_filter"`
+}
+
+type TimeFilter struct {
+	To   string `json:"to"`
+	From string `json:"from"`
+}
+type Query struct {
+	FilterType    string         `json:"filter_type"`
+	FilterQuery   *string        `json:"filter_query,omitempty"`   // SQL query as string or null
+	FilterBuilder *FilterBuilder `json:"filter_builder,omitempty"` // Builder or null
+}
+
+type FilterBuilder struct {
+	ID         string    `json:"id"`
+	Combinator string    `json:"combinator"`
+	Rules      []RuleSet `json:"rules"`
+}
+
+type RuleSet struct {
+	ID         string `json:"id"`
+	Combinator string `json:"combinator"`
+	Rules      []Rule `json:"rules"`
+}
+
+type Rule struct {
+	ID       string `json:"id"`
+	Field    string `json:"field"`
+	Value    string `json:"value"`
+	Operator string `json:"operator"`
 }
 
 // Item represents the struct of the saved query item
@@ -62,7 +94,6 @@ var (
 	queryStyle        = lipgloss.NewStyle().PaddingLeft(0).Foreground(lipgloss.Color("7"))
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("8"))
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(1).Foreground(lipgloss.AdaptiveColor{Light: "16", Dark: "226"})
-	confirmModal      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "16", Dark: "226"})
 )
 
 type itemDelegate struct{}
@@ -95,32 +126,21 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprint(w, fn(tr(i.title)+"\n"+qr(i.desc)+"\n"+str))
 }
 
+// Implement itemDelegate ShortHelp to show only relevant bindings.
 func (d itemDelegate) ShortHelp() []key.Binding {
-	if deleteSavedQueryState {
-		return []key.Binding{
-			key.NewBinding(
-				key.WithKeys(confirmDelete),
-				key.WithHelp(confirmDelete, confirmModal.Render("confirm delete")),
-			),
-			key.NewBinding(
-				key.WithKeys(cancelDelete),
-				key.WithHelp(cancelDelete, confirmModal.Render("cancel delete")),
-			),
-		}
-	}
 	return []key.Binding{
 		key.NewBinding(
 			key.WithKeys(applyQueryButton),
 			key.WithHelp(applyQueryButton, "apply"),
 		),
 		key.NewBinding(
-			key.WithKeys(deleteQueryButton),
-			key.WithHelp(deleteQueryButton, "delete"),
+			key.WithKeys(backButton),
+			key.WithHelp(backButton, "back"),
 		),
 	}
 }
 
-// FullHelp returns the extended list of keybindings.
+// Implement FullHelp to show only "apply" and "back" key bindings.
 func (d itemDelegate) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{
@@ -129,8 +149,8 @@ func (d itemDelegate) FullHelp() [][]key.Binding {
 				key.WithHelp(applyQueryButton, "apply"),
 			),
 			key.NewBinding(
-				key.WithKeys(deleteQueryButton),
-				key.WithHelp(deleteQueryButton, "delete"),
+				key.WithKeys(backButton),
+				key.WithHelp(backButton, "back"),
 			),
 		},
 	}
@@ -157,41 +177,98 @@ func (i Item) StartTime() string    { return i.from }
 func (i Item) EndTime() string      { return i.to }
 
 type modelSavedQueries struct {
-	list list.Model
+	list          list.Model
+	commandOutput string
+	viewport      viewport.Model
 }
 
 func (m modelSavedQueries) Init() tea.Cmd {
 	return nil
 }
 
+// Define a message type for command results
+type commandResultMsg string
+
+// RunCommand executes a command based on the selected item
+func RunCommand(item Item) (string, error) {
+	// Clean the description by removing any backslashes
+	cleaned := strings.ReplaceAll(item.desc, "\\", "") // Remove any backslashes
+	cleaned = strings.TrimSpace(cleaned)               // Trim any leading/trailing whitespace
+	cleanedStr := strings.ReplaceAll(cleaned, `"`, "")
+
+	// Prepare the command with the cleaned SQL query
+	fmt.Printf("Executing command: pb query run %s\n", cleanedStr) // Log the command for debugging
+
+	if item.StartTime() != "" && item.EndTime() != "" {
+		cleanedStr = cleanedStr + " --from=" + item.StartTime() + " --to=" + item.EndTime()
+	}
+	cmd := exec.Command("pb", "query", "run", cleanedStr) // Directly pass cleaned
+
+	// Set up pipes to capture stdout and stderr
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output // Capture both stdout and stderr in the same buffer
+
+	// Run the command
+	err := cmd.Run()
+	if err != nil {
+		return "", fmt.Errorf("error executing command: %v, output: %s", err, output.String())
+	}
+
+	// Log the raw output for debugging
+	fmt.Printf("Raw output: %s\n", output.String())
+
+	// Format the output as pretty-printed JSON
+	var jsonResponse interface{}
+	if err := json.Unmarshal(output.Bytes(), &jsonResponse); err != nil {
+		return "", fmt.Errorf("invalid JSON output: %s, error: %v", output.String(), err)
+	}
+
+	prettyOutput, err := json.MarshalIndent(jsonResponse, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("error formatting JSON output: %v", err)
+	}
+
+	// Return the output as a string
+	return string(prettyOutput), nil
+}
+
 func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
+		switch msg.String() {
+		case "ctrl+c":
 			return m, tea.Quit
-		}
-		if msg.String() == "a" || msg.Type == tea.KeyEnter {
+		case "a", "enter":
+			// Apply the selected query
 			selectedQueryApply = m.list.SelectedItem().(Item)
-			return m, tea.Quit
-		}
-		if msg.String() == "d" {
-			deleteSavedQueryState = true
+			cmd := func() tea.Msg {
+				output, err := RunCommand(selectedQueryApply)
+				if err != nil {
+					return commandResultMsg(fmt.Sprintf("Error: %s", err))
+				}
+				return commandResultMsg(output)
+			}
+			return m, cmd
+		case "b": // 'b' to go back to the saved query list
+			m.commandOutput = ""      // Clear the command output
+			m.viewport.SetContent("") // Clear viewport content
+			m.viewport.GotoTop()      // Reset viewport to the top
 			return m, nil
-		}
-		if msg.String() != "d" {
-			deleteSavedQueryState = false
-		}
-		if msg.String() == "y" {
-			selectedQueryDelete = m.list.SelectedItem().(Item)
-			return m, tea.Quit
-		}
-		if msg.String() == "n" {
-			deleteSavedQueryState = false
-			return m, nil
+		case "down", "j":
+			m.viewport.LineDown(1) // Scroll down in the viewport
+		case "up", "k":
+			m.viewport.LineUp(1) // Scroll up in the viewport
 		}
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
+		m.viewport.Width = msg.Width - h
+		m.viewport.Height = msg.Height - v
+	case commandResultMsg:
+		m.commandOutput = string(msg)
+		m.viewport.SetContent(m.commandOutput) // Update viewport content with command output
+		return m, nil
 	}
 
 	var cmd tea.Cmd
@@ -200,7 +277,10 @@ func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m modelSavedQueries) View() string {
-	return docStyle.Render(m.list.View())
+	if m.commandOutput != "" {
+		return m.viewport.View()
+	}
+	return m.list.View()
 }
 
 // SavedQueriesMenu is a TUI which lists all available saved queries for the active user (only SQL queries )
@@ -249,7 +329,7 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 		return nil
 	}
 
-	var filters []FilterDetails
+	var filters []Filter
 	err = json.Unmarshal(body, &filters)
 	if err != nil {
 		fmt.Println("Error unmarshalling response:", err)
@@ -259,29 +339,21 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 	// This returns only the SQL type filters
 	var userSavedQueries []list.Item
 	for _, filter := range filters {
-		var userSavedQuery Item
-		queryBytes, _ := json.Marshal(filter.QueryField["filter_query"])
+		if filter.Query.FilterQuery == nil {
+			continue // Skip this filter if FilterQuery is null
+		}
+		queryBytes, _ := json.Marshal(filter.Query.FilterQuery)
 
-		// Extract "from" and "to" from time_filter
-		var from, to string
-		if fromValue, exists := filter.TimeFilter["from"]; exists {
-			from = fmt.Sprintf("%v", fromValue)
+		userSavedQuery := Item{
+			id:     filter.FilterID,
+			title:  filter.FilterName,
+			stream: filter.StreamName,
+			desc:   string(queryBytes),
+			from:   filter.TimeFilter.From,
+			to:     filter.TimeFilter.To,
 		}
-		if toValue, exists := filter.TimeFilter["to"]; exists {
-			to = fmt.Sprintf("%v", toValue)
-		}
-		// filtering only SQL type filters..  **Filter_name is title and Stream Name is desc
-		if string(queryBytes) != "null" {
-			userSavedQuery = Item{
-				id:     filter.SavedQueryID,
-				title:  filter.SavedQueryName,
-				stream: filter.StreamName,
-				desc:   string(queryBytes),
-				from:   from,
-				to:     to,
-			}
-			userSavedQueries = append(userSavedQueries, userSavedQuery)
-		}
+		userSavedQueries = append(userSavedQueries, userSavedQuery)
+
 	}
 	return userSavedQueries
 }
