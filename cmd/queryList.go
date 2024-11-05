@@ -29,8 +29,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var outputFlag string
-
 var SavedQueryList = &cobra.Command{
 	Use:     "list",
 	Example: "pb query list [-o | --output]",
