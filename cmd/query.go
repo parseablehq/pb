@@ -17,12 +17,11 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"pb/pkg/config"
 	"strings"
-	"time"
 
 	// "pb/pkg/model"
 
@@ -40,13 +39,13 @@ var (
 	endFlagShort = "t"
 	defaultEnd   = "now"
 
-	// save filter flags
-	saveQueryFlag  = "save-as"
-	saveQueryShort = "s"
-	// save filter with time flags
-	saveQueryTimeFlag  = "with-time"
-	saveQueryTimeShort = "w"
-
+	// // save filter flags
+	// saveQueryFlag  = "save-as"
+	// saveQueryShort = "s"
+	// // save filter with time flags
+	// saveQueryTimeFlag  = "with-time"
+	// saveQueryTimeShort = "w"
+	outputFlag = "output"
 	// interactiveFlag      = "interactive"
 	// interactiveFlagShort = "i"
 )
@@ -55,15 +54,13 @@ var query = &cobra.Command{
 	Use:     "run [query] [flags]",
 	Example: "  pb query run \"select * from frontend\" --from=10m --to=now",
 	Short:   "Run SQL query on a log stream",
-	Long:    "\nRun SQL query on a log stream. Default output format is json. Use -i flag to open interactive table view.",
+	Long:    "\nRun SQL query on a log stream. Default output format is text. Use --output flag to set output format to json.",
 	Args:    cobra.MaximumNArgs(1),
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(command *cobra.Command, args []string) error {
 		var query string
 
-		// if no query is provided set it to default "select * from <steam-name>"
-		// <steam-name> here is the first stream that server returns
-		if len(args) == 0 || args[0] == "" || args[0] == " " {
+		if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
 			fmt.Println("please enter your query")
 			fmt.Printf("Example:\n  pb query run \"select * from frontend\" --from=10m --to=now\n")
 			return nil
@@ -87,79 +84,29 @@ var query = &cobra.Command{
 			end = defaultEnd
 		}
 
-		// TODO: Interactive Flag disabled
-		// interactive, err := command.Flags().GetBool(interactiveFlag)
-		// if err != nil {
-		// 	return err
-		// }
-
-		// startTime, endTime, err := parseTime(start, end)
-		// if err != nil {
-		// 	return err
-		// }
-
-		keepTime, err := command.Flags().GetBool(saveQueryTimeFlag)
+		outputFormat, err := command.Flags().GetString(outputFlag)
 		if err != nil {
 			return err
-		}
-
-		savedQueryName, err := command.Flags().GetString(saveQueryFlag)
-		if err != nil {
-			return err
-		}
-		savedQueryNameTrimmed := strings.Trim(savedQueryName, " ")
-
-		// TODO: Interactive Flag disabled
-		// if interactive {
-		// 	p := tea.NewProgram(model.NewQueryModel(DefaultProfile, query, startTime, endTime), tea.WithAltScreen())
-		// 	if _, err := p.Run(); err != nil {
-		// 		fmt.Printf("there's been an error: %v", err)
-		// 		os.Exit(1)
-		// 	}
-		// 	return nil
-		// }
-
-		// Checks if there is filter name which is not empty. Empty filter name wont be allowed
-		if command.Flags().Changed(saveQueryFlag) {
-			if savedQueryName == "" || len(savedQueryNameTrimmed) == 0 || savedQueryName == "=" {
-				fmt.Println("please provide a filter name")
-				command.Help()
-				return nil
-			} else if savedQueryName != "" {
-				if keepTime {
-					createFilterWithTime(query, savedQueryNameTrimmed, start, end)
-				} else {
-					// if there is no keep time filter pass empty values for startTime and endTime
-					createFilter(query, savedQueryNameTrimmed)
-				}
-			}
-		} else if savedQueryName == "" && keepTime {
-			fmt.Println("please provide a filter name")
-			command.Help()
-			return nil
 		}
 
 		client := DefaultClient()
-		return fetchData(&client, query, start, end)
+		return fetchData(&client, query, start, end, outputFormat)
 	},
 }
 
 var QueryCmd = func() *cobra.Command {
-	query.Flags().BoolP(saveQueryTimeFlag, saveQueryTimeShort, false, "Save the time range associated in the query to the filter") // save time for a filter flag; default value = false (boolean type)
-	// query.Flags().BoolP(interactiveFlag, interactiveFlagShort, false, "open the query result in interactive mode")
-	query.Flags().StringP(startFlag, startFlagShort, defaultStart, "Start time for query. Takes date as '2024-10-12T07:20:50.52Z' or string like '10m', '1hr'")
-	query.Flags().StringP(endFlag, endFlagShort, defaultEnd, "End time for query. Takes date as '2024-10-12T07:20:50.52Z' or 'now'")
-	query.Flags().StringP(saveQueryFlag, saveQueryShort, "", "Save a query filter") // save filter flag. Default value = FILTER_NAME (type string)
+	query.Flags().StringP(startFlag, startFlagShort, defaultStart, "Start time for query.")
+	query.Flags().StringP(endFlag, endFlagShort, defaultEnd, "End time for query.")
+	query.Flags().StringP(outputFlag, "o", "text", "Output format (text or json).")
 	return query
 }()
 
-func fetchData(client *HTTPClient, query string, startTime string, endTime string) (err error) {
+func fetchData(client *HTTPClient, query string, startTime, endTime, outputFormat string) (err error) {
 	queryTemplate := `{
-    "query": "%s",
-    "startTime": "%s",
-    "endTime": "%s"
-	}
-	`
+		"query": "%s",
+		"startTime": "%s",
+		"endTime": "%s"
+	}`
 
 	finalQuery := fmt.Sprintf(queryTemplate, query, startTime, endTime)
 
@@ -167,6 +114,7 @@ func fetchData(client *HTTPClient, query string, startTime string, endTime strin
 	if err != nil {
 		return
 	}
+
 	resp, err := client.client.Do(req)
 	if err != nil {
 		return
@@ -176,10 +124,21 @@ func fetchData(client *HTTPClient, query string, startTime string, endTime strin
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
 		fmt.Println(string(body))
+		return nil
+	}
+
+	if outputFormat == "json" {
+		var jsonResponse []map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&jsonResponse); err != nil {
+			fmt.Println("Error decoding JSON response:", err)
+			return err
+		}
+		encodedResponse, _ := json.MarshalIndent(jsonResponse, "", "  ")
+		fmt.Println(string(encodedResponse))
 	} else {
 		io.Copy(os.Stdout, resp.Body)
 	}
-	return
+	return nil
 }
 
 // Returns start and end time for query in RFC3339 format
@@ -210,151 +169,151 @@ func fetchData(client *HTTPClient, query string, startTime string, endTime strin
 // 	return startTime, endTime, nil
 // }
 
-// create a request body for saving filter without time_filter
-func createFilter(query string, filterName string) (err error) {
-	userConfig, err := config.ReadConfigFromFile()
-	if err != nil {
-		return err
-	}
+// // create a request body for saving filter without time_filter
+// func createFilter(query string, filterName string) (err error) {
+// 	userConfig, err := config.ReadConfigFromFile()
+// 	if err != nil {
+// 		return err
+// 	}
 
-	var userName string
-	if profile, ok := userConfig.Profiles[userConfig.DefaultProfile]; ok {
-		userName = profile.Username
-	} else {
-		fmt.Println("Default profile not found.")
-		return
-	}
+// 	var userName string
+// 	if profile, ok := userConfig.Profiles[userConfig.DefaultProfile]; ok {
+// 		userName = profile.Username
+// 	} else {
+// 		fmt.Println("Default profile not found.")
+// 		return
+// 	}
 
-	index := strings.Index(query, "from")
-	fromPart := strings.TrimSpace(query[index+len("from"):])
-	streamName := strings.Fields(fromPart)[0]
+// 	index := strings.Index(query, "from")
+// 	fromPart := strings.TrimSpace(query[index+len("from"):])
+// 	streamName := strings.Fields(fromPart)[0]
 
-	queryTemplate := `{
-		"filter_type":"sql",
-		"filter_query": "%s"
-		}`
+// 	queryTemplate := `{
+// 		"filter_type":"sql",
+// 		"filter_query": "%s"
+// 		}`
 
-	saveFilterTemplate := `
-	{
-    "stream_name": "%s",
-    "filter_name": "%s",
-    "user_id": "%s",
-    "query": %s,
-    "time_filter": null 
-    }`
+// 	saveFilterTemplate := `
+// 	{
+//     "stream_name": "%s",
+//     "filter_name": "%s",
+//     "user_id": "%s",
+//     "query": %s,
+//     "time_filter": null
+//     }`
 
-	queryField := fmt.Sprintf(queryTemplate, query)
+// 	queryField := fmt.Sprintf(queryTemplate, query)
 
-	finalQuery := fmt.Sprintf(saveFilterTemplate, streamName, filterName, userName, queryField)
+// 	finalQuery := fmt.Sprintf(saveFilterTemplate, streamName, filterName, userName, queryField)
 
-	saveFilterToServer(finalQuery)
+// 	saveFilterToServer(finalQuery)
 
-	return err
-}
+// 	return err
+// }
 
-// create a request body for saving filter with time_filter
-func createFilterWithTime(query string, filterName string, startTime string, endTime string) (err error) {
-	userConfig, err := config.ReadConfigFromFile()
-	if err != nil {
-		return err
-	}
+// // create a request body for saving filter with time_filter
+// func createFilterWithTime(query string, filterName string, startTime string, endTime string) (err error) {
+// 	userConfig, err := config.ReadConfigFromFile()
+// 	if err != nil {
+// 		return err
+// 	}
 
-	var userName string
-	if profile, ok := userConfig.Profiles[userConfig.DefaultProfile]; ok {
-		userName = profile.Username
-	} else {
-		fmt.Println("Default profile not found.")
-		return
-	}
+// 	var userName string
+// 	if profile, ok := userConfig.Profiles[userConfig.DefaultProfile]; ok {
+// 		userName = profile.Username
+// 	} else {
+// 		fmt.Println("Default profile not found.")
+// 		return
+// 	}
 
-	index := strings.Index(query, "from")
-	fromPart := strings.TrimSpace(query[index+len("from"):])
-	streamName := strings.Fields(fromPart)[0]
+// 	index := strings.Index(query, "from")
+// 	fromPart := strings.TrimSpace(query[index+len("from"):])
+// 	streamName := strings.Fields(fromPart)[0]
 
-	start, end, err := parseTimeToUTC(startTime, endTime)
-	if err != nil {
-		fmt.Println("Oops something went wrong!!!!")
-		return err
-	}
+// 	start, end, err := parseTimeToUTC(startTime, endTime)
+// 	if err != nil {
+// 		fmt.Println("Oops something went wrong!!!!")
+// 		return err
+// 	}
 
-	queryTemplate := `{
-		"filter_type":"sql",
-		"filter_query": "%s"
-		}`
+// 	queryTemplate := `{
+// 		"filter_type":"sql",
+// 		"filter_query": "%s"
+// 		}`
 
-	timeTemplate := `{
-			"from": "%s",
-			"to":  "%s"
-		}`
-	timeField := fmt.Sprintf(timeTemplate, start, end)
+// 	timeTemplate := `{
+// 			"from": "%s",
+// 			"to":  "%s"
+// 		}`
+// 	timeField := fmt.Sprintf(timeTemplate, start, end)
 
-	saveFilterTemplate := `
-	{
-    "stream_name": "%s",
-    "filter_name": "%s",
-    "user_id": "%s",
-    "query": %s,
-    "time_filter": %s  
-    }`
+// 	saveFilterTemplate := `
+// 	{
+//     "stream_name": "%s",
+//     "filter_name": "%s",
+//     "user_id": "%s",
+//     "query": %s,
+//     "time_filter": %s
+//     }`
 
-	queryField := fmt.Sprintf(queryTemplate, query)
+// 	queryField := fmt.Sprintf(queryTemplate, query)
 
-	finalQuery := fmt.Sprintf(saveFilterTemplate, streamName, filterName, userName, queryField, timeField)
+// 	finalQuery := fmt.Sprintf(saveFilterTemplate, streamName, filterName, userName, queryField, timeField)
 
-	saveFilterToServer(finalQuery)
+// 	saveFilterToServer(finalQuery)
 
-	return err
-}
+// 	return err
+// }
 
-// fires a request to the server to save the filter with the associated user and stream
-func saveFilterToServer(finalQuery string) (err error) {
-	client := DefaultClient()
+// // fires a request to the server to save the filter with the associated user and stream
+// func saveFilterToServer(finalQuery string) (err error) {
+// 	client := DefaultClient()
 
-	req, err := client.NewRequest("POST", "filters", bytes.NewBuffer([]byte(finalQuery)))
-	if err != nil {
-		return
-	}
+// 	req, err := client.NewRequest("POST", "filters", bytes.NewBuffer([]byte(finalQuery)))
+// 	if err != nil {
+// 		return
+// 	}
 
-	resp, err := client.client.Do(req)
-	if err != nil {
-		return
-	}
+// 	resp, err := client.client.Do(req)
+// 	if err != nil {
+// 		return
+// 	}
 
-	if resp.StatusCode != 200 {
-		fmt.Printf("\nSomething went wrong")
-	}
+// 	if resp.StatusCode != 200 {
+// 		fmt.Printf("\nSomething went wrong")
+// 	}
 
-	return err
-}
+// 	return err
+// }
 
-// parses a time duration to supported utc format
-func parseTimeToUTC(start, end string) (time.Time, time.Time, error) {
-	if start == defaultStart && end == defaultEnd {
-		now := time.Now().UTC()
-		return now.Add(-1 * time.Minute), now, nil
-	}
+// // parses a time duration to supported utc format
+// func parseTimeToUTC(start, end string) (time.Time, time.Time, error) {
+// 	if start == defaultStart && end == defaultEnd {
+// 		now := time.Now().UTC()
+// 		return now.Add(-1 * time.Minute), now, nil
+// 	}
 
-	startTime, err := time.Parse(time.RFC3339, start)
-	if err != nil {
-		duration, err := time.ParseDuration(start)
-		if err != nil {
-			return time.Time{}, time.Time{}, err
-		}
-		startTime = time.Now().Add(-1 * duration).UTC()
-	} else {
-		startTime = startTime.UTC()
-	}
+// 	startTime, err := time.Parse(time.RFC3339, start)
+// 	if err != nil {
+// 		duration, err := time.ParseDuration(start)
+// 		if err != nil {
+// 			return time.Time{}, time.Time{}, err
+// 		}
+// 		startTime = time.Now().Add(-1 * duration).UTC()
+// 	} else {
+// 		startTime = startTime.UTC()
+// 	}
 
-	endTime, err := time.Parse(time.RFC3339, end)
-	if err != nil {
-		if end == "now" {
-			endTime = time.Now().UTC()
-		} else {
-			return time.Time{}, time.Time{}, err
-		}
-	} else {
-		endTime = endTime.UTC()
-	}
+// 	endTime, err := time.Parse(time.RFC3339, end)
+// 	if err != nil {
+// 		if end == "now" {
+// 			endTime = time.Now().UTC()
+// 		} else {
+// 			return time.Time{}, time.Time{}, err
+// 		}
+// 	} else {
+// 		endTime = endTime.UTC()
+// 	}
 
-	return startTime, endTime, nil
-}
+// 	return startTime, endTime, nil
+// }

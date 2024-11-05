@@ -191,10 +191,16 @@ var ListRoleCmd = &cobra.Command{
 	Use:     "list",
 	Short:   "List all roles",
 	Example: "  pb role list",
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		var roles []string
 		client := DefaultClient()
 		err := fetchRoles(&client, &roles)
+		if err != nil {
+			return err
+		}
+
+		// Get output flag value
+		outputFormat, err := cmd.Flags().GetString("output")
 		if err != nil {
 			return err
 		}
@@ -217,6 +223,26 @@ var ListRoleCmd = &cobra.Command{
 		}
 
 		wsg.Wait()
+
+		// Output in JSON format if requested
+		if outputFormat == "json" {
+			// Collect the role data into a structured format
+			allRoles := map[string][]RoleData{}
+			for idx, roleName := range roles {
+				if roleResponses[idx].err == nil {
+					allRoles[roleName] = roleResponses[idx].data
+				}
+			}
+			// Marshal and print as JSON
+			jsonOutput, err := json.MarshalIndent(allRoles, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON output: %w", err)
+			}
+			fmt.Println(string(jsonOutput))
+			return nil
+		}
+
+		// Default output in text format
 		fmt.Println()
 		for idx, roleName := range roles {
 			fetchRes := roleResponses[idx]
@@ -294,4 +320,9 @@ func fetchSpecificRole(client *HTTPClient, role string) (res []RoleData, err err
 	}
 
 	return
+}
+
+func init() {
+	// Add the --output flag with default value "text"
+	ListRoleCmd.Flags().String("output", "text", "Output format: 'text' or 'json'")
 }

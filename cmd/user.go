@@ -232,7 +232,7 @@ var ListUserCmd = &cobra.Command{
 	Use:     "list",
 	Short:   "List all users",
 	Example: "  pb user list",
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		client := DefaultClient()
 		users, err := fetchUsers(&client)
 		if err != nil {
@@ -240,37 +240,85 @@ var ListUserCmd = &cobra.Command{
 		}
 
 		roleResponses := make([]struct {
-			data UserRoleData
+			data []string // Collects roles as strings for text output
 			err  error
 		}, len(users))
 
 		wsg := sync.WaitGroup{}
-
 		for idx, user := range users {
 			wsg.Add(1)
 			out := &roleResponses[idx]
-			user := user.ID
+			userID := user.ID
 			client := &client
 			go func() {
-				out.data, out.err = fetchUserRoles(client, user)
+				var userRolesData UserRoleData
+				userRolesData, out.err = fetchUserRoles(client, userID)
+				if out.err == nil {
+					// Collect role names for this user
+					for role := range userRolesData {
+						out.data = append(out.data, role)
+					}
+				}
 				wsg.Done()
 			}()
 		}
 
 		wsg.Wait()
+
+		// Get the output format, defaulting to empty (existing behavior)
+		outputFormat, err := cmd.Flags().GetString("output")
+		if err != nil {
+			return err
+		}
+
+		// JSON output if specified
+		if outputFormat == "json" {
+			usersWithRoles := make([]map[string]interface{}, len(users))
+			for idx, user := range users {
+				usersWithRoles[idx] = map[string]interface{}{
+					"id":    user.ID,
+					"roles": roleResponses[idx].data,
+				}
+			}
+			jsonOutput, err := json.MarshalIndent(usersWithRoles, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON output: %w", err)
+			}
+			fmt.Println(string(jsonOutput))
+			return nil
+		}
+
+		// Text output if specified
+		if outputFormat == "text" {
+			fmt.Println()
+			for idx, user := range users {
+				roles := roleResponses[idx]
+				if roles.err == nil {
+					roleList := strings.Join(roles.data, ", ")
+					fmt.Printf("%s, %s\n", user.ID, roleList)
+				} else {
+					fmt.Printf("%s, error: %v\n", user.ID, roles.err)
+				}
+			}
+			fmt.Println()
+			return nil
+		}
+
+		// Default output (existing layout)
 		fmt.Println()
 		for idx, user := range users {
 			roles := roleResponses[idx]
 			fmt.Print("• ")
 			fmt.Println(StandardStyleBold.Bold(true).Render(user.ID))
 			if roles.err == nil {
-				for role := range roles.data {
+				for _, role := range roles.data {
 					fmt.Println(lipgloss.NewStyle().PaddingLeft(3).Render(role))
 				}
 			} else {
 				fmt.Println(roles.err)
 			}
 		}
+		fmt.Println()
 
 		return nil
 	},
@@ -324,4 +372,9 @@ func fetchUserRoles(client *HTTPClient, user string) (res UserRoleData, err erro
 
 	err = json.Unmarshal(body, &res)
 	return
+}
+
+func init() {
+	// Add the --output flag with shorthand -o, defaulting to empty for default layout
+	ListUserCmd.Flags().StringP("output", "o", "", "Output format: 'text' or 'json'")
 }

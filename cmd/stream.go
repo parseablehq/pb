@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -44,11 +45,11 @@ type StreamStatsData struct {
 }
 
 type StreamListItem struct {
-	name string
+	Name string
 }
 
 func (item *StreamListItem) Render() string {
-	render := StandardStyle.Render(item.name)
+	render := StandardStyle.Render(item.Name)
 	return ItemOuter.Render(render)
 }
 
@@ -286,8 +287,8 @@ var RemoveStreamCmd = &cobra.Command{
 var ListStreamCmd = &cobra.Command{
 	Use:     "list",
 	Short:   "List all streams",
-	Example: " pb stream list",
-	RunE: func(_ *cobra.Command, _ []string) error {
+	Example: "  pb stream list",
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		client := DefaultClient()
 		req, err := client.NewRequest("GET", "logstream", nil)
 		if err != nil {
@@ -298,38 +299,66 @@ var ListStreamCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		defer resp.Body.Close()
 
-		if resp.StatusCode == 200 {
-			items := []map[string]string{}
-			err = json.NewDecoder(resp.Body).Decode(&items)
+		if resp.StatusCode != http.StatusOK {
+			// Read response body for error message
+			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {
 				return err
 			}
-			defer resp.Body.Close()
-
-			if len(items) >= 0 {
-				fmt.Println()
-			} else if len(items) == 0 {
-				fmt.Println("No streams found")
-				return nil
-			}
-
-			for _, item := range items {
-				item := StreamListItem{item["name"]}
-				fmt.Print("• ")
-				fmt.Println(item.Render())
-			}
-			fmt.Println()
+			body := string(bytes)
+			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
 			return nil
 		}
-		bytes, err := io.ReadAll(resp.Body)
+
+		var items []map[string]string
+		err = json.NewDecoder(resp.Body).Decode(&items)
 		if err != nil {
 			return err
 		}
-		body := string(bytes)
-		fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
+
+		// Get output flag value
+		outputFormat, err := cmd.Flags().GetString("output")
+		if err != nil {
+			return err
+		}
+
+		// Handle JSON output format
+		if outputFormat == "json" {
+			// Collect stream names for JSON output
+			streams := make([]string, len(items))
+			for i, item := range items {
+				streams[i] = item["name"]
+			}
+			jsonOutput, err := json.MarshalIndent(streams, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON output: %w", err)
+			}
+			fmt.Println(string(jsonOutput))
+			return nil
+		}
+
+		// Default to text output
+		if len(items) == 0 {
+			fmt.Println("No streams found")
+			return nil
+		}
+
+		fmt.Println()
+		for _, item := range items {
+			streamItem := StreamListItem{Name: item["name"]}
+			fmt.Print("• ")
+			fmt.Println(streamItem.Render())
+		}
+		fmt.Println()
 		return nil
 	},
+}
+
+func init() {
+	// Add the --output flag with default value "text"
+	ListStreamCmd.Flags().StringP("output", "o", "text", "Output format: 'text' or 'json'")
 }
 
 func fetchStats(client *HTTPClient, name string) (data StreamStatsData, err error) {

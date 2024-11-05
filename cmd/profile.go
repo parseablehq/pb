@@ -16,6 +16,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -52,6 +53,29 @@ func (item *ProfileListItem) Render(highlight bool) string {
 		StandardStyleAlt.Render(fmt.Sprintf("user: %s", item.user)),
 	)
 	return ItemOuter.Render(render)
+}
+
+// Add an output flag to specify the output format.
+var outputFormat string
+
+// Initialize flags
+func init() {
+	AddProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text|json)")
+	RemoveProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text|json)")
+	DefaultProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text|json)")
+	ListProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text|json)")
+}
+func outputResult(v interface{}) error {
+	if outputFormat == "json" {
+		jsonData, err := json.MarshalIndent(v, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(jsonData))
+	} else {
+		fmt.Println(v)
+	}
+	return nil
 }
 
 var AddProfileCmd = &cobra.Command{
@@ -122,6 +146,11 @@ var AddProfileCmd = &cobra.Command{
 		}
 		fmt.Printf("Added profile %s\n", StyleBold.Render(name))
 
+		if outputFormat == "json" {
+			return outputResult(profile)
+		}
+		fmt.Printf("Profile %s added successfully\n", name)
+
 		return nil
 	},
 }
@@ -145,10 +174,10 @@ var RemoveProfileCmd = &cobra.Command{
 			if len(fileConfig.Profiles) == 0 {
 				fileConfig.DefaultProfile = ""
 			}
-			err = config.WriteConfigToFile(fileConfig)
-			if err != nil {
-				fmt.Printf("delete profile %s failed\n, err: %v\n", StyleBold.Render(name), err)
-				return err
+
+			config.WriteConfigToFile(fileConfig)
+			if outputFormat == "json" {
+				return outputResult(fmt.Sprintf("Deleted profile %s", name))
 			}
 			fmt.Printf("Deleted profile %s\n", StyleBold.Render(name))
 		} else {
@@ -200,6 +229,9 @@ var DefaultProfileCmd = &cobra.Command{
 		}
 
 		config.WriteConfigToFile(fileConfig)
+		if outputFormat == "json" {
+			return outputResult(fmt.Sprintf("%s is now set as default profile", name))
+		}
 		fmt.Printf("%s is now set as default profile\n", StyleBold.Render(name))
 		return nil
 	},
@@ -217,6 +249,10 @@ var ListProfileCmd = &cobra.Command{
 
 		if len(fileConfig.Profiles) != 0 {
 			println()
+		}
+
+		if outputFormat == "json" {
+			return outputResult(fileConfig.Profiles)
 		}
 
 		row := 0
