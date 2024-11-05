@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -180,6 +179,7 @@ type modelSavedQueries struct {
 	list          list.Model
 	commandOutput string
 	viewport      viewport.Model
+	queryExecuted bool // New field to track query execution
 }
 
 func (m modelSavedQueries) Init() tea.Cmd {
@@ -189,93 +189,93 @@ func (m modelSavedQueries) Init() tea.Cmd {
 // Define a message type for command results
 type commandResultMsg string
 
-// RunCommand executes a command based on the selected item
-func RunCommand(item Item) (string, error) {
-	// Clean the description by removing any backslashes
-	cleaned := strings.ReplaceAll(item.desc, "\\", "") // Remove any backslashes
-	cleaned = strings.TrimSpace(cleaned)               // Trim any leading/trailing whitespace
-	cleanedStr := strings.ReplaceAll(cleaned, `"`, "")
-
-	// Prepare the command with the cleaned SQL query
-	fmt.Printf("Executing command: pb query run %s\n", cleanedStr) // Log the command for debugging
-
-	if item.StartTime() != "" && item.EndTime() != "" {
-		cleanedStr = cleanedStr + " --from=" + item.StartTime() + " --to=" + item.EndTime()
-	}
-	cmd := exec.Command("pb", "query", "run", cleanedStr) // Directly pass cleaned
-
-	// Set up pipes to capture stdout and stderr
-	var output bytes.Buffer
-	cmd.Stdout = &output
-	cmd.Stderr = &output // Capture both stdout and stderr in the same buffer
-
-	// Run the command
-	err := cmd.Run()
-	if err != nil {
-		return "", fmt.Errorf("error executing command: %v, output: %s", err, output.String())
-	}
-
-	// Log the raw output for debugging
-	fmt.Printf("Raw output: %s\n", output.String())
-
-	// Format the output as pretty-printed JSON
-	var jsonResponse interface{}
-	if err := json.Unmarshal(output.Bytes(), &jsonResponse); err != nil {
-		return "", fmt.Errorf("invalid JSON output: %s, error: %v", output.String(), err)
-	}
-
-	prettyOutput, err := json.MarshalIndent(jsonResponse, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("error formatting JSON output: %v", err)
-	}
-
-	// Return the output as a string
-	return string(prettyOutput), nil
-}
-
 func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
+
 		case "a", "enter":
-			// Apply the selected query
-			selectedQueryApply = m.list.SelectedItem().(Item)
+			// Only execute if a query hasn't already been run
+			if m.queryExecuted {
+				return m, nil // Skip execution if already executed
+			}
+			selectedQueryApply := m.list.SelectedItem().(Item)
+			m.queryExecuted = true // Mark as executed
+
 			cmd := func() tea.Msg {
-				output, err := RunCommand(selectedQueryApply)
+				// Load user profile configuration
+				userConfig, err := config.ReadConfigFromFile()
 				if err != nil {
 					return commandResultMsg(fmt.Sprintf("Error: %s", err))
 				}
-				return commandResultMsg(output)
+
+				profile, profileExists := userConfig.Profiles[userConfig.DefaultProfile]
+				if !profileExists {
+					return commandResultMsg("Error: Profile not found")
+				}
+
+				// Clean the query string
+				cleanedQuery := strings.TrimSpace(strings.ReplaceAll(selectedQueryApply.desc, `\`, ""))
+				cleanedQuery = strings.ReplaceAll(cleanedQuery, `"`, "")
+
+				// Log the command for debugging
+				fmt.Printf("Executing command: pb query run %s\n", cleanedQuery)
+
+				// Prepare HTTP client
+				client := &http.Client{Timeout: 60 * time.Second}
+
+				// Determine query time range
+				startTime := selectedQueryApply.StartTime()
+				endTime := selectedQueryApply.EndTime()
+
+				// If start and end times are not set, use a default range
+				if startTime == "" && endTime == "" {
+					startTime = "10m"
+					endTime = "now"
+				}
+
+				// Run the query
+				data, err := RunQuery(client, &profile, cleanedQuery, startTime, endTime)
+				if err != nil {
+					return commandResultMsg(fmt.Sprintf("Error: %s", err))
+				}
+				return commandResultMsg(data)
 			}
 			return m, cmd
+
 		case "b": // 'b' to go back to the saved query list
 			m.commandOutput = ""      // Clear the command output
 			m.viewport.SetContent("") // Clear viewport content
 			m.viewport.GotoTop()      // Reset viewport to the top
+			m.queryExecuted = false   // Reset the execution flag to allow a new query
 			return m, nil
+
 		case "down", "j":
 			m.viewport.LineDown(1) // Scroll down in the viewport
+
 		case "up", "k":
 			m.viewport.LineUp(1) // Scroll up in the viewport
 		}
+
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
 		m.viewport.Width = msg.Width - h
 		m.viewport.Height = msg.Height - v
+
 	case commandResultMsg:
 		m.commandOutput = string(msg)
 		m.viewport.SetContent(m.commandOutput) // Update viewport content with command output
 		return m, nil
 	}
 
+	// Update the list and return
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
 	return m, cmd
 }
-
 func (m modelSavedQueries) View() string {
 	if m.commandOutput != "" {
 		return m.viewport.View()
@@ -366,4 +366,52 @@ func QueryToApply() Item {
 // QueryToDelete returns the selected saved query by user in the interactive list to delete
 func QueryToDelete() Item {
 	return selectedQueryDelete
+}
+
+func RunQuery(client *http.Client, profile *config.Profile, query string, startTime string, endTime string) (string, error) {
+	queryTemplate := `{
+		"query": "%s",
+		"startTime": "%s",
+		"endTime": "%s"
+	}`
+
+	finalQuery := fmt.Sprintf(queryTemplate, query, startTime, endTime)
+
+	endpoint := fmt.Sprintf("%s/%s", profile.URL, "api/v1/query")
+	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer([]byte(finalQuery)))
+	if err != nil {
+		return "", err
+	}
+	req.SetBasicAuth(profile.Username, profile.Password)
+	req.Header.Add("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		var jsonResponse []map[string]interface{}
+
+		// Read and parse the JSON response
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return "", err
+		}
+
+		// Decode JSON into a map
+		if err := json.Unmarshal(body, &jsonResponse); err != nil {
+			return "", err
+		}
+
+		// Pretty-print the JSON response
+		jsonData, err := json.MarshalIndent(jsonResponse, "", "  ")
+		if err != nil {
+			return "", err
+		}
+		return string(jsonData), nil
+	}
+
+	return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 }
