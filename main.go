@@ -65,7 +65,7 @@ var profile = &cobra.Command{
 	Short: "Manage different Parseable targets",
 	Long:  "\nuse profile command to configure different Parseable instances. Each profile takes a URL and credentials.",
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		go analytics.PostRunFunction(cmd, args)
+		go analytics.PostRunAnalytics(cmd, args)
 	},
 }
 

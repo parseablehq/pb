@@ -128,7 +128,7 @@ func CheckAndCreateUUID(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func PostRunFunction(cmd *cobra.Command, args []string) {
+func PostRunAnalytics(cmd *cobra.Command, args []string) {
 	executionTime := cmd.Annotations["executionTime"]
 	commandError := cmd.Annotations["error"]
 	flags := make(map[string]string)
@@ -136,7 +136,7 @@ func PostRunFunction(cmd *cobra.Command, args []string) {
 		flags[flag.Name] = flag.Value.String()
 	})
 	// Call SendEvent in PostRunE
-	err := SendEvent(
+	err := sendEvent(
 		cmd.Name(),
 		args,
 		&commandError, // Pass the error here if there was one
@@ -150,7 +150,7 @@ func PostRunFunction(cmd *cobra.Command, args []string) {
 }
 
 // sendEvent is a placeholder function to simulate sending an event after command execution.
-func SendEvent(commandName string, arguments []string, errors *string, executionStatus string, flags map[string]string) error {
+func sendEvent(commandName string, arguments []string, errors *string, executionStatus string, flags map[string]string) error {
 
 	uuid, err := ReadUUID()
 	if err != nil {

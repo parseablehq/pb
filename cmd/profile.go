@@ -59,19 +59,13 @@ func (item *ProfileListItem) Render(highlight bool) string {
 // Add an output flag to specify the output format.
 var outputFormat string
 
-// // Initialize flags
-// func init() {
-// 	AddProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
-// 	RemoveProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
-// 	DefaultProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
-// 	ListProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
-
-// 	// Add PreRun and PostRun to commands
-// 	for _, cmd := range []*cobra.Command{AddProfileCmd, RemoveProfileCmd, DefaultProfileCmd, ListProfileCmd} {
-// 		cmd.PreRunE = analytics.CheckAndCreateUUID
-// 		//cmd.PostRun = sendEvent
-// 	}
-// }
+// Initialize flags
+func init() {
+	AddProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+	RemoveProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+	DefaultProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+	ListProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+}
 
 func outputResult(v interface{}) error {
 	if outputFormat == "json" {
@@ -254,13 +248,14 @@ var ListProfileCmd = &cobra.Command{
 		startTime := time.Now()
 
 		// Initialize a variable to capture errors
-		var commandError string
+		var commandError error
 
 		// Read the configuration from file
 		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
-			commandError = fmt.Sprintf("Error reading config: %s", err)
-			return nil // Proceed to PostRunE for event handling
+			commandError = fmt.Errorf("error reading config: %s", err)
+			cmd.Annotations["error"] = commandError.Error() // Store error in annotations
+			return commandError                             // Return the error so it's handled properly
 		}
 
 		if len(fileConfig.Profiles) != 0 {
@@ -269,9 +264,11 @@ var ListProfileCmd = &cobra.Command{
 
 		if outputFormat == "json" {
 			if err := outputResult(fileConfig.Profiles); err != nil {
-				commandError = fmt.Sprintf("Error outputting result: %s", err)
+				commandError = fmt.Errorf("error outputting result: %s", err)
+				cmd.Annotations["error"] = commandError.Error() // Store error in annotations
+				return commandError                             // Return the error
 			}
-			return nil // Proceed to PostRunE for event handling
+			return nil // No error, exit normally
 		}
 
 		row := 0
@@ -283,43 +280,11 @@ var ListProfileCmd = &cobra.Command{
 		}
 
 		// Store the execution duration as a field for PostRunE to access
-		cmd.Annotations = map[string]string{
-			"executionTime": time.Since(startTime).String(),
-		}
+		cmd.Annotations["executionTime"] = time.Since(startTime).String()
 
 		// If there were no errors, return nil
-		if commandError == "" {
-			return nil
-		}
-
-		// If there's an error, set it in Annotations so PostRunE can access it
-		cmd.Annotations["error"] = commandError
-
 		return nil
 	},
-
-	// // PostRunE function to send analytics event
-	// PostRunE: func(cmd *cobra.Command, args []string) error {
-	// 	executionTime := cmd.Annotations["executionTime"]
-	// 	commandError := cmd.Annotations["error"]
-	// 	flags := make(map[string]string)
-	// 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
-	// 		flags[flag.Name] = flag.Value.String()
-	// 	})
-	// 	// Call SendEvent in PostRunE
-	// 	err := analytics.SendEvent(
-	// 		cmd.Name(),
-	// 		args,
-	// 		&commandError, // Pass the error here if there was one
-	// 		executionTime,
-	// 		flags,
-	// 	)
-	// 	if err != nil {
-	// 		fmt.Println("Error sending analytics event:", err)
-	// 	}
-
-	// 	return nil
-	// },
 }
 
 func Max(a int, b int) int {
