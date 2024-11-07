@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	internalHTTP "pb/pkg/http"
 	"strings"
 	"sync"
 
@@ -48,7 +49,7 @@ var addUser = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		users, err := fetchUsers(&client)
 		if err != nil {
 			return err
@@ -89,7 +90,7 @@ var addUser = &cobra.Command{
 			return err
 		}
 
-		resp, err := client.client.Do(req)
+		resp, err := client.Client.Do(req)
 		if err != nil {
 			return err
 		}
@@ -124,13 +125,13 @@ var RemoveUserCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		req, err := client.NewRequest("DELETE", "user/"+name, nil)
 		if err != nil {
 			return err
 		}
 
-		resp, err := client.client.Do(req)
+		resp, err := client.Client.Do(req)
 		if err != nil {
 			return err
 		}
@@ -165,7 +166,7 @@ var SetUserRoleCmd = &cobra.Command{
 	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
 
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		users, err := fetchUsers(&client)
 		if err != nil {
 			return err
@@ -206,7 +207,7 @@ var SetUserRoleCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := client.client.Do(req)
+		resp, err := client.Client.Do(req)
 		if err != nil {
 			return err
 		}
@@ -233,7 +234,7 @@ var ListUserCmd = &cobra.Command{
 	Short:   "List all users",
 	Example: "  pb user list",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		users, err := fetchUsers(&client)
 		if err != nil {
 			return err
@@ -324,13 +325,13 @@ var ListUserCmd = &cobra.Command{
 	},
 }
 
-func fetchUsers(client *HTTPClient) (res []UserData, err error) {
+func fetchUsers(client *internalHTTP.HTTPClient) (res []UserData, err error) {
 	req, err := client.NewRequest("GET", "user", nil)
 	if err != nil {
 		return
 	}
 
-	resp, err := client.client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return
 	}
@@ -355,12 +356,12 @@ func fetchUsers(client *HTTPClient) (res []UserData, err error) {
 	return
 }
 
-func fetchUserRoles(client *HTTPClient, user string) (res UserRoleData, err error) {
+func fetchUserRoles(client *internalHTTP.HTTPClient, user string) (res UserRoleData, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("user/%s/role", user), nil)
 	if err != nil {
 		return
 	}
-	resp, err := client.client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return
 	}

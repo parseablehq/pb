@@ -27,6 +27,8 @@ import (
 
 	//! This dependency is required by the interactive flag Do not remove
 	// tea "github.com/charmbracelet/bubbletea"
+	internalHTTP "pb/pkg/http"
+
 	"github.com/spf13/cobra"
 )
 
@@ -89,7 +91,7 @@ var query = &cobra.Command{
 			return err
 		}
 
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		return fetchData(&client, query, start, end, outputFormat)
 	},
 }
@@ -101,7 +103,7 @@ var QueryCmd = func() *cobra.Command {
 	return query
 }()
 
-func fetchData(client *HTTPClient, query string, startTime, endTime, outputFormat string) (err error) {
+func fetchData(client *internalHTTP.HTTPClient, query string, startTime, endTime, outputFormat string) (err error) {
 	queryTemplate := `{
 		"query": "%s",
 		"startTime": "%s",
@@ -115,7 +117,7 @@ func fetchData(client *HTTPClient, query string, startTime, endTime, outputForma
 		return
 	}
 
-	resp, err := client.client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return
 	}

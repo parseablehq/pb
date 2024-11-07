@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"pb/pkg/config"
+	internalHTTP "pb/pkg/http"
 	"pb/pkg/model"
 	"strings"
 	"time"
@@ -36,7 +37,7 @@ var SavedQueryList = &cobra.Command{
 	Long:    "\nShow the list of saved queries for active user",
 	PreRunE: PreRunDefaultProfile,
 	Run: func(_ *cobra.Command, _ []string) {
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 
 		// Check if the output flag is set
 		if outputFlag != "" {
@@ -113,7 +114,7 @@ var SavedQueryList = &cobra.Command{
 }
 
 // Delete a saved query from the list.
-func deleteSavedQuery(client *HTTPClient, savedQueryID, title string) {
+func deleteSavedQuery(client *internalHTTP.HTTPClient, savedQueryID, title string) {
 	fmt.Printf("\nAttempting to delete '%s'", title)
 	deleteURL := `filters/` + savedQueryID
 	req, err := client.NewRequest("DELETE", deleteURL, nil)
@@ -121,7 +122,7 @@ func deleteSavedQuery(client *HTTPClient, savedQueryID, title string) {
 		fmt.Println("Failed to delete the saved query with error: ", err)
 	}
 
-	resp, err := client.client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return
 	}

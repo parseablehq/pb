@@ -8,9 +8,11 @@ require (
 	github.com/charmbracelet/bubbletea v0.26.6
 	github.com/charmbracelet/lipgloss v0.12.1
 	github.com/dustin/go-humanize v1.0.1
+	github.com/google/uuid v1.6.0
 	golang.org/x/exp v0.0.0-20240604190554-fc45aab8b7f8
 	golang.org/x/term v0.21.0
 	google.golang.org/grpc v1.64.1
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (

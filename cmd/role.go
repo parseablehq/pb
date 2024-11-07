@@ -25,6 +25,8 @@ import (
 	"strings"
 	"sync"
 
+	internalHTTP "pb/pkg/http"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -71,7 +73,7 @@ var AddRoleCmd = &cobra.Command{
 
 		// check if the role already exists
 		var roles []string
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		if err := fetchRoles(&client, &roles); err != nil {
 			return err
 		}
@@ -129,7 +131,7 @@ var AddRoleCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := client.client.Do(req)
+		resp, err := client.Client.Do(req)
 		if err != nil {
 			return err
 		}
@@ -159,13 +161,13 @@ var RemoveRoleCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		req, err := client.NewRequest("DELETE", "role/"+name, nil)
 		if err != nil {
 			return err
 		}
 
-		resp, err := client.client.Do(req)
+		resp, err := client.Client.Do(req)
 		if err != nil {
 			return err
 		}
@@ -193,7 +195,7 @@ var ListRoleCmd = &cobra.Command{
 	Example: "  pb role list",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		var roles []string
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		err := fetchRoles(&client, &roles)
 		if err != nil {
 			return err
@@ -261,13 +263,13 @@ var ListRoleCmd = &cobra.Command{
 	},
 }
 
-func fetchRoles(client *HTTPClient, data *[]string) error {
+func fetchRoles(client *internalHTTP.HTTPClient, data *[]string) error {
 	req, err := client.NewRequest("GET", "role", nil)
 	if err != nil {
 		return err
 	}
 
-	resp, err := client.client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -291,13 +293,13 @@ func fetchRoles(client *HTTPClient, data *[]string) error {
 	return nil
 }
 
-func fetchSpecificRole(client *HTTPClient, role string) (res []RoleData, err error) {
+func fetchSpecificRole(client *internalHTTP.HTTPClient, role string) (res []RoleData, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("role/%s", role), nil)
 	if err != nil {
 		return
 	}
 
-	resp, err := client.client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return
 	}

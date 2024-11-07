@@ -24,6 +24,7 @@ import (
 	"pb/pkg/config"
 	"pb/pkg/model/credential"
 	"pb/pkg/model/defaultprofile"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -60,11 +61,12 @@ var outputFormat string
 
 // Initialize flags
 func init() {
-	AddProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text|json)")
-	RemoveProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text|json)")
-	DefaultProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text|json)")
-	ListProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text|json)")
+	AddProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+	RemoveProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+	DefaultProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+	ListProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
 }
+
 func outputResult(v interface{}) error {
 	if outputFormat == "json" {
 		jsonData, err := json.MarshalIndent(v, "", "  ")
@@ -241,10 +243,19 @@ var ListProfileCmd = &cobra.Command{
 	Use:     "list profiles",
 	Short:   "List all added profiles",
 	Example: "  pb profile list",
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		// Record the start time of the command execution
+		startTime := time.Now()
+
+		// Initialize a variable to capture errors
+		var commandError error
+
+		// Read the configuration from file
 		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
-			return nil
+			commandError = fmt.Errorf("rror reading config: %s", err)
+			cmd.Annotations["error"] = commandError.Error() // Store error in annotations
+			return commandError                             // Return the error so it's handled properly
 		}
 
 		if len(fileConfig.Profiles) != 0 {
@@ -252,7 +263,12 @@ var ListProfileCmd = &cobra.Command{
 		}
 
 		if outputFormat == "json" {
-			return outputResult(fileConfig.Profiles)
+			if err := outputResult(fileConfig.Profiles); err != nil {
+				commandError = fmt.Errorf("error outputting result: %s", err)
+				cmd.Annotations["error"] = commandError.Error() // Store error in annotations
+				return commandError                             // Return the error
+			}
+			return nil // No error, exit normally
 		}
 
 		row := 0
@@ -262,6 +278,11 @@ var ListProfileCmd = &cobra.Command{
 			row++
 			fmt.Println()
 		}
+
+		// Store the execution duration as a field for PostRunE to access
+		cmd.Annotations["executionTime"] = time.Since(startTime).String()
+
+		// If there were no errors, return nil
 		return nil
 	},
 }
