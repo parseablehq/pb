@@ -15,68 +15,69 @@
 
 package cmd
 
-import (
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-)
+// import (
+// 	"encoding/json"
+// 	"errors"
+// 	"fmt"
+// 	"io"
+// 	internalHTTP "pb/pkg/http"
+// )
 
-// About struct
-type About struct {
-	Version         string    `json:"version"`
-	UIVersion       string    `json:"uiVersion"`
-	Commit          string    `json:"commit"`
-	DeploymentID    string    `json:"deploymentId"`
-	UpdateAvailable bool      `json:"updateAvailable"`
-	LatestVersion   string    `json:"latestVersion"`
-	LLMActive       bool      `json:"llmActive"`
-	LLMProvider     string    `json:"llmProvider"`
-	OIDCActive      bool      `json:"oidcActive"`
-	License         string    `json:"license"`
-	Mode            string    `json:"mode"`
-	Staging         string    `json:"staging"`
-	HotTier         string    `json:"hotTier"`
-	GRPCPort        int       `json:"grpcPort"`
-	Store           Store     `json:"store"`
-	Analytics       Analytics `json:"analytics"`
-	QueryEngine     string    `json:"queryEngine"`
-}
+// // About struct
+// type About struct {
+// 	Version         string    `json:"version"`
+// 	UIVersion       string    `json:"uiVersion"`
+// 	Commit          string    `json:"commit"`
+// 	DeploymentID    string    `json:"deploymentId"`
+// 	UpdateAvailable bool      `json:"updateAvailable"`
+// 	LatestVersion   string    `json:"latestVersion"`
+// 	LLMActive       bool      `json:"llmActive"`
+// 	LLMProvider     string    `json:"llmProvider"`
+// 	OIDCActive      bool      `json:"oidcActive"`
+// 	License         string    `json:"license"`
+// 	Mode            string    `json:"mode"`
+// 	Staging         string    `json:"staging"`
+// 	HotTier         string    `json:"hotTier"`
+// 	GRPCPort        int       `json:"grpcPort"`
+// 	Store           Store     `json:"store"`
+// 	Analytics       Analytics `json:"analytics"`
+// 	QueryEngine     string    `json:"queryEngine"`
+// }
 
-// Store struct
-type Store struct {
-	Type string `json:"type"`
-	Path string `json:"path"`
-}
+// // Store struct
+// type Store struct {
+// 	Type string `json:"type"`
+// 	Path string `json:"path"`
+// }
 
-// Analytics struct
-type Analytics struct {
-	ClarityTag string `json:"clarityTag"`
-}
+// // Analytics struct
+// type Analytics struct {
+// 	ClarityTag string `json:"clarityTag"`
+// }
 
-func FetchAbout(client *HTTPClient) (about About, err error) {
-	req, err := client.NewRequest("GET", "about", nil)
-	if err != nil {
-		return
-	}
+// func FetchAbout(client *internalHTTP.HTTPClient) (about About, err error) {
+// 	req, err := client.NewRequest("GET", "about", nil)
+// 	if err != nil {
+// 		return
+// 	}
 
-	resp, err := client.client.Do(req)
-	if err != nil {
-		return
-	}
+// 	resp, err := client.Client.Do(req)
+// 	if err != nil {
+// 		return
+// 	}
 
-	bytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
+// 	bytes, err := io.ReadAll(resp.Body)
+// 	if err != nil {
+// 		return
+// 	}
+// 	defer resp.Body.Close()
 
-	if resp.StatusCode == 200 {
-		err = json.Unmarshal(bytes, &about)
-	} else {
-		body := string(bytes)
-		body = fmt.Sprintf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
-		err = errors.New(body)
-	}
-	return
-}
+// 	if resp.StatusCode == 200 {
+// 		err = json.Unmarshal(bytes, &about)
+// 	} else {
+// 		body := string(bytes)
+// 		body = fmt.Sprintf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
+// 		err = errors.New(body)
+// 	}
+// 	return
+// }

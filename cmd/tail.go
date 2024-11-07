@@ -22,7 +22,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"pb/pkg/analytics"
 	"pb/pkg/config"
+	internalHTTP "pb/pkg/http"
 
 	"github.com/apache/arrow/go/v13/arrow/array"
 	"github.com/apache/arrow/go/v13/arrow/flight"
@@ -53,8 +55,8 @@ func tail(profile config.Profile, stream string) error {
 	})
 
 	// get grpc url for this request
-	httpClient := DefaultClient()
-	about, err := FetchAbout(&httpClient)
+	httpClient := internalHTTP.DefaultClient(&DefaultProfile)
+	about, err := analytics.FetchAbout(&httpClient)
 	if err != nil {
 		return err
 	}

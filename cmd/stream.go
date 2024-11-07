@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	internalHTTP "pb/pkg/http"
 	"strconv"
 	"strings"
 	"time"
@@ -112,13 +113,13 @@ var AddStreamCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		req, err := client.NewRequest("PUT", "logstream/"+name, nil)
 		if err != nil {
 			return err
 		}
 
-		resp, err := client.client.Do(req)
+		resp, err := client.Client.Do(req)
 		if err != nil {
 			return err
 		}
@@ -147,7 +148,7 @@ var StatStreamCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 
 		// Fetch stats data
 		stats, err := fetchStats(&client, name)
@@ -256,13 +257,13 @@ var RemoveStreamCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		name := args[0]
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		req, err := client.NewRequest("DELETE", "logstream/"+name, nil)
 		if err != nil {
 			return err
 		}
 
-		resp, err := client.client.Do(req)
+		resp, err := client.Client.Do(req)
 		if err != nil {
 			return err
 		}
@@ -289,13 +290,13 @@ var ListStreamCmd = &cobra.Command{
 	Short:   "List all streams",
 	Example: "  pb stream list",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		req, err := client.NewRequest("GET", "logstream", nil)
 		if err != nil {
 			return err
 		}
 
-		resp, err := client.client.Do(req)
+		resp, err := client.Client.Do(req)
 		if err != nil {
 			return err
 		}
@@ -361,13 +362,13 @@ func init() {
 	ListStreamCmd.Flags().StringP("output", "o", "text", "Output format: 'text' or 'json'")
 }
 
-func fetchStats(client *HTTPClient, name string) (data StreamStatsData, err error) {
+func fetchStats(client *internalHTTP.HTTPClient, name string) (data StreamStatsData, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("logstream/%s/stats", name), nil)
 	if err != nil {
 		return
 	}
 
-	resp, err := client.client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return
 	}
@@ -388,13 +389,13 @@ func fetchStats(client *HTTPClient, name string) (data StreamStatsData, err erro
 	return
 }
 
-func fetchRetention(client *HTTPClient, name string) (data StreamRetentionData, err error) {
+func fetchRetention(client *internalHTTP.HTTPClient, name string) (data StreamRetentionData, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("logstream/%s/retention", name), nil)
 	if err != nil {
 		return
 	}
 
-	resp, err := client.client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return
 	}
@@ -415,13 +416,13 @@ func fetchRetention(client *HTTPClient, name string) (data StreamRetentionData, 
 	return
 }
 
-func fetchAlerts(client *HTTPClient, name string) (data AlertConfig, err error) {
+func fetchAlerts(client *internalHTTP.HTTPClient, name string) (data AlertConfig, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("logstream/%s/alert", name), nil)
 	if err != nil {
 		return
 	}
 
-	resp, err := client.client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return
 	}

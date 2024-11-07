@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"pb/cmd"
+	"pb/pkg/analytics"
 	"pb/pkg/config"
 
 	"github.com/spf13/cobra"
@@ -63,6 +64,9 @@ var profile = &cobra.Command{
 	Use:   "profile",
 	Short: "Manage different Parseable targets",
 	Long:  "\nuse profile command to configure different Parseable instances. Each profile takes a URL and credentials.",
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		go analytics.PostRunFunction(cmd, args)
+	},
 }
 
 var user = &cobra.Command{

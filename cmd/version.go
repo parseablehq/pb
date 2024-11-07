@@ -17,6 +17,8 @@ package cmd
 
 import (
 	"fmt"
+	"pb/pkg/analytics"
+	internalHTTP "pb/pkg/http"
 
 	"github.com/spf13/cobra"
 )
@@ -31,7 +33,7 @@ var VersionCmd = &cobra.Command{
 
 // PrintVersion prints version information
 func PrintVersion(version, commit string) {
-	client := DefaultClient()
+	client := internalHTTP.DefaultClient(&DefaultProfile)
 
 	fmt.Printf("\n%s \n", StandardStyleAlt.Render("pb version"))
 	fmt.Printf("- %s %s\n", StandardStyleBold.Render("version: "), version)
@@ -40,7 +42,7 @@ func PrintVersion(version, commit string) {
 	if err := PreRun(); err != nil {
 		return
 	}
-	about, err := FetchAbout(&client)
+	about, err := analytics.FetchAbout(&client)
 	if err != nil {
 		return
 	}
