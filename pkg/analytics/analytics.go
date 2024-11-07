@@ -77,9 +77,8 @@ type Config struct {
 	UUID string `yaml:"uuid"`
 }
 
-// checkAndCreateUUID checks for a UUID in the config file and creates it if absent.
-// Signature is just for
-func CheckAndCreateUUID(cmd *cobra.Command, args []string) error {
+// CheckAndCreateUUID checks for a UUID in the config file and creates it if absent.
+func CheckAndCreateUUID(_ *cobra.Command, _ []string) error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Printf("could not find home directory: %v\n", err)

@@ -243,7 +243,7 @@ var ListProfileCmd = &cobra.Command{
 	Use:     "list profiles",
 	Short:   "List all added profiles",
 	Example: "  pb profile list",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		// Record the start time of the command execution
 		startTime := time.Now()
 
@@ -253,7 +253,7 @@ var ListProfileCmd = &cobra.Command{
 		// Read the configuration from file
 		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
-			commandError = fmt.Errorf("error reading config: %s", err)
+			commandError = fmt.Errorf("rror reading config: %s", err)
 			cmd.Annotations["error"] = commandError.Error() // Store error in annotations
 			return commandError                             // Return the error so it's handled properly
 		}
