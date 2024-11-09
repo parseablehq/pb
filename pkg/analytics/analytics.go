@@ -1,10 +1,12 @@
 package analytics
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -150,7 +152,6 @@ func PostRunAnalytics(cmd *cobra.Command, args []string) {
 
 // sendEvent is a placeholder function to simulate sending an event after command execution.
 func sendEvent(commandName string, arguments []string, errors *string, executionStatus string, flags map[string]string) error {
-
 	uuid, err := ReadUUID()
 	if err != nil {
 		return fmt.Errorf("could not load UUID: %v", err)
@@ -189,20 +190,38 @@ func sendEvent(commandName string, arguments []string, errors *string, execution
 		ExecutionStatus: executionStatus,
 	}
 
+	event.Profile.Password = ""
+
 	// Marshal the event to JSON for sending
 	eventJSON, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("failed to marshal event JSON: %v", err)
 	}
 
-	// Simulate sending the event (print or make an HTTP request)
-	fmt.Println("Sending event:", string(eventJSON))
+	// Define the target URL for the HTTP request
+	url := "https://ingestor.demo.parseable.com/api/v1/logstream/analytics-test"
 
-	// err = sendHTTPRequest("POST", "https://example.com/events", eventJSON)
-	// if err != nil {
-	//     return fmt.Errorf("failed to send event: %v", err)
-	// }
+	// Create the HTTP POST request
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(eventJSON))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
 
+	req.SetBasicAuth("admin", "admin")
+	// Execute the HTTP request
+	resp, err := httpClient.Client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send event: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Check for a non-2xx status code
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("received non-2xx response: %v", resp.Status)
+	}
+
+	fmt.Println("Event sent successfully:", string(eventJSON))
 	return nil
 }
 

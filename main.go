@@ -65,7 +65,7 @@ var profile = &cobra.Command{
 	Short: "Manage different Parseable targets",
 	Long:  "\nuse profile command to configure different Parseable instances. Each profile takes a URL and credentials.",
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		go analytics.PostRunAnalytics(cmd, args)
+		analytics.PostRunAnalytics(cmd, args)
 	},
 }
 
@@ -74,6 +74,9 @@ var user = &cobra.Command{
 	Short:             "Manage users",
 	Long:              "\nuser command is used to manage users.",
 	PersistentPreRunE: cmd.PreRunDefaultProfile,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		analytics.PostRunAnalytics(cmd, args)
+	},
 }
 
 var role = &cobra.Command{
