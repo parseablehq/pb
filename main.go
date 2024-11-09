@@ -91,6 +91,9 @@ var stream = &cobra.Command{
 	Short:             "Manage streams",
 	Long:              "\nstream command is used to manage streams.",
 	PersistentPreRunE: cmd.PreRunDefaultProfile,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		analytics.PostRunAnalytics(cmd, args)
+	},
 }
 
 var query = &cobra.Command{
