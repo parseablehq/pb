@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,7 +18,7 @@ import (
 	"pb/pkg/config"
 	internalHTTP "pb/pkg/http"
 
-	"github.com/google/uuid"
+	"github.com/oklog/ulid/v2"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"gopkg.in/yaml.v2"
@@ -25,7 +26,7 @@ import (
 
 type Event struct {
 	CLIVersion         string         `json:"cli_version"`
-	UUID               string         `json:"uuid"`
+	ULID               string         `json:"ulid"`
 	CommitHash         string         `json:"commit_hash"`
 	OSName             string         `json:"os_name"`
 	OSVersion          string         `json:"os_version"`
@@ -76,11 +77,11 @@ type Command struct {
 
 // Config struct for parsing YAML
 type Config struct {
-	UUID string `yaml:"uuid"`
+	ULID string `yaml:"ulid"`
 }
 
-// CheckAndCreateUUID checks for a UUID in the config file and creates it if absent.
-func CheckAndCreateUUID(_ *cobra.Command, _ []string) error {
+// CheckAndCreateULID checks for a ULID in the config file and creates it if absent.
+func CheckAndCreateULID(_ *cobra.Command, _ []string) error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Printf("could not find home directory: %v\n", err)
@@ -109,21 +110,25 @@ func CheckAndCreateUUID(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Check if UUID is missing
-	if config.UUID == "" {
-		config.UUID = uuid.New().String() // Generate a new UUID
+	// Check if ULID is missing
+	if config.ULID == "" {
+		// Generate a new ULID
+		entropy := ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0)
+		ulidInstance := ulid.MustNew(ulid.Timestamp(time.Now()), entropy)
+		config.ULID = ulidInstance.String()
+
 		newData, err := yaml.Marshal(&config)
 		if err != nil {
 			fmt.Printf("could not marshal config data: %v\n", err)
 			return err
 		}
 
-		// Write updated config with UUID back to the file
+		// Write updated config with ULID back to the file
 		if err := os.WriteFile(configPath, newData, 0644); err != nil {
 			fmt.Printf("could not write to config file: %v\n", err)
 			return err
 		}
-		fmt.Printf("Generated and saved new UUID: %s\n", config.UUID)
+		fmt.Printf("Generated and saved new ULID: %s\n", config.ULID)
 	}
 
 	return nil
@@ -152,9 +157,9 @@ func PostRunAnalytics(cmd *cobra.Command, args []string) {
 
 // sendEvent is a placeholder function to simulate sending an event after command execution.
 func sendEvent(commandName string, arguments []string, errors *string, executionTimestamp string, flags map[string]string) error {
-	uuid, err := ReadUUID()
+	ulid, err := ReadUULD()
 	if err != nil {
-		return fmt.Errorf("could not load UUID: %v", err)
+		return fmt.Errorf("could not load ULID: %v", err)
 	}
 
 	profile, err := GetProfile()
@@ -179,7 +184,7 @@ func sendEvent(commandName string, arguments []string, errors *string, execution
 	// Populate the Event struct with OS details and timestamp
 	event := Event{
 		CLIVersion:         about.Commit,
-		UUID:               uuid,
+		ULID:               ulid,
 		CommitHash:         about.Commit,
 		Profile:            profile,
 		OSName:             GetOSName(),
@@ -199,7 +204,7 @@ func sendEvent(commandName string, arguments []string, errors *string, execution
 	}
 
 	// Define the target URL for the HTTP request
-	url := "https://ingestor.demo.parseable.com/api/v1/logstream/analytics-test"
+	url := "https://ingestor.demo.parseable.com/api/v1/logstream/analytics-test-new"
 
 	// Create the HTTP POST request
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(eventJSON))
@@ -221,7 +226,7 @@ func sendEvent(commandName string, arguments []string, errors *string, execution
 		return fmt.Errorf("received non-2xx response: %v", resp.Status)
 	}
 
-	fmt.Println("Event sent successfully:", string(eventJSON))
+	//fmt.Println("Event sent successfully:", string(eventJSON))
 	return nil
 }
 
@@ -309,7 +314,7 @@ func getWindowsVersion() string {
 	return strings.TrimSpace(string(out))
 }
 
-func ReadUUID() (string, error) {
+func ReadUULD() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("could not find home directory: %v", err)
@@ -319,7 +324,7 @@ func ReadUUID() (string, error) {
 
 	// Check if config path exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return "", fmt.Errorf("config file does not exist, please run CheckAndCreateUUID first")
+		return "", fmt.Errorf("config file does not exist, please run CheckAndCreateULID first")
 	}
 
 	// Read the config file
@@ -329,16 +334,16 @@ func ReadUUID() (string, error) {
 		return "", fmt.Errorf("could not read config file: %v", err)
 	}
 
-	// Unmarshal the content to get the UUID
+	// Unmarshal the content to get the ULID
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return "", fmt.Errorf("could not parse config file: %v", err)
 	}
 
-	if config.UUID == "" {
-		return "", fmt.Errorf("UUID is missing in config file")
+	if config.ULID == "" {
+		return "", fmt.Errorf("ULID is missing in config file")
 	}
 
-	return config.UUID, nil
+	return config.ULID, nil
 }
 
 func FetchAbout(client *internalHTTP.HTTPClient) (about About, err error) {
