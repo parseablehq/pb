@@ -133,7 +133,6 @@ var AddUserCmd = func() *cobra.Command {
 	return addUser
 }()
 
-// Similar changes for RemoveUserCmd
 var RemoveUserCmd = &cobra.Command{
 	Use:     "remove user-name",
 	Aliases: []string{"rm"},

@@ -333,7 +333,7 @@ var ListStreamCmd = &cobra.Command{
 	Use:     "list",
 	Example: "  pb stream list",
 	Short:   "List all streams",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		// Capture start time
 		startTime := time.Now()
 		cmd.Annotations = make(map[string]string)

@@ -31,7 +31,7 @@ var VersionCmd = &cobra.Command{
 	Short:   "Print version",
 	Long:    "Print version and commit information",
 	Example: "  pb version",
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		if cmd.Annotations == nil {
 			cmd.Annotations = make(map[string]string)
 		}
