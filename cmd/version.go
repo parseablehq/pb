@@ -16,9 +16,11 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"pb/pkg/analytics"
 	internalHTTP "pb/pkg/http"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -29,25 +31,71 @@ var VersionCmd = &cobra.Command{
 	Short:   "Print version",
 	Long:    "Print version and commit information",
 	Example: "  pb version",
+	Run: func(cmd *cobra.Command, args []string) {
+		if cmd.Annotations == nil {
+			cmd.Annotations = make(map[string]string)
+		}
+
+		startTime := time.Now()
+		defer func() {
+			// Capture the execution time in annotations
+			cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		}()
+
+		err := PrintVersion("1.0.0", "abc123") // Replace with actual version and commit values
+		if err != nil {
+			cmd.Annotations["error"] = err.Error()
+		}
+	},
+}
+
+func init() {
+	VersionCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text|json)")
 }
 
 // PrintVersion prints version information
-func PrintVersion(version, commit string) {
+func PrintVersion(version, commit string) error {
 	client := internalHTTP.DefaultClient(&DefaultProfile)
 
+	// Fetch server information
+	if err := PreRun(); err != nil {
+		return fmt.Errorf("error in PreRun: %w", err)
+	}
+
+	about, err := analytics.FetchAbout(&client)
+	if err != nil {
+		return fmt.Errorf("error fetching server information: %w", err)
+	}
+
+	// Output as JSON if specified
+	if outputFormat == "json" {
+		versionInfo := map[string]interface{}{
+			"client": map[string]string{
+				"version": version,
+				"commit":  commit,
+			},
+			"server": map[string]string{
+				"url":     DefaultProfile.URL,
+				"version": about.Version,
+				"commit":  about.Commit,
+			},
+		}
+		jsonData, err := json.MarshalIndent(versionInfo, "", "  ")
+		if err != nil {
+			return fmt.Errorf("error generating JSON output: %w", err)
+		}
+		fmt.Println(string(jsonData))
+		return nil
+	}
+
+	// Default: Output as text
 	fmt.Printf("\n%s \n", StandardStyleAlt.Render("pb version"))
 	fmt.Printf("- %s %s\n", StandardStyleBold.Render("version: "), version)
 	fmt.Printf("- %s %s\n\n", StandardStyleBold.Render("commit:  "), commit)
 
-	if err := PreRun(); err != nil {
-		return
-	}
-	about, err := analytics.FetchAbout(&client)
-	if err != nil {
-		return
-	}
-
 	fmt.Printf("%s %s \n", StandardStyleAlt.Render("Connected to"), StandardStyleBold.Render(DefaultProfile.URL))
 	fmt.Printf("- %s %s\n", StandardStyleBold.Render("version: "), about.Version)
 	fmt.Printf("- %s %s\n\n", StandardStyleBold.Render("commit:  "), about.Commit)
+
+	return nil
 }

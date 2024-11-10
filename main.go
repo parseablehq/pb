@@ -58,6 +58,9 @@ var cli = &cobra.Command{
 		}
 		return errors.New("no command or flag supplied")
 	},
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		analytics.PostRunAnalytics(cmd, args)
+	},
 }
 
 var profile = &cobra.Command{
@@ -84,6 +87,9 @@ var role = &cobra.Command{
 	Short:             "Manage roles",
 	Long:              "\nrole command is used to manage roles.",
 	PersistentPreRunE: cmd.PreRunDefaultProfile,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		analytics.PostRunAnalytics(cmd, args)
+	},
 }
 
 var stream = &cobra.Command{
@@ -101,6 +107,9 @@ var query = &cobra.Command{
 	Short:             "Run SQL query on a log stream",
 	Long:              "\nRun SQL query on a log stream. Default output format is json. Use -i flag to open interactive table view.",
 	PersistentPreRunE: cmd.PreRunDefaultProfile,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		analytics.PostRunAnalytics(cmd, args)
+	},
 }
 
 func main() {
@@ -139,6 +148,7 @@ func main() {
 	cmd.VersionCmd.Run = func(_ *cobra.Command, _ []string) {
 		cmd.PrintVersion(Version, Commit)
 	}
+
 	cli.AddCommand(cmd.VersionCmd)
 	// set as flag
 	cli.Flags().BoolP(versionFlag, versionFlagShort, false, "Print version")

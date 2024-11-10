@@ -24,16 +24,16 @@ import (
 )
 
 type Event struct {
-	CLIVersion      string         `json:"cli_version"`
-	UUID            string         `json:"uuid"`
-	CommitHash      string         `json:"commit_hash"`
-	OSName          string         `json:"os_name"`
-	OSVersion       string         `json:"os_version"`
-	ReportCreatedAt string         `json:"report_created_at"`
-	Command         Command        `json:"command"`
-	Profile         config.Profile `json:"profile"`
-	Errors          *string        `json:"errors"`
-	ExecutionStatus string         `json:"execution_status"`
+	CLIVersion         string         `json:"cli_version"`
+	UUID               string         `json:"uuid"`
+	CommitHash         string         `json:"commit_hash"`
+	OSName             string         `json:"os_name"`
+	OSVersion          string         `json:"os_version"`
+	ReportCreatedAt    string         `json:"report_created_at"`
+	Command            Command        `json:"command"`
+	Profile            config.Profile `json:"profile"`
+	Errors             *string        `json:"errors"`
+	ExecutionTimestamp string         `json:"execution_timestamp"`
 }
 
 // About struct
@@ -151,7 +151,7 @@ func PostRunAnalytics(cmd *cobra.Command, args []string) {
 }
 
 // sendEvent is a placeholder function to simulate sending an event after command execution.
-func sendEvent(commandName string, arguments []string, errors *string, executionStatus string, flags map[string]string) error {
+func sendEvent(commandName string, arguments []string, errors *string, executionTimestamp string, flags map[string]string) error {
 	uuid, err := ReadUUID()
 	if err != nil {
 		return fmt.Errorf("could not load UUID: %v", err)
@@ -178,16 +178,16 @@ func sendEvent(commandName string, arguments []string, errors *string, execution
 
 	// Populate the Event struct with OS details and timestamp
 	event := Event{
-		CLIVersion:      about.Commit,
-		UUID:            uuid,
-		CommitHash:      about.Commit,
-		Profile:         profile,
-		OSName:          GetOSName(),
-		OSVersion:       GetOSVersion(),
-		ReportCreatedAt: GetCurrentTimestamp(),
-		Command:         cmd,
-		Errors:          errors,
-		ExecutionStatus: executionStatus,
+		CLIVersion:         about.Commit,
+		UUID:               uuid,
+		CommitHash:         about.Commit,
+		Profile:            profile,
+		OSName:             GetOSName(),
+		OSVersion:          GetOSVersion(),
+		ReportCreatedAt:    GetCurrentTimestamp(),
+		Command:            cmd,
+		Errors:             errors,
+		ExecutionTimestamp: executionTimestamp,
 	}
 
 	event.Profile.Password = ""

@@ -20,10 +20,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"pb/pkg/model/role"
 	"strings"
 	"sync"
+	"time"
 
 	internalHTTP "pb/pkg/http"
 
@@ -68,15 +68,22 @@ var AddRoleCmd = &cobra.Command{
 	Example: "  pb role add ingestors",
 	Short:   "Add a new role",
 	Args:    cobra.ExactArgs(1),
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		startTime := time.Now()
+		cmd.Annotations = make(map[string]string)
+		defer func() {
+			cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		}()
+
 		name := args[0]
 
-		// check if the role already exists
 		var roles []string
 		client := internalHTTP.DefaultClient(&DefaultProfile)
 		if err := fetchRoles(&client, &roles); err != nil {
+			cmd.Annotations["errors"] = fmt.Sprintf("Error fetching roles: %s", err.Error())
 			return err
 		}
+
 		if strings.Contains(strings.Join(roles, " "), name) {
 			fmt.Println("role already exists, please use a different name")
 			return nil
@@ -84,11 +91,11 @@ var AddRoleCmd = &cobra.Command{
 
 		_m, err := tea.NewProgram(role.New()).Run()
 		if err != nil {
-			fmt.Printf("there's been an error: %v", err)
-			os.Exit(1)
+			cmd.Annotations["errors"] = fmt.Sprintf("Error initializing program: %s", err.Error())
+			return err
 		}
-		m := _m.(role.Model)
 
+		m := _m.(role.Model)
 		privilege := m.Selection.Value()
 		stream := m.Stream.Value()
 		tag := m.Tag.Value()
@@ -99,28 +106,13 @@ var AddRoleCmd = &cobra.Command{
 		}
 
 		var putBody io.Reader
-
-		// set role
 		if privilege != "none" {
-			roleData := RoleData{
-				Privilege: privilege,
-			}
+			roleData := RoleData{Privilege: privilege}
 			switch privilege {
-			case "writer":
-				roleData.Resource = &RoleResource{
-					Stream: stream,
-				}
+			case "writer", "ingestor":
+				roleData.Resource = &RoleResource{Stream: stream}
 			case "reader":
-				roleData.Resource = &RoleResource{
-					Stream: stream,
-				}
-				if tag != "" {
-					roleData.Resource.Tag = tag
-				}
-			case "ingestor":
-				roleData.Resource = &RoleResource{
-					Stream: stream,
-				}
+				roleData.Resource = &RoleResource{Stream: stream, Tag: tag}
 			}
 			roleDataJSON, _ := json.Marshal([]RoleData{roleData})
 			putBody = bytes.NewBuffer(roleDataJSON)
@@ -128,24 +120,28 @@ var AddRoleCmd = &cobra.Command{
 
 		req, err := client.NewRequest("PUT", "role/"+name, putBody)
 		if err != nil {
+			cmd.Annotations["errors"] = fmt.Sprintf("Error creating request: %s", err.Error())
 			return err
 		}
 
 		resp, err := client.Client.Do(req)
 		if err != nil {
+			cmd.Annotations["errors"] = fmt.Sprintf("Error performing request: %s", err.Error())
 			return err
 		}
-
-		bytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-		body := string(bytes)
 		defer resp.Body.Close()
+
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			cmd.Annotations["errors"] = fmt.Sprintf("Error reading response: %s", err.Error())
+			return err
+		}
+		body := string(bodyBytes)
 
 		if resp.StatusCode == 200 {
 			fmt.Printf("Added role %s", name)
 		} else {
+			cmd.Annotations["errors"] = fmt.Sprintf("Request failed - Status: %s, Response: %s", resp.Status, body)
 			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
 		}
 
@@ -159,29 +155,38 @@ var RemoveRoleCmd = &cobra.Command{
 	Example: "  pb role remove ingestor",
 	Short:   "Delete a role",
 	Args:    cobra.ExactArgs(1),
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		startTime := time.Now()
+		cmd.Annotations = make(map[string]string)
+		defer func() {
+			cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		}()
+
 		name := args[0]
 		client := internalHTTP.DefaultClient(&DefaultProfile)
 		req, err := client.NewRequest("DELETE", "role/"+name, nil)
 		if err != nil {
+			cmd.Annotations["errors"] = fmt.Sprintf("Error creating delete request: %s", err.Error())
 			return err
 		}
 
 		resp, err := client.Client.Do(req)
 		if err != nil {
+			cmd.Annotations["errors"] = fmt.Sprintf("Error performing delete request: %s", err.Error())
 			return err
 		}
+		defer resp.Body.Close()
 
 		if resp.StatusCode == 200 {
 			fmt.Printf("Removed role %s\n", StyleBold.Render(name))
 		} else {
-			bytes, err := io.ReadAll(resp.Body)
+			bodyBytes, err := io.ReadAll(resp.Body)
 			if err != nil {
+				cmd.Annotations["errors"] = fmt.Sprintf("Error reading response: %s", err.Error())
 				return err
 			}
-			body := string(bytes)
-			defer resp.Body.Close()
-
+			body := string(bodyBytes)
+			cmd.Annotations["errors"] = fmt.Sprintf("Request failed - Status: %s, Response: %s", resp.Status, body)
 			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
 		}
 
@@ -194,16 +199,23 @@ var ListRoleCmd = &cobra.Command{
 	Short:   "List all roles",
 	Example: "  pb role list",
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		startTime := time.Now()
+		cmd.Annotations = make(map[string]string)
+		defer func() {
+			cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		}()
+
 		var roles []string
 		client := internalHTTP.DefaultClient(&DefaultProfile)
 		err := fetchRoles(&client, &roles)
 		if err != nil {
+			cmd.Annotations["errors"] = fmt.Sprintf("Error fetching roles: %s", err.Error())
 			return err
 		}
 
-		// Get output flag value
 		outputFormat, err := cmd.Flags().GetString("output")
 		if err != nil {
+			cmd.Annotations["errors"] = fmt.Sprintf("Error retrieving output flag: %s", err.Error())
 			return err
 		}
 
@@ -212,39 +224,32 @@ var ListRoleCmd = &cobra.Command{
 			err  error
 		}, len(roles))
 
-		wsg := sync.WaitGroup{}
+		var wg sync.WaitGroup
 		for idx, role := range roles {
-			wsg.Add(1)
-			out := &roleResponses[idx]
-			role := role
-			client := &client
-			go func() {
-				out.data, out.err = fetchSpecificRole(client, role)
-				wsg.Done()
-			}()
+			wg.Add(1)
+			go func(idx int, role string) {
+				defer wg.Done()
+				roleResponses[idx].data, roleResponses[idx].err = fetchSpecificRole(&client, role)
+			}(idx, role)
 		}
+		wg.Wait()
 
-		wsg.Wait()
-
-		// Output in JSON format if requested
 		if outputFormat == "json" {
-			// Collect the role data into a structured format
 			allRoles := map[string][]RoleData{}
 			for idx, roleName := range roles {
 				if roleResponses[idx].err == nil {
 					allRoles[roleName] = roleResponses[idx].data
 				}
 			}
-			// Marshal and print as JSON
 			jsonOutput, err := json.MarshalIndent(allRoles, "", "  ")
 			if err != nil {
+				cmd.Annotations["errors"] = fmt.Sprintf("Error marshaling JSON output: %s", err.Error())
 				return fmt.Errorf("failed to marshal JSON output: %w", err)
 			}
 			fmt.Println(string(jsonOutput))
 			return nil
 		}
 
-		// Default output in text format
 		fmt.Println()
 		for idx, roleName := range roles {
 			fetchRes := roleResponses[idx]
@@ -255,7 +260,8 @@ var ListRoleCmd = &cobra.Command{
 					fmt.Println(lipgloss.NewStyle().PaddingLeft(3).Render(role.Render()))
 				}
 			} else {
-				fmt.Println(fetchRes.err)
+				fmt.Printf("Error fetching role data for %s: %v\n", roleName, fetchRes.err)
+				cmd.Annotations["errors"] += fmt.Sprintf("Error fetching role data for %s: %v\n", roleName, fetchRes.err)
 			}
 		}
 
@@ -326,5 +332,5 @@ func fetchSpecificRole(client *internalHTTP.HTTPClient, role string) (res []Role
 
 func init() {
 	// Add the --output flag with default value "text"
-	ListRoleCmd.Flags().String("output", "text", "Output format: 'text' or 'json'")
+	ListRoleCmd.Flags().StringP("output", "o", "text", "Output format: 'text' or 'json'")
 }

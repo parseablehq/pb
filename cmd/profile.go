@@ -286,6 +286,7 @@ var ListProfileCmd = &cobra.Command{
 		for key, value := range fileConfig.Profiles {
 			item := ProfileListItem{key, value.URL, value.Username}
 			fmt.Println(item.Render(fileConfig.DefaultProfile == key))
+			fmt.Println() // Add a blank line after each profile
 		}
 		cmd.Annotations["executionTime"] = time.Since(startTime).String()
 		return nil

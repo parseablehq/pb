@@ -275,7 +275,7 @@ var StatStreamCmd = &cobra.Command{
 }
 
 func init() {
-	StatStreamCmd.Flags().String("output", "text", "Output format: text or json")
+	StatStreamCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
 }
 
 var RemoveStreamCmd = &cobra.Command{
