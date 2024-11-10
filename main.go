@@ -64,6 +64,9 @@ var cli = &cobra.Command{
 		return errors.New("no command or flag supplied")
 	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -78,6 +81,9 @@ var profile = &cobra.Command{
 	Long:              "\nuse profile command to configure different Parseable instances. Each profile takes a URL and credentials.",
 	PersistentPreRunE: combinedPreRun,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -92,6 +98,9 @@ var user = &cobra.Command{
 	Long:              "\nuser command is used to manage users.",
 	PersistentPreRunE: combinedPreRun,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -106,6 +115,9 @@ var role = &cobra.Command{
 	Long:              "\nrole command is used to manage roles.",
 	PersistentPreRunE: combinedPreRun,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -120,6 +132,9 @@ var stream = &cobra.Command{
 	Long:              "\nstream command is used to manage streams.",
 	PersistentPreRunE: combinedPreRun,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -134,6 +149,9 @@ var query = &cobra.Command{
 	Long:              "\nRun SQL query on a log stream. Default output format is json. Use -i flag to open interactive table view.",
 	PersistentPreRunE: combinedPreRun,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
