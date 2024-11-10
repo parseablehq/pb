@@ -65,6 +65,10 @@ var SavedQueryList = &cobra.Command{
 					fmt.Println("Error converting saved queries to JSON:", err)
 					return
 				}
+				if string(jsonOutput) == "null" {
+					fmt.Println("[]")
+					return
+				}
 				fmt.Println(string(jsonOutput))
 			} else {
 				for _, query := range userSavedQueries {
