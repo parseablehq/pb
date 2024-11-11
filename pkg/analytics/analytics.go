@@ -134,17 +134,18 @@ func CheckAndCreateULID(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func PostRunAnalytics(cmd *cobra.Command, args []string) {
+func PostRunAnalytics(cmd *cobra.Command, name string, args []string) {
 	executionTime := cmd.Annotations["executionTime"]
 	commandError := cmd.Annotations["error"]
 	flags := make(map[string]string)
 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
 		flags[flag.Name] = flag.Value.String()
 	})
+
 	// Call SendEvent in PostRunE
 	err := sendEvent(
-		cmd.Name(),
-		args,
+		name,
+		append(args, cmd.Name()),
 		&commandError, // Pass the error here if there was one
 		executionTime,
 		flags,
@@ -186,7 +187,6 @@ func sendEvent(commandName string, arguments []string, errors *string, execution
 		CLIVersion:         about.Commit,
 		ULID:               ulid,
 		CommitHash:         about.Commit,
-		Profile:            profile,
 		OSName:             GetOSName(),
 		OSVersion:          GetOSVersion(),
 		ReportCreatedAt:    GetCurrentTimestamp(),
@@ -204,7 +204,7 @@ func sendEvent(commandName string, arguments []string, errors *string, execution
 	}
 
 	// Define the target URL for the HTTP request
-	url := "https://ingestor.demo.parseable.com/api/v1/logstream/analytics-test-new"
+	url := "https://analytics.parseable.io:80"
 
 	// Create the HTTP POST request
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(eventJSON))
@@ -212,8 +212,8 @@ func sendEvent(commandName string, arguments []string, errors *string, execution
 		return fmt.Errorf("failed to create HTTP request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-P-Stream", "pb-usage")
 
-	req.SetBasicAuth("admin", "admin")
 	// Execute the HTTP request
 	resp, err := httpClient.Client.Do(req)
 	if err != nil {

@@ -70,7 +70,7 @@ var cli = &cobra.Command{
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, args)
+			analytics.PostRunAnalytics(cmd, "cli", args)
 		}()
 	},
 }
@@ -87,7 +87,7 @@ var profile = &cobra.Command{
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, args)
+			analytics.PostRunAnalytics(cmd, "profile", args)
 		}()
 	},
 }
@@ -104,7 +104,7 @@ var user = &cobra.Command{
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, args)
+			analytics.PostRunAnalytics(cmd, "user", args)
 		}()
 	},
 }
@@ -121,7 +121,7 @@ var role = &cobra.Command{
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, args)
+			analytics.PostRunAnalytics(cmd, "role", args)
 		}()
 	},
 }
@@ -138,7 +138,7 @@ var stream = &cobra.Command{
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, args)
+			analytics.PostRunAnalytics(cmd, "stream", args)
 		}()
 	},
 }
@@ -155,7 +155,7 @@ var query = &cobra.Command{
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, args)
+			analytics.PostRunAnalytics(cmd, "query", args)
 		}()
 	},
 }
