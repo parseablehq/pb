@@ -25,16 +25,15 @@ import (
 )
 
 type Event struct {
-	CLIVersion         string         `json:"cli_version"`
-	ULID               string         `json:"ulid"`
-	CommitHash         string         `json:"commit_hash"`
-	OSName             string         `json:"os_name"`
-	OSVersion          string         `json:"os_version"`
-	ReportCreatedAt    string         `json:"report_created_at"`
-	Command            Command        `json:"command"`
-	Profile            config.Profile `json:"profile"`
-	Errors             *string        `json:"errors"`
-	ExecutionTimestamp string         `json:"execution_timestamp"`
+	CLIVersion         string  `json:"cli_version"`
+	ULID               string  `json:"ulid"`
+	CommitHash         string  `json:"commit_hash"`
+	OSName             string  `json:"os_name"`
+	OSVersion          string  `json:"os_version"`
+	ReportCreatedAt    string  `json:"report_created_at"`
+	Command            Command `json:"command"`
+	Errors             *string `json:"errors"`
+	ExecutionTimestamp string  `json:"execution_timestamp"`
 }
 
 // About struct
@@ -194,8 +193,6 @@ func sendEvent(commandName string, arguments []string, errors *string, execution
 		Errors:             errors,
 		ExecutionTimestamp: executionTimestamp,
 	}
-
-	event.Profile.Password = ""
 
 	// Marshal the event to JSON for sending
 	eventJSON, err := json.Marshal(event)
