@@ -201,7 +201,7 @@ func sendEvent(commandName string, arguments []string, errors *string, execution
 	}
 
 	// Define the target URL for the HTTP request
-	url := "https://analytics.parseable.io:80"
+	url := "https://analytics.parseable.io:80/pb"
 
 	// Create the HTTP POST request
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(eventJSON))
