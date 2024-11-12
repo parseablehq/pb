@@ -20,11 +20,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"pb/cmd"
+
+	pb "pb/cmd"
+	"pb/pkg/analytics"
 	"pb/pkg/config"
+	"sync"
 
 	"github.com/spf13/cobra"
 )
+
+var wg sync.WaitGroup
 
 // populated at build time
 var (
@@ -47,89 +52,152 @@ func defaultInitialProfile() config.Profile {
 
 // Root command
 var cli = &cobra.Command{
-	Use:   "pb",
-	Short: "\nParseable command line interface",
-	Long:  "\npb is the command line interface for Parseable",
+	Use:               "pb",
+	Short:             "\nParseable command line interface",
+	Long:              "\npb is the command line interface for Parseable",
+	PersistentPreRunE: analytics.CheckAndCreateULID,
 	RunE: func(command *cobra.Command, _ []string) error {
 		if p, _ := command.Flags().GetBool(versionFlag); p {
-			cmd.PrintVersion(Version, Commit)
+			pb.PrintVersion(Version, Commit)
 			return nil
 		}
 		return errors.New("no command or flag supplied")
 	},
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "cli", args)
+		}()
+	},
 }
 
 var profile = &cobra.Command{
-	Use:   "profile",
-	Short: "Manage different Parseable targets",
-	Long:  "\nuse profile command to configure different Parseable instances. Each profile takes a URL and credentials.",
+	Use:               "profile",
+	Short:             "Manage different Parseable targets",
+	Long:              "\nuse profile command to configure different Parseable instances. Each profile takes a URL and credentials.",
+	PersistentPreRunE: combinedPreRun,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "profile", args)
+		}()
+	},
 }
 
 var user = &cobra.Command{
 	Use:               "user",
 	Short:             "Manage users",
 	Long:              "\nuser command is used to manage users.",
-	PersistentPreRunE: cmd.PreRunDefaultProfile,
+	PersistentPreRunE: combinedPreRun,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "user", args)
+		}()
+	},
 }
 
 var role = &cobra.Command{
 	Use:               "role",
 	Short:             "Manage roles",
 	Long:              "\nrole command is used to manage roles.",
-	PersistentPreRunE: cmd.PreRunDefaultProfile,
+	PersistentPreRunE: combinedPreRun,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "role", args)
+		}()
+	},
 }
 
 var stream = &cobra.Command{
 	Use:               "stream",
 	Short:             "Manage streams",
 	Long:              "\nstream command is used to manage streams.",
-	PersistentPreRunE: cmd.PreRunDefaultProfile,
+	PersistentPreRunE: combinedPreRun,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "stream", args)
+		}()
+	},
 }
 
 var query = &cobra.Command{
 	Use:               "query",
 	Short:             "Run SQL query on a log stream",
 	Long:              "\nRun SQL query on a log stream. Default output format is json. Use -i flag to open interactive table view.",
-	PersistentPreRunE: cmd.PreRunDefaultProfile,
+	PersistentPreRunE: combinedPreRun,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "query", args)
+		}()
+	},
 }
 
 func main() {
-	profile.AddCommand(cmd.AddProfileCmd)
-	profile.AddCommand(cmd.RemoveProfileCmd)
-	profile.AddCommand(cmd.ListProfileCmd)
-	profile.AddCommand(cmd.DefaultProfileCmd)
+	profile.AddCommand(pb.AddProfileCmd)
+	profile.AddCommand(pb.RemoveProfileCmd)
+	profile.AddCommand(pb.ListProfileCmd)
+	profile.AddCommand(pb.DefaultProfileCmd)
 
-	user.AddCommand(cmd.AddUserCmd)
-	user.AddCommand(cmd.RemoveUserCmd)
-	user.AddCommand(cmd.ListUserCmd)
-	user.AddCommand(cmd.SetUserRoleCmd)
+	user.AddCommand(pb.AddUserCmd)
+	user.AddCommand(pb.RemoveUserCmd)
+	user.AddCommand(pb.ListUserCmd)
+	user.AddCommand(pb.SetUserRoleCmd)
 
-	role.AddCommand(cmd.AddRoleCmd)
-	role.AddCommand(cmd.RemoveRoleCmd)
-	role.AddCommand(cmd.ListRoleCmd)
+	role.AddCommand(pb.AddRoleCmd)
+	role.AddCommand(pb.RemoveRoleCmd)
+	role.AddCommand(pb.ListRoleCmd)
 
-	stream.AddCommand(cmd.AddStreamCmd)
-	stream.AddCommand(cmd.RemoveStreamCmd)
-	stream.AddCommand(cmd.ListStreamCmd)
-	stream.AddCommand(cmd.StatStreamCmd)
+	stream.AddCommand(pb.AddStreamCmd)
+	stream.AddCommand(pb.RemoveStreamCmd)
+	stream.AddCommand(pb.ListStreamCmd)
+	stream.AddCommand(pb.StatStreamCmd)
 
-	query.AddCommand(cmd.QueryCmd)
-	query.AddCommand(cmd.SavedQueryList)
+	query.AddCommand(pb.QueryCmd)
+	query.AddCommand(pb.SavedQueryList)
 
 	cli.AddCommand(profile)
 	cli.AddCommand(query)
 	cli.AddCommand(stream)
 	cli.AddCommand(user)
 	cli.AddCommand(role)
-	cli.AddCommand(cmd.TailCmd)
+	cli.AddCommand(pb.TailCmd)
 
-	cli.AddCommand(cmd.AutocompleteCmd)
+	cli.AddCommand(pb.AutocompleteCmd)
 
 	// Set as command
-	cmd.VersionCmd.Run = func(_ *cobra.Command, _ []string) {
-		cmd.PrintVersion(Version, Commit)
+	pb.VersionCmd.Run = func(_ *cobra.Command, _ []string) {
+		pb.PrintVersion(Version, Commit)
 	}
-	cli.AddCommand(cmd.VersionCmd)
+
+	cli.AddCommand(pb.VersionCmd)
 	// set as flag
 	cli.Flags().BoolP(versionFlag, versionFlagShort, false, "Print version")
 
@@ -173,4 +241,19 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
+	wg.Wait()
+}
+
+// Wrapper to combine existing pre-run logic and ULID check
+func combinedPreRun(cmd *cobra.Command, args []string) error {
+	err := pb.PreRunDefaultProfile(cmd, args)
+	if err != nil {
+		return fmt.Errorf("error initializing default profile: %w", err)
+	}
+
+	if err := analytics.CheckAndCreateULID(cmd, args); err != nil {
+		return fmt.Errorf("error while creating ulid: %v", err)
+	}
+
+	return nil
 }

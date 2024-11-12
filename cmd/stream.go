@@ -20,7 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
+	internalHTTP "pb/pkg/http"
 	"strconv"
 	"strings"
 	"time"
@@ -110,24 +110,39 @@ var AddStreamCmd = &cobra.Command{
 	Example: "  pb stream add backend_logs",
 	Short:   "Create a new stream",
 	Args:    cobra.ExactArgs(1),
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Capture start time
+		startTime := time.Now()
+		cmd.Annotations = make(map[string]string)
+		defer func() {
+			cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		}()
+
 		name := args[0]
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		req, err := client.NewRequest("PUT", "logstream/"+name, nil)
 		if err != nil {
+			// Capture error
+			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 			return err
 		}
 
-		resp, err := client.client.Do(req)
+		resp, err := client.Client.Do(req)
 		if err != nil {
+			// Capture error
+			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 			return err
 		}
+
+		// Capture execution time
+		cmd.Annotations["executionTime"] = time.Since(startTime).String()
 
 		if resp.StatusCode == 200 {
 			fmt.Printf("Created stream %s\n", StyleBold.Render(name))
 		} else {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {
+				cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 				return err
 			}
 			body := string(bytes)
@@ -146,12 +161,21 @@ var StatStreamCmd = &cobra.Command{
 	Short:   "Get statistics for a stream",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Capture start time
+		startTime := time.Now()
+		cmd.Annotations = make(map[string]string)
+		defer func() {
+			cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		}()
+
 		name := args[0]
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 
 		// Fetch stats data
 		stats, err := fetchStats(&client, name)
 		if err != nil {
+			// Capture error
+			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 			return err
 		}
 
@@ -163,12 +187,16 @@ var StatStreamCmd = &cobra.Command{
 		// Fetch retention data
 		retention, err := fetchRetention(&client, name)
 		if err != nil {
+			// Capture error
+			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 			return err
 		}
 
 		// Fetch alerts data
 		alertsData, err := fetchAlerts(&client, name)
 		if err != nil {
+			// Capture error
+			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 			return err
 		}
 
@@ -189,6 +217,8 @@ var StatStreamCmd = &cobra.Command{
 
 			jsonData, err := json.MarshalIndent(data, "", "  ")
 			if err != nil {
+				// Capture error
+				cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 				return err
 			}
 			fmt.Println(string(jsonData))
@@ -245,7 +275,7 @@ var StatStreamCmd = &cobra.Command{
 }
 
 func init() {
-	StatStreamCmd.Flags().String("output", "text", "Output format: text or json")
+	StatStreamCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
 }
 
 var RemoveStreamCmd = &cobra.Command{
@@ -254,29 +284,43 @@ var RemoveStreamCmd = &cobra.Command{
 	Example: " pb stream remove backend_logs",
 	Short:   "Delete a stream",
 	Args:    cobra.ExactArgs(1),
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Capture start time
+		startTime := time.Now()
+		cmd.Annotations = make(map[string]string)
+		defer func() {
+			cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		}()
+
 		name := args[0]
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		req, err := client.NewRequest("DELETE", "logstream/"+name, nil)
 		if err != nil {
+			// Capture error
+			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 			return err
 		}
 
-		resp, err := client.client.Do(req)
+		resp, err := client.Client.Do(req)
 		if err != nil {
+			// Capture error
+			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 			return err
 		}
+
+		// Capture execution time
+		cmd.Annotations["executionTime"] = time.Since(startTime).String()
 
 		if resp.StatusCode == 200 {
-			fmt.Printf("Removed stream %s\n", StyleBold.Render(name))
+			fmt.Printf("Successfully deleted stream %s\n", StyleBold.Render(name))
 		} else {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {
+				cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 				return err
 			}
 			body := string(bytes)
 			defer resp.Body.Close()
-
 			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
 		}
 
@@ -284,74 +328,53 @@ var RemoveStreamCmd = &cobra.Command{
 	},
 }
 
+// ListStreamCmd is the list command for streams
 var ListStreamCmd = &cobra.Command{
 	Use:     "list",
-	Short:   "List all streams",
 	Example: "  pb stream list",
+	Short:   "List all streams",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		client := DefaultClient()
+		// Capture start time
+		startTime := time.Now()
+		cmd.Annotations = make(map[string]string)
+		defer func() {
+			cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		}()
+
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		req, err := client.NewRequest("GET", "logstream", nil)
 		if err != nil {
+			// Capture error
+			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 			return err
 		}
 
-		resp, err := client.client.Do(req)
+		resp, err := client.Client.Do(req)
 		if err != nil {
+			// Capture error
+			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 			return err
 		}
-		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
-			// Read response body for error message
+		var streams []StreamListItem
+		if resp.StatusCode == 200 {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {
+				cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 				return err
 			}
-			body := string(bytes)
-			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
-			return nil
-		}
-
-		var items []map[string]string
-		err = json.NewDecoder(resp.Body).Decode(&items)
-		if err != nil {
-			return err
-		}
-
-		// Get output flag value
-		outputFormat, err := cmd.Flags().GetString("output")
-		if err != nil {
-			return err
-		}
-
-		// Handle JSON output format
-		if outputFormat == "json" {
-			// Collect stream names for JSON output
-			streams := make([]string, len(items))
-			for i, item := range items {
-				streams[i] = item["name"]
+			if err := json.Unmarshal(bytes, &streams); err != nil {
+				cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
+				return err
 			}
-			jsonOutput, err := json.MarshalIndent(streams, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON output: %w", err)
+
+			for _, stream := range streams {
+				fmt.Println(stream.Render())
 			}
-			fmt.Println(string(jsonOutput))
-			return nil
+		} else {
+			fmt.Printf("Failed to fetch streams. Status Code: %s\n", resp.Status)
 		}
 
-		// Default to text output
-		if len(items) == 0 {
-			fmt.Println("No streams found")
-			return nil
-		}
-
-		fmt.Println()
-		for _, item := range items {
-			streamItem := StreamListItem{Name: item["name"]}
-			fmt.Print("• ")
-			fmt.Println(streamItem.Render())
-		}
-		fmt.Println()
 		return nil
 	},
 }
@@ -361,13 +384,13 @@ func init() {
 	ListStreamCmd.Flags().StringP("output", "o", "text", "Output format: 'text' or 'json'")
 }
 
-func fetchStats(client *HTTPClient, name string) (data StreamStatsData, err error) {
+func fetchStats(client *internalHTTP.HTTPClient, name string) (data StreamStatsData, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("logstream/%s/stats", name), nil)
 	if err != nil {
 		return
 	}
 
-	resp, err := client.client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return
 	}
@@ -388,13 +411,13 @@ func fetchStats(client *HTTPClient, name string) (data StreamStatsData, err erro
 	return
 }
 
-func fetchRetention(client *HTTPClient, name string) (data StreamRetentionData, err error) {
+func fetchRetention(client *internalHTTP.HTTPClient, name string) (data StreamRetentionData, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("logstream/%s/retention", name), nil)
 	if err != nil {
 		return
 	}
 
-	resp, err := client.client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return
 	}
@@ -415,13 +438,13 @@ func fetchRetention(client *HTTPClient, name string) (data StreamRetentionData, 
 	return
 }
 
-func fetchAlerts(client *HTTPClient, name string) (data AlertConfig, err error) {
+func fetchAlerts(client *internalHTTP.HTTPClient, name string) (data AlertConfig, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("logstream/%s/alert", name), nil)
 	if err != nil {
 		return
 	}
 
-	resp, err := client.client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return
 	}

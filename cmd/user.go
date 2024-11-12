@@ -20,8 +20,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	internalHTTP "pb/pkg/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -46,11 +48,18 @@ var addUser = &cobra.Command{
 	Short:   "Add a new user",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		startTime := time.Now()
+		cmd.Annotations = make(map[string]string) // Initialize Annotations map
+		defer func() {
+			cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		}()
+
 		name := args[0]
 
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		users, err := fetchUsers(&client)
 		if err != nil {
+			cmd.Annotations["error"] = err.Error()
 			return err
 		}
 
@@ -58,6 +67,7 @@ var addUser = &cobra.Command{
 			return user.ID == name
 		}) {
 			fmt.Println("user already exists")
+			cmd.Annotations["error"] = "user already exists"
 			return nil
 		}
 
@@ -68,6 +78,7 @@ var addUser = &cobra.Command{
 		// fetch the role names on the server
 		var rolesOnServer []string
 		if err := fetchRoles(&client, &rolesOnServer); err != nil {
+			cmd.Annotations["error"] = err.Error()
 			return err
 		}
 		rolesOnServerArr := strings.Join(rolesOnServer, " ")
@@ -76,7 +87,8 @@ var addUser = &cobra.Command{
 		for idx, role := range rolesToSetArr {
 			rolesToSetArr[idx] = strings.TrimSpace(role)
 			if !strings.Contains(rolesOnServerArr, rolesToSetArr[idx]) {
-				fmt.Printf("role %s doesn't exist, please create a role using `pb role add %s`\n", rolesToSetArr[idx], rolesToSetArr[idx])
+				fmt.Printf("role %s doesn't exist, please create a role using pb role add %s\n", rolesToSetArr[idx], rolesToSetArr[idx])
+				cmd.Annotations["error"] = fmt.Sprintf("role %s doesn't exist", rolesToSetArr[idx])
 				return nil
 			}
 		}
@@ -86,16 +98,19 @@ var addUser = &cobra.Command{
 		putBody = bytes.NewBuffer([]byte(putBodyJSON))
 		req, err := client.NewRequest("POST", "user/"+name, putBody)
 		if err != nil {
+			cmd.Annotations["error"] = err.Error()
 			return err
 		}
 
-		resp, err := client.client.Do(req)
+		resp, err := client.Client.Do(req)
 		if err != nil {
+			cmd.Annotations["error"] = err.Error()
 			return err
 		}
 
 		bytes, err := io.ReadAll(resp.Body)
 		if err != nil {
+			cmd.Annotations["error"] = err.Error()
 			return err
 		}
 		body := string(bytes)
@@ -103,8 +118,10 @@ var addUser = &cobra.Command{
 
 		if resp.StatusCode == 200 {
 			fmt.Printf("Added user: %s \nPassword is: %s\nRole(s) assigned: %s\n", name, body, rolesToSet)
+			cmd.Annotations["error"] = "none"
 		} else {
 			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
+			cmd.Annotations["error"] = fmt.Sprintf("request failed with status code %s", resp.Status)
 		}
 
 		return nil
@@ -122,30 +139,34 @@ var RemoveUserCmd = &cobra.Command{
 	Example: "  pb user remove bob",
 	Short:   "Delete a user",
 	Args:    cobra.ExactArgs(1),
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		startTime := time.Now()
+		cmd.Annotations = make(map[string]string)
+		defer func() {
+			cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		}()
+
 		name := args[0]
-		client := DefaultClient()
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		req, err := client.NewRequest("DELETE", "user/"+name, nil)
 		if err != nil {
+			cmd.Annotations["error"] = err.Error()
 			return err
 		}
 
-		resp, err := client.client.Do(req)
+		resp, err := client.Client.Do(req)
 		if err != nil {
+			cmd.Annotations["error"] = err.Error()
 			return err
 		}
 
 		if resp.StatusCode == 200 {
 			fmt.Printf("Removed user %s\n", StyleBold.Render(name))
+			cmd.Annotations["error"] = "none"
 		} else {
-			bytes, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
-			body := string(bytes)
-			defer resp.Body.Close()
-
-			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
+			body, _ := io.ReadAll(resp.Body)
+			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, string(body))
+			cmd.Annotations["error"] = fmt.Sprintf("request failed with status code %s", resp.Status)
 		}
 
 		return nil
@@ -162,12 +183,18 @@ var SetUserRoleCmd = &cobra.Command{
 		}
 		return nil
 	},
-	RunE: func(_ *cobra.Command, args []string) error {
-		name := args[0]
+	RunE: func(cmd *cobra.Command, args []string) error {
+		startTime := time.Now()
+		cmd.Annotations = make(map[string]string)
+		defer func() {
+			cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		}()
 
-		client := DefaultClient()
+		name := args[0]
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		users, err := fetchUsers(&client)
 		if err != nil {
+			cmd.Annotations["error"] = err.Error()
 			return err
 		}
 
@@ -175,25 +202,24 @@ var SetUserRoleCmd = &cobra.Command{
 			return user.ID == name
 		}) {
 			fmt.Printf("user doesn't exist. Please create the user with `pb user add %s`\n", name)
+			cmd.Annotations["error"] = "user does not exist"
 			return nil
 		}
 
-		// fetch all the roles to be applied to this user
 		rolesToSet := args[1]
 		rolesToSetArr := strings.Split(rolesToSet, ",")
-
-		// fetch the role names on the server
 		var rolesOnServer []string
 		if err := fetchRoles(&client, &rolesOnServer); err != nil {
+			cmd.Annotations["error"] = err.Error()
 			return err
 		}
 		rolesOnServerArr := strings.Join(rolesOnServer, " ")
 
-		// validate if roles to be applied are actually present on the server
 		for idx, role := range rolesToSetArr {
 			rolesToSetArr[idx] = strings.TrimSpace(role)
 			if !strings.Contains(rolesOnServerArr, rolesToSetArr[idx]) {
 				fmt.Printf("role %s doesn't exist, please create a role using `pb role add %s`\n", rolesToSetArr[idx], rolesToSetArr[idx])
+				cmd.Annotations["error"] = fmt.Sprintf("role %s doesn't exist", rolesToSetArr[idx])
 				return nil
 			}
 		}
@@ -203,16 +229,19 @@ var SetUserRoleCmd = &cobra.Command{
 		putBody = bytes.NewBuffer([]byte(putBodyJSON))
 		req, err := client.NewRequest("PUT", "user/"+name+"/role", putBody)
 		if err != nil {
+			cmd.Annotations["error"] = err.Error()
 			return err
 		}
 
-		resp, err := client.client.Do(req)
+		resp, err := client.Client.Do(req)
 		if err != nil {
+			cmd.Annotations["error"] = err.Error()
 			return err
 		}
 
 		bytes, err := io.ReadAll(resp.Body)
 		if err != nil {
+			cmd.Annotations["error"] = err.Error()
 			return err
 		}
 		body := string(bytes)
@@ -220,8 +249,10 @@ var SetUserRoleCmd = &cobra.Command{
 
 		if resp.StatusCode == 200 {
 			fmt.Printf("Added role(s) %s to user %s\n", rolesToSet, name)
+			cmd.Annotations["error"] = "none"
 		} else {
 			fmt.Printf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
+			cmd.Annotations["error"] = fmt.Sprintf("request failed with status code %s", resp.Status)
 		}
 
 		return nil
@@ -233,14 +264,21 @@ var ListUserCmd = &cobra.Command{
 	Short:   "List all users",
 	Example: "  pb user list",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		client := DefaultClient()
+		startTime := time.Now()
+		cmd.Annotations = make(map[string]string)
+		defer func() {
+			cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		}()
+
+		client := internalHTTP.DefaultClient(&DefaultProfile)
 		users, err := fetchUsers(&client)
 		if err != nil {
+			cmd.Annotations["error"] = err.Error()
 			return err
 		}
 
 		roleResponses := make([]struct {
-			data []string // Collects roles as strings for text output
+			data []string
 			err  error
 		}, len(users))
 
@@ -254,7 +292,6 @@ var ListUserCmd = &cobra.Command{
 				var userRolesData UserRoleData
 				userRolesData, out.err = fetchUserRoles(client, userID)
 				if out.err == nil {
-					// Collect role names for this user
 					for role := range userRolesData {
 						out.data = append(out.data, role)
 					}
@@ -265,13 +302,12 @@ var ListUserCmd = &cobra.Command{
 
 		wsg.Wait()
 
-		// Get the output format, defaulting to empty (existing behavior)
 		outputFormat, err := cmd.Flags().GetString("output")
 		if err != nil {
+			cmd.Annotations["error"] = err.Error()
 			return err
 		}
 
-		// JSON output if specified
 		if outputFormat == "json" {
 			usersWithRoles := make([]map[string]interface{}, len(users))
 			for idx, user := range users {
@@ -282,13 +318,14 @@ var ListUserCmd = &cobra.Command{
 			}
 			jsonOutput, err := json.MarshalIndent(usersWithRoles, "", "  ")
 			if err != nil {
+				cmd.Annotations["error"] = err.Error()
 				return fmt.Errorf("failed to marshal JSON output: %w", err)
 			}
 			fmt.Println(string(jsonOutput))
+			cmd.Annotations["error"] = "none"
 			return nil
 		}
 
-		// Text output if specified
 		if outputFormat == "text" {
 			fmt.Println()
 			for idx, user := range users {
@@ -301,10 +338,10 @@ var ListUserCmd = &cobra.Command{
 				}
 			}
 			fmt.Println()
+			cmd.Annotations["error"] = "none"
 			return nil
 		}
 
-		// Default output (existing layout)
 		fmt.Println()
 		for idx, user := range users {
 			roles := roleResponses[idx]
@@ -320,17 +357,18 @@ var ListUserCmd = &cobra.Command{
 		}
 		fmt.Println()
 
+		cmd.Annotations["error"] = "none"
 		return nil
 	},
 }
 
-func fetchUsers(client *HTTPClient) (res []UserData, err error) {
+func fetchUsers(client *internalHTTP.HTTPClient) (res []UserData, err error) {
 	req, err := client.NewRequest("GET", "user", nil)
 	if err != nil {
 		return
 	}
 
-	resp, err := client.client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return
 	}
@@ -355,12 +393,12 @@ func fetchUsers(client *HTTPClient) (res []UserData, err error) {
 	return
 }
 
-func fetchUserRoles(client *HTTPClient, user string) (res UserRoleData, err error) {
+func fetchUserRoles(client *internalHTTP.HTTPClient, user string) (res UserRoleData, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("user/%s/role", user), nil)
 	if err != nil {
 		return
 	}
-	resp, err := client.client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return
 	}

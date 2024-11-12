@@ -25,21 +25,21 @@ import (
 )
 
 type HTTPClient struct {
-	client  http.Client
-	profile *config.Profile
+	Client  http.Client
+	Profile *config.Profile
 }
 
-func DefaultClient() HTTPClient {
+func DefaultClient(profile *config.Profile) HTTPClient {
 	return HTTPClient{
-		client: http.Client{
+		Client: http.Client{
 			Timeout: 60 * time.Second,
 		},
-		profile: &DefaultProfile,
+		Profile: profile,
 	}
 }
 
 func (client *HTTPClient) baseAPIURL(path string) (x string) {
-	x, _ = url.JoinPath(client.profile.URL, "api/v1/", path)
+	x, _ = url.JoinPath(client.Profile.URL, "api/v1/", path)
 	return
 }
 
@@ -48,7 +48,7 @@ func (client *HTTPClient) NewRequest(method string, path string, body io.Reader)
 	if err != nil {
 		return
 	}
-	req.SetBasicAuth(client.profile.Username, client.profile.Password)
+	req.SetBasicAuth(client.Profile.Username, client.Profile.Password)
 	req.Header.Add("Content-Type", "application/json")
 	return
 }

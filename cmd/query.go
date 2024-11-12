@@ -22,11 +22,14 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	// "pb/pkg/model"
 
 	//! This dependency is required by the interactive flag Do not remove
 	// tea "github.com/charmbracelet/bubbletea"
+	internalHTTP "pb/pkg/http"
+
 	"github.com/spf13/cobra"
 )
 
@@ -39,15 +42,7 @@ var (
 	endFlagShort = "t"
 	defaultEnd   = "now"
 
-	// // save filter flags
-	// saveQueryFlag  = "save-as"
-	// saveQueryShort = "s"
-	// // save filter with time flags
-	// saveQueryTimeFlag  = "with-time"
-	// saveQueryTimeShort = "w"
 	outputFlag = "output"
-	// interactiveFlag      = "interactive"
-	// interactiveFlagShort = "i"
 )
 
 var query = &cobra.Command{
@@ -58,18 +53,26 @@ var query = &cobra.Command{
 	Args:    cobra.MaximumNArgs(1),
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(command *cobra.Command, args []string) error {
-		var query string
+		startTime := time.Now()
+		command.Annotations = map[string]string{
+			"startTime": startTime.Format(time.RFC3339),
+		}
+
+		defer func() {
+			duration := time.Since(startTime)
+			command.Annotations["executionTime"] = duration.String()
+		}()
 
 		if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
-			fmt.Println("please enter your query")
+			fmt.Println("Please enter your query")
 			fmt.Printf("Example:\n  pb query run \"select * from frontend\" --from=10m --to=now\n")
 			return nil
 		}
 
-		query = args[0]
-
+		query := args[0]
 		start, err := command.Flags().GetString(startFlag)
 		if err != nil {
+			command.Annotations["error"] = err.Error()
 			return err
 		}
 		if start == "" {
@@ -78,60 +81,65 @@ var query = &cobra.Command{
 
 		end, err := command.Flags().GetString(endFlag)
 		if err != nil {
+			command.Annotations["error"] = err.Error()
 			return err
 		}
 		if end == "" {
 			end = defaultEnd
 		}
 
-		outputFormat, err := command.Flags().GetString(outputFlag)
+		outputFormat, err := command.Flags().GetString("output")
 		if err != nil {
-			return err
+			command.Annotations["error"] = err.Error()
+			return fmt.Errorf("failed to get 'output' flag: %w", err)
 		}
 
-		client := DefaultClient()
-		return fetchData(&client, query, start, end, outputFormat)
+		client := internalHTTP.DefaultClient(&DefaultProfile)
+		err = fetchData(&client, query, start, end, outputFormat)
+		if err != nil {
+			command.Annotations["error"] = err.Error()
+		}
+		return err
 	},
 }
 
-var QueryCmd = func() *cobra.Command {
+func init() {
 	query.Flags().StringP(startFlag, startFlagShort, defaultStart, "Start time for query.")
 	query.Flags().StringP(endFlag, endFlagShort, defaultEnd, "End time for query.")
-	query.Flags().StringP(outputFlag, "o", "text", "Output format (text or json).")
-	return query
-}()
+	query.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+}
 
-func fetchData(client *HTTPClient, query string, startTime, endTime, outputFormat string) (err error) {
+var QueryCmd = query
+
+func fetchData(client *internalHTTP.HTTPClient, query string, startTime, endTime, outputFormat string) error {
 	queryTemplate := `{
 		"query": "%s",
 		"startTime": "%s",
 		"endTime": "%s"
 	}`
-
 	finalQuery := fmt.Sprintf(queryTemplate, query, startTime, endTime)
 
 	req, err := client.NewRequest("POST", "query", bytes.NewBuffer([]byte(finalQuery)))
 	if err != nil {
-		return
+		return fmt.Errorf("failed to create new request: %w", err)
 	}
 
-	resp, err := client.client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
-		return
+		return fmt.Errorf("request execution failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
 		fmt.Println(string(body))
-		return nil
+		return fmt.Errorf("non-200 status code received: %s", resp.Status)
 	}
 
 	if outputFormat == "json" {
 		var jsonResponse []map[string]interface{}
 		if err := json.NewDecoder(resp.Body).Decode(&jsonResponse); err != nil {
-			fmt.Println("Error decoding JSON response:", err)
-			return err
+			return fmt.Errorf("error decoding JSON response: %w", err)
 		}
 		encodedResponse, _ := json.MarshalIndent(jsonResponse, "", "  ")
 		fmt.Println(string(encodedResponse))

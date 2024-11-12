@@ -20,14 +20,12 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"pb/pkg/config"
 	"pb/pkg/model/credential"
 	"pb/pkg/model/defaultprofile"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 )
 
@@ -60,11 +58,12 @@ var outputFormat string
 
 // Initialize flags
 func init() {
-	AddProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text|json)")
-	RemoveProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text|json)")
-	DefaultProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text|json)")
-	ListProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (text|json)")
+	AddProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+	RemoveProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+	DefaultProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+	ListProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
 }
+
 func outputResult(v interface{}) error {
 	if outputFormat == "json" {
 		jsonData, err := json.MarshalIndent(v, "", "  ")
@@ -89,68 +88,67 @@ var AddProfileCmd = &cobra.Command{
 		}
 		return cobra.MaximumNArgs(4)(cmd, args)
 	},
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if cmd.Annotations == nil {
+			cmd.Annotations = make(map[string]string)
+		}
+		startTime := time.Now()
+		var commandError error
+
+		// Parsing input and handling errors
 		name := args[0]
 		url, err := url.Parse(args[1])
 		if err != nil {
-			return err
+			commandError = fmt.Errorf("error parsing URL: %s", err)
+			cmd.Annotations["error"] = commandError.Error()
+			return commandError
 		}
 
-		var username string
-		var password string
-
+		var username, password string
 		if len(args) < 4 {
 			_m, err := tea.NewProgram(credential.New()).Run()
 			if err != nil {
-				fmt.Printf("Alas, there's been an error: %v", err)
-				os.Exit(1)
+				commandError = fmt.Errorf("error reading credentials: %s", err)
+				cmd.Annotations["error"] = commandError.Error()
+				return commandError
 			}
 			m := _m.(credential.Model)
-
 			username, password = m.Values()
 		} else {
 			username = args[2]
 			password = args[3]
 		}
 
-		profile := config.Profile{
-			URL:      url.String(),
-			Username: username,
-			Password: password,
-		}
-
+		profile := config.Profile{URL: url.String(), Username: username, Password: password}
 		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
-			// create new file
 			newConfig := config.Config{
-				Profiles: map[string]config.Profile{
-					name: profile,
-				},
+				Profiles:       map[string]config.Profile{name: profile},
 				DefaultProfile: name,
 			}
 			err = config.WriteConfigToFile(&newConfig)
-			return err
-		}
-		if fileConfig.Profiles == nil {
-			fileConfig.Profiles = make(map[string]config.Profile)
-		}
-		fileConfig.Profiles[name] = profile
-		if fileConfig.DefaultProfile == "" {
-			fileConfig.DefaultProfile = name
+			commandError = err
+		} else {
+			if fileConfig.Profiles == nil {
+				fileConfig.Profiles = make(map[string]config.Profile)
+			}
+			fileConfig.Profiles[name] = profile
+			if fileConfig.DefaultProfile == "" {
+				fileConfig.DefaultProfile = name
+			}
+			commandError = config.WriteConfigToFile(fileConfig)
 		}
 
-		err = config.WriteConfigToFile(fileConfig)
-		if err != nil {
-			fmt.Printf("add profile %s failed\n, err: %v\n", StyleBold.Render(name), err)
-			return err
+		cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		if commandError != nil {
+			cmd.Annotations["error"] = commandError.Error()
+			return commandError
 		}
-		fmt.Printf("Added profile %s\n", StyleBold.Render(name))
 
 		if outputFormat == "json" {
 			return outputResult(profile)
 		}
 		fmt.Printf("Profile %s added successfully\n", name)
-
 		return nil
 	},
 }
@@ -161,29 +159,43 @@ var RemoveProfileCmd = &cobra.Command{
 	Example: "  pb profile remove local_parseable",
 	Args:    cobra.ExactArgs(1),
 	Short:   "Delete a profile",
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if cmd.Annotations == nil {
+			cmd.Annotations = make(map[string]string)
+		}
+		startTime := time.Now()
+
 		name := args[0]
 		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
-			return nil
+			cmd.Annotations["error"] = fmt.Sprintf("error reading config: %s", err)
+			return err
 		}
 
 		_, exists := fileConfig.Profiles[name]
-		if exists {
-			delete(fileConfig.Profiles, name)
-			if len(fileConfig.Profiles) == 0 {
-				fileConfig.DefaultProfile = ""
-			}
-
-			config.WriteConfigToFile(fileConfig)
-			if outputFormat == "json" {
-				return outputResult(fmt.Sprintf("Deleted profile %s", name))
-			}
-			fmt.Printf("Deleted profile %s\n", StyleBold.Render(name))
-		} else {
-			fmt.Printf("No profile found with the name: %s", StyleBold.Render(name))
+		if !exists {
+			msg := fmt.Sprintf("No profile found with the name: %s", name)
+			cmd.Annotations["error"] = msg
+			fmt.Println(msg)
+			return nil
 		}
 
+		delete(fileConfig.Profiles, name)
+		if len(fileConfig.Profiles) == 0 {
+			fileConfig.DefaultProfile = ""
+		}
+
+		commandError := config.WriteConfigToFile(fileConfig)
+		cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		if commandError != nil {
+			cmd.Annotations["error"] = commandError.Error()
+			return commandError
+		}
+
+		if outputFormat == "json" {
+			return outputResult(fmt.Sprintf("Deleted profile %s", name))
+		}
+		fmt.Printf("Deleted profile %s\n", name)
 		return nil
 	},
 }
@@ -193,46 +205,54 @@ var DefaultProfileCmd = &cobra.Command{
 	Args:    cobra.MaximumNArgs(1),
 	Short:   "Set default profile to use with all commands",
 	Example: "  pb profile default local_parseable",
-	RunE: func(_ *cobra.Command, args []string) error {
-		var name string
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if cmd.Annotations == nil {
+			cmd.Annotations = make(map[string]string)
+		}
+		startTime := time.Now()
 
 		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
-			return nil
+			cmd.Annotations["error"] = fmt.Sprintf("error reading config: %s", err)
+			return err
 		}
 
+		var name string
 		if len(args) > 0 {
 			name = args[0]
 		} else {
 			model := defaultprofile.New(fileConfig.Profiles)
 			_m, err := tea.NewProgram(model).Run()
 			if err != nil {
-				fmt.Printf("Alas, there's been an error: %v", err)
-				os.Exit(1)
+				cmd.Annotations["error"] = fmt.Sprintf("error selecting default profile: %s", err)
+				return err
 			}
 			m := _m.(defaultprofile.Model)
-			termenv.DefaultOutput().ClearLines(lipgloss.Height(model.View()) - 1)
-			if m.Success {
-				name = m.Choice
-			} else {
+			if !m.Success {
 				return nil
 			}
+			name = m.Choice
 		}
 
 		_, exists := fileConfig.Profiles[name]
-		if exists {
-			fileConfig.DefaultProfile = name
-		} else {
-			name = lipgloss.NewStyle().Bold(true).Render(name)
-			err := fmt.Sprintf("profile %s does not exist", StyleBold.Render(name))
-			return errors.New(err)
+		if !exists {
+			commandError := fmt.Sprintf("profile %s does not exist", name)
+			cmd.Annotations["error"] = commandError
+			return errors.New(commandError)
 		}
 
-		config.WriteConfigToFile(fileConfig)
+		fileConfig.DefaultProfile = name
+		commandError := config.WriteConfigToFile(fileConfig)
+		cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		if commandError != nil {
+			cmd.Annotations["error"] = commandError.Error()
+			return commandError
+		}
+
 		if outputFormat == "json" {
 			return outputResult(fmt.Sprintf("%s is now set as default profile", name))
 		}
-		fmt.Printf("%s is now set as default profile\n", StyleBold.Render(name))
+		fmt.Printf("%s is now set as default profile\n", name)
 		return nil
 	},
 }
@@ -241,27 +261,34 @@ var ListProfileCmd = &cobra.Command{
 	Use:     "list profiles",
 	Short:   "List all added profiles",
 	Example: "  pb profile list",
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		if cmd.Annotations == nil {
+			cmd.Annotations = make(map[string]string)
+		}
+		startTime := time.Now()
+
 		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
-			return nil
-		}
-
-		if len(fileConfig.Profiles) != 0 {
-			println()
+			cmd.Annotations["error"] = fmt.Sprintf("error reading config: %s", err)
+			return err
 		}
 
 		if outputFormat == "json" {
-			return outputResult(fileConfig.Profiles)
+			commandError := outputResult(fileConfig.Profiles)
+			cmd.Annotations["executionTime"] = time.Since(startTime).String()
+			if commandError != nil {
+				cmd.Annotations["error"] = commandError.Error()
+				return commandError
+			}
+			return nil
 		}
 
-		row := 0
 		for key, value := range fileConfig.Profiles {
 			item := ProfileListItem{key, value.URL, value.Username}
 			fmt.Println(item.Render(fileConfig.DefaultProfile == key))
-			row++
-			fmt.Println()
+			fmt.Println() // Add a blank line after each profile
 		}
+		cmd.Annotations["executionTime"] = time.Since(startTime).String()
 		return nil
 	},
 }

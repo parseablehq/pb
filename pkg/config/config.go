@@ -17,6 +17,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -48,9 +49,9 @@ type Config struct {
 
 // Profile is the struct that holds the profile configuration
 type Profile struct {
-	URL      string
-	Username string
-	Password string
+	URL      string `json:"url"`
+	Username string `json:"username"`
+	Password string `json:"password,omitempty"`
 }
 
 func (p *Profile) GrpcAddr(port string) string {
@@ -104,4 +105,20 @@ func ReadConfigFromFile() (config *Config, err error) {
 	}
 
 	return config, nil
+}
+
+func GetProfile() (Profile, error) {
+	conf, err := ReadConfigFromFile()
+	if os.IsNotExist(err) {
+		return Profile{}, errors.New("no config found to run this command. add a profile using pb profile command")
+	} else if err != nil {
+		return Profile{}, err
+	}
+
+	if conf.Profiles == nil || conf.DefaultProfile == "" {
+		return Profile{}, errors.New("no profile is configured to run this command. please create one using profile command")
+	}
+
+	return conf.Profiles[conf.DefaultProfile], nil
+
 }
