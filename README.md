@@ -18,7 +18,7 @@ pb is configured with `demo` profile as the default. This means you can directly
 
 ### Profiles
 
-To start using pb against your Parseable server, create a profile (a profile is a set of credentials for a Parseable Server instance). You can create a profile using the `pb profile create` command. For example:
+To start using pb against your Parseable server, create a profile (a profile is a set of credentials for a Parseable Server instance). You can create a profile using the `pb profile add` command. For example:
 
 ```bash
 pb profile add local http://localhost:8000 admin admin
