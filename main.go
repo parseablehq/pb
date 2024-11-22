@@ -92,6 +92,23 @@ var profile = &cobra.Command{
 	},
 }
 
+var analyze = &cobra.Command{
+	Use:               "analyze",
+	Short:             "Analyze a stream",
+	Long:              "\n Analyze a stream in parseable server.",
+	PersistentPreRunE: combinedPreRun,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "analyze", args)
+		}()
+	},
+}
+
 var user = &cobra.Command{
 	Use:               "user",
 	Short:             "Manage users",
@@ -183,12 +200,15 @@ func main() {
 	query.AddCommand(pb.QueryCmd)
 	query.AddCommand(pb.SavedQueryList)
 
+	analyze.AddCommand(pb.AnalyzeCmd)
+
 	cli.AddCommand(profile)
 	cli.AddCommand(query)
 	cli.AddCommand(stream)
 	cli.AddCommand(user)
 	cli.AddCommand(role)
 	cli.AddCommand(pb.TailCmd)
+	cli.AddCommand(analyze)
 
 	cli.AddCommand(pb.AutocompleteCmd)
 
