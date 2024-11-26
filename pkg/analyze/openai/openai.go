@@ -48,8 +48,16 @@ func AnalyzeEventsWithGPT(podName, namespace string, data []SummaryStat) (string
 	prompt := fmt.Sprintf(
 		`You are an expert at debugging Kubernetes Events. 
 		I have a table containing those events and want to debug what is happening in this pod (%s) / namespace (%s). 
-		Give me a summary and overview of what happened by looking at these events. 
-		Provide a root cause analysis and suggest steps to mitigate the error if present. 
+		Give me a detailed summary of what happened by looking at these events. 
+		Provide a root cause analysis and suggest steps to mitigate the error if present.
+		When sending the response give it in a structured body json. With fields summary, root_cause_analysis and mitigation_steps.
+		Don't add any json keywords in the response, make sure it just a clean json dump. Please adhere to the following structure
+		type AnalysisResponse struct {
+			Summary           string   json:"summary"
+			RootCauseAnalysis string   json:"root_cause_analysis"
+			MitigationSteps   []string json:"mitigation_steps"
+		}
+		In mitigation steps give a command to get logs.
 		In case you are unable to figure out what happened, just say "I'm unable to figure out what is happening here.".
 		%s`, podName, namespace, formattedData)
 
@@ -68,7 +76,7 @@ func AnalyzeEventsWithGPT(podName, namespace string, data []SummaryStat) (string
 	}
 
 	// Send the request to the OpenAI API
-	apiKey := os.Getenv("OPENAI_API_KEY")
+	apiKey := os.Getenv("P_LLM_KEY")
 	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(payload))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
