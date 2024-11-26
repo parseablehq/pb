@@ -20,6 +20,7 @@ import (
 	"github.com/briandowns/spinner"
 	"github.com/manifoldco/promptui"
 
+	"pb/pkg/analyze/anthropic"
 	"pb/pkg/analyze/duckdb"
 	"pb/pkg/analyze/k8s"
 	"pb/pkg/analyze/openai"
@@ -39,7 +40,7 @@ const (
 // Check if required environment variables are set and valid
 func validateLLMConfig() {
 	provider, exists := os.LookupEnv("P_LLM_PROVIDER")
-	if !exists || (provider != "openai" && provider != "ollama" && provider != "claude") {
+	if !exists || (provider != "openai" && provider != "ollama" && provider != "anthropic") {
 		log.Fatalf(red + "Error: P_LLM_PROVIDER must be set to one of: openai, ollama, claude\n" + reset)
 	}
 
@@ -66,6 +67,8 @@ var AnalyzeCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		checkAndInstallDuckDB()
 		validateLLMConfig()
+
+		llmProvider := os.Getenv("P_LLM_PROVIDER")
 
 		name := args[0]
 		fmt.Printf(yellow+"Analyzing stream: %s\n"+reset, name)
@@ -128,12 +131,30 @@ var AnalyzeCmd = &cobra.Command{
 
 			s.Suffix = " Analyzing events with LLM..."
 			s.Start()
-			gptResponse, err := openai.AnalyzeEventsWithGPT(pod, namespace, result)
+
+			// Declare the variable to store the response
+			var gptResponse string
+
+			// Conditional logic to choose which LLM to use
+			if llmProvider == "openai" {
+				// Use OpenAI's AnalyzeEventsWithGPT function
+				gptResponse, err = openai.AnalyzeEventsWithGPT(pod, namespace, result)
+			} else if llmProvider == "anthropic" {
+				// Use Anthropic's AnalyzeEventsWithAnthropic function
+				gptResponse, err = anthropic.AnalyzeEventsWithAnthropic(pod, namespace, result)
+			} else if llmProvider == "ollama" {
+				// Use Ollama's respective function (assuming a similar function exists)
+				//gptResponse, err = ollama.AnalyzeEventsWithOllama(pod, namespace, result)
+			} else {
+				// This should never happen since validateLLMConfig ensures the provider is valid
+				return fmt.Errorf("invalid LLM provider: %s", llmProvider)
+			}
+
 			s.Stop()
+			// Handle errors from the LLM analysis
 			if err != nil {
 				return fmt.Errorf(red+"Failed to analyze events: %w\n"+reset, err)
 			}
-
 			// Display results using pager
 			shouldContinue := parseAndSelectAnalysis(gptResponse)
 			if !shouldContinue {

@@ -6,9 +6,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"pb/pkg/analyze/openai"
 	internalHTTP "pb/pkg/http"
 )
+
+// Struct to hold summary statistics (same as before)
+type SummaryStat struct {
+	Reason             string
+	Message            string
+	ObjectName         string
+	ObjectNamespace    string
+	ReportingComponent string
+	Timestamp          string
+}
 
 func QueryPb(client *internalHTTP.HTTPClient, query, startTime, endTime string) (string, error) {
 	queryTemplate := `{
@@ -151,7 +160,7 @@ func StoreInDuckDB(data string) error {
 }
 
 // fetchPodEventsfromDb fetches summary statistics for a given pod from DuckDB.
-func FetchPodEventsfromDb(podName string) ([]openai.SummaryStat, error) {
+func FetchPodEventsfromDb(podName string) ([]SummaryStat, error) {
 	// Open a connection to DuckDB
 	db, err := sql.Open("duckdb", "k8s_events.duckdb")
 	if err != nil {
@@ -174,13 +183,13 @@ func FetchPodEventsfromDb(podName string) ([]openai.SummaryStat, error) {
 	}
 	defer rows.Close()
 
-	var stats []openai.SummaryStat
+	var stats []SummaryStat
 	for rows.Next() {
 		var reason, message, objectName, objectNamespace, reportingComponent, timestamp string
 		if err := rows.Scan(&reason, &message, &objectName, &objectNamespace, &reportingComponent, &timestamp); err != nil {
 			return nil, fmt.Errorf("error scanning summary row: %w", err)
 		}
-		stats = append(stats, openai.SummaryStat{
+		stats = append(stats, SummaryStat{
 			Reason:             reason,
 			Message:            message,
 			ObjectName:         objectName,
