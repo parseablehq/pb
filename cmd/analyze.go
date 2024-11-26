@@ -1,9 +1,15 @@
 package cmd
 
 import (
+	"archive/zip"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"time"
 
 	internalHTTP "pb/pkg/http"
@@ -26,19 +32,29 @@ const (
 	reset  = "\033[0m"
 )
 
-// Check if the required environment variable is set
-func checkEnvVar(key string) bool {
-	_, exists := os.LookupEnv(key)
-	return exists
-}
+// Check if required environment variables are set and valid
+func validateLLMConfig() {
+	provider, exists := os.LookupEnv("P_LLM_PROVIDER")
+	if !exists || (provider != "openai" && provider != "ollama" && provider != "claude") {
+		fmt.Printf(red + "Error: P_LLM_PROVIDER must be set to one of: openai, ollama, claude\n" + reset)
+		os.Exit(1)
+	}
 
-// Prompt the user to set the environment variable
-func promptForEnvVar(key string) {
-	var value string
-	fmt.Printf(yellow+"Environment variable %s is not set. Please enter its value: "+reset, key)
-	fmt.Scanln(&value)
-	os.Setenv(key, value)
-	fmt.Println(green + "Environment variable set successfully." + reset)
+	_, keyExists := os.LookupEnv("P_LLM_KEY")
+	if !keyExists {
+		fmt.Printf(red + "Error: P_LLM_KEY must be set\n" + reset)
+		os.Exit(1)
+	}
+
+	if provider == "ollama" {
+		_, endpointExists := os.LookupEnv("P_LLM_ENDPOINT")
+		if !endpointExists {
+			fmt.Printf(red + "Error: P_LLM_ENDPOINT must be set when using ollama as the provider\n" + reset)
+			os.Exit(1)
+		}
+	}
+
+	fmt.Printf(green+"Using %s for analysis.\n"+reset, provider)
 }
 
 var AnalyzeCmd = &cobra.Command{
@@ -47,38 +63,23 @@ var AnalyzeCmd = &cobra.Command{
 	Example: "pb analyze stream <stream-name>",
 	Args:    cobra.ExactArgs(1), // Ensure exactly one argument is passed
 	RunE: func(cmd *cobra.Command, args []string) error {
+
+		// Check and install DuckDB if necessary
+		checkAndInstallDuckDB()
+
+		// Validate LLM environment variables
+		validateLLMConfig()
+
 		name := args[0]
 		fmt.Printf(yellow+"Analyzing stream: %s\n"+reset, name)
 
 		detectSchema(name)
-		// Prompt the user to select LLM
-		fmt.Println(yellow + "Select LLM for analysis (1: GPT, 2: Claude): " + reset)
-		var choice int
-		fmt.Scanln(&choice)
-
-		var llmType string
-		switch choice {
-		case 1:
-			llmType = "GPT"
-			if !checkEnvVar("OPENAI_API_KEY") {
-				promptForEnvVar("OPENAI_API_KEY")
-			}
-		case 2:
-			llmType = "Claude"
-			if !checkEnvVar("CLAUDE_API_KEY") {
-				promptForEnvVar("CLAUDE_API_KEY")
-			}
-		default:
-			fmt.Println(red + "Invalid choice. Exiting..." + reset)
-			return fmt.Errorf("invalid LLM selection")
-		}
-		fmt.Printf(green+"Using %s for analysis.\n"+reset, llmType)
 
 		// Initialize spinner
 		s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
 
 		// Step 1: Query Data
-		s.Suffix = " Querying data from Parseable server..."
+		s.Suffix = fmt.Sprintf(yellow+" Querying data from Parseable server...(%s)", DefaultProfile.URL)
 		s.Start()
 		client := internalHTTP.DefaultClient(&DefaultProfile)
 
@@ -134,18 +135,18 @@ var AnalyzeCmd = &cobra.Command{
 			return err
 		}
 
-		// Step 7: Analyze with GPT
-		s.Suffix = " Analyzing events with GPT..."
+		// Step 7: Analyze with LLM
+		s.Suffix = " Analyzing events with LLM..."
 		s.Start()
 		gptResponse, err := openai.AnalyzeEventsWithGPT(pod, namespace, result)
 		s.Stop()
 		if err != nil {
-			fmt.Printf(red+"Failed to analyze events with GPT: %v\n"+reset, err)
-			return fmt.Errorf("failed to analyze events with GPT: %w", err)
+			fmt.Printf(red+"Failed to analyze events with LLM: %v\n"+reset, err)
+			return fmt.Errorf("failed to analyze events with LLM: %w", err)
 		}
 
-		// Display GPT Analysis Result
-		fmt.Println(green + "\nGPT Analysis:\n" + reset + gptResponse)
+		// Display Analysis Result
+		fmt.Println(green + "\nLLM Analysis:\n" + reset + gptResponse)
 
 		return nil
 	},
@@ -162,4 +163,113 @@ func detectSchema(streamName string) {
 	} else {
 		fmt.Println(red + "Schema not recognized. Please ensure it's defined in the tool.\n" + reset)
 	}
+}
+
+func checkAndInstallDuckDB() {
+	// Check if DuckDB is already installed
+	if _, err := exec.LookPath("duckdb"); err == nil {
+		fmt.Println(green + "DuckDB is already installed." + reset)
+		return
+	}
+
+	fmt.Println(yellow + "DuckDB is not installed. Installing..." + reset)
+
+	// Define the download URL based on the OS
+	var url, binaryName string
+	if runtime.GOOS == "linux" {
+		url = "https://github.com/duckdb/duckdb/releases/download/v1.1.3/duckdb_cli-linux-amd64.zip"
+		binaryName = "duckdb"
+	} else if runtime.GOOS == "darwin" {
+		url = "https://github.com/duckdb/duckdb/releases/download/v1.1.3/duckdb_cli-osx-universal.zip"
+		binaryName = "duckdb"
+	} else {
+		fmt.Println(red + "Unsupported OS." + reset)
+		os.Exit(1)
+	}
+
+	// Download the DuckDB ZIP file
+	zipFilePath := "/tmp/duckdb_cli.zip"
+	err := downloadFile(zipFilePath, url)
+	if err != nil {
+		fmt.Printf(red+"Failed to download DuckDB: %v\n"+reset, err)
+		os.Exit(1)
+	}
+
+	// Extract the ZIP file
+	extractPath := "/tmp/duckdb_extracted"
+	err = unzip(zipFilePath, extractPath)
+	if err != nil {
+		fmt.Printf(red+"Failed to extract DuckDB: %v\n"+reset, err)
+		os.Exit(1)
+	}
+
+	// Move the binary to /usr/local/bin
+	finalPath := "/usr/local/bin/duckdb"
+	err = os.Rename(filepath.Join(extractPath, binaryName), finalPath)
+	if err != nil {
+		fmt.Printf(red+"Failed to install DuckDB: %v\n"+reset, err)
+		os.Exit(1)
+	}
+
+	// Ensure the binary is executable
+	if err := os.Chmod(finalPath, 0755); err != nil {
+		fmt.Printf(red+"Failed to set permissions on DuckDB: %v\n"+reset, err)
+		os.Exit(1)
+	}
+
+	fmt.Println(green + "DuckDB successfully installed." + reset)
+}
+
+// downloadFile downloads a file from the given URL
+func downloadFile(filepath string, url string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	out, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	return err
+}
+
+// unzip extracts a ZIP file to the specified destination
+func unzip(src, dest string) error {
+	r, err := zip.OpenReader(src)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		extractedFilePath := filepath.Join(dest, f.Name)
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		defer rc.Close()
+
+		// Create directories if needed
+		if f.FileInfo().IsDir() {
+			os.MkdirAll(extractedFilePath, os.ModePerm)
+		} else {
+			os.MkdirAll(filepath.Dir(extractedFilePath), os.ModePerm)
+			outFile, err := os.Create(extractedFilePath)
+			if err != nil {
+				return err
+			}
+			defer outFile.Close()
+
+			_, err = io.Copy(outFile, rc)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

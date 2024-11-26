@@ -45,9 +45,12 @@ func AnalyzeEventsWithGPT(podName, namespace string, data []SummaryStat) (string
 	}
 
 	// Create the prompt with the data
-	prompt := fmt.Sprintf(`You are an expert at debugging Kubernetes Events. I have a table containing those events and want to debug what is happening in this pod (%s) / namespace (%s). 
-		Give me a detailed explanation and overview of what happened by looking at these events. Provide a root cause analysis and suggest steps to mitigate the error if present. 
-		In case you are unable to figure out what happened, just say "I'm unable to figure out what is happening here. Please give a table format which can be easily displayed on cli".
+	prompt := fmt.Sprintf(
+		`You are an expert at debugging Kubernetes Events. 
+		I have a table containing those events and want to debug what is happening in this pod (%s) / namespace (%s). 
+		Give me a summary and overview of what happened by looking at these events. 
+		Provide a root cause analysis and suggest steps to mitigate the error if present. 
+		In case you are unable to figure out what happened, just say "I'm unable to figure out what is happening here.".
 		%s`, podName, namespace, formattedData)
 
 	// Build the OpenAI request payload
