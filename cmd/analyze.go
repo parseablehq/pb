@@ -1,18 +1,45 @@
 package cmd
 
 import (
-	"bytes"
-	"database/sql"
-	"encoding/json"
 	"fmt"
-	"io"
-	"os" // import os for Stdout
+	"log"
+	"os"
+	"time"
+
 	internalHTTP "pb/pkg/http"
 
+	"github.com/briandowns/spinner"
+
+	"pb/pkg/analyze/duckdb"
+	"pb/pkg/analyze/k8s"
+	"pb/pkg/analyze/openai"
+
 	_ "github.com/marcboeker/go-duckdb"
-	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 )
+
+// ANSI escape codes for colors
+const (
+	yellow = "\033[33m"
+	green  = "\033[32m"
+	red    = "\033[31m"
+	reset  = "\033[0m"
+)
+
+// Check if the required environment variable is set
+func checkEnvVar(key string) bool {
+	_, exists := os.LookupEnv(key)
+	return exists
+}
+
+// Prompt the user to set the environment variable
+func promptForEnvVar(key string) {
+	var value string
+	fmt.Printf(yellow+"Environment variable %s is not set. Please enter its value: "+reset, key)
+	fmt.Scanln(&value)
+	os.Setenv(key, value)
+	fmt.Println(green + "Environment variable set successfully." + reset)
+}
 
 var AnalyzeCmd = &cobra.Command{
 	Use:     "stream", // Subcommand for "analyze"
@@ -21,278 +48,118 @@ var AnalyzeCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1), // Ensure exactly one argument is passed
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		fmt.Printf("Analyzing stream: %s\n", name)
+		fmt.Printf(yellow+"Analyzing stream: %s\n"+reset, name)
 
+		detectSchema(name)
+		// Prompt the user to select LLM
+		fmt.Println(yellow + "Select LLM for analysis (1: GPT, 2: Claude): " + reset)
+		var choice int
+		fmt.Scanln(&choice)
+
+		var llmType string
+		switch choice {
+		case 1:
+			llmType = "GPT"
+			if !checkEnvVar("OPENAI_API_KEY") {
+				promptForEnvVar("OPENAI_API_KEY")
+			}
+		case 2:
+			llmType = "Claude"
+			if !checkEnvVar("CLAUDE_API_KEY") {
+				promptForEnvVar("CLAUDE_API_KEY")
+			}
+		default:
+			fmt.Println(red + "Invalid choice. Exiting..." + reset)
+			return fmt.Errorf("invalid LLM selection")
+		}
+		fmt.Printf(green+"Using %s for analysis.\n"+reset, llmType)
+
+		// Initialize spinner
+		s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
+
+		// Step 1: Query Data
+		s.Suffix = " Querying data from Parseable server..."
+		s.Start()
 		client := internalHTTP.DefaultClient(&DefaultProfile)
 
-		query := `with distinct_name as (select distinct(\"involvedObject_name\") as name from \"k8s-events\" where reason ilike '%kill%' or reason ilike '%fail%' or reason ilike '%back%') select reason, message, \"involvedObject_name\", \"involvedObject_namespace\", \"reportingComponent\", p_timestamp from \"k8s-events\" as t1 join distinct_name t2 on t1.\"involvedObject_name\" = t2.name order by p_timestamp`
+		query := `with distinct_name as (select distinct(\"involvedObject_name\") as name from \"k8s-events\" where reason ilike '%kill%' or reason ilike '%fail%' or reason ilike '%back%') select reason, message, \"involvedObject_name\", \"involvedObject_namespace\", \"reportingComponent\", timestamp from \"k8s-events\" as t1 join distinct_name t2 on t1.\"involvedObject_name\" = t2.name order by timestamp`
 
-		allData, err := queryPb(&client, query, "2024-11-11T00:00:00+00:00", "2024-11-21T00:00:00+00:00")
+		allData, err := duckdb.QueryPb(&client, query, "2024-11-11T00:00:00+00:00", "2024-11-21T00:00:00+00:00")
+		s.Stop()
 		if err != nil {
-			return err
+			fmt.Printf(red+"Error querying data in Parseable: %v\n"+reset, err)
+			return fmt.Errorf("error querying data in Parseable, err [%w]", err)
 		}
+		fmt.Println(green + "Data successfully queried from Parseable." + reset)
 
-		// Insert the response into DuckDB
-		if err := storeInDuckDB(allData); err != nil {
-			return err
+		// Step 2: Store Data in DuckDB
+		s.Suffix = " Storing data in DuckDB..."
+		s.Start()
+		if err := duckdb.StoreInDuckDB(allData); err != nil {
+			s.Stop()
+			fmt.Printf(red+"Error storing data in DuckDB: %v\n"+reset, err)
+			return fmt.Errorf("error storing data in DuckDB, err [%w]", err)
 		}
+		s.Stop()
+		fmt.Println(green + "Data successfully stored in DuckDB." + reset)
 
-		// Fetch and display the reason summary statistics
-		stats, err := fetchSummaryStats()
+		// Step 3: Prompt Kubernetes Context
+		_, err = k8s.PromptK8sContext()
 		if err != nil {
+			fmt.Printf(red+"Error prompting Kubernetes context: %v\n"+reset, err)
 			return err
 		}
 
-		// Display the statistics in a table
-		displaySummaryTable(stats)
+		// Step 4: Select Namespace
+		namespace, err := k8s.PromptNamespace(k8s.GetKubeClient())
+		if err != nil {
+			log.Fatalf(red+"Error selecting namespace: %v\n"+reset, err)
+		}
+		fmt.Printf(yellow+"Selected Namespace: %s\n"+reset, namespace)
 
-		// Prompt user for namespace and involved object
-		var selectedNamespace, selectedObject string
-		fmt.Print("\nEnter the namespace you're interested in: ")
-		fmt.Scan(&selectedNamespace)
+		// Step 5: Select Pod
+		pod, err := k8s.PromptPod(k8s.GetKubeClient(), namespace)
+		if err != nil {
+			log.Fatalf(red+"Error selecting pod: %v\n"+reset, err)
+		}
+		fmt.Printf(yellow+"Selected Pod: %s\n"+reset, pod)
 
-		// Prompt the user to select an involved object
-		fmt.Print("\nEnter the involved object you're interested in: ")
-		fmt.Scan(&selectedObject)
+		// Step 6: Fetch Events from DuckDB
+		s.Suffix = " Fetching pod events from DuckDB..."
+		s.Start()
+		result, err := duckdb.FetchPodEventsfromDb(pod)
+		s.Stop()
+		if err != nil {
+			fmt.Printf(red+"Error fetching pod events from DuckDB: %v\n"+reset, err)
+			return err
+		}
 
-		// Display the selected data
-		displaySelectedData(selectedNamespace, selectedObject)
+		// Step 7: Analyze with GPT
+		s.Suffix = " Analyzing events with GPT..."
+		s.Start()
+		gptResponse, err := openai.AnalyzeEventsWithGPT(pod, namespace, result)
+		s.Stop()
+		if err != nil {
+			fmt.Printf(red+"Failed to analyze events with GPT: %v\n"+reset, err)
+			return fmt.Errorf("failed to analyze events with GPT: %w", err)
+		}
+
+		// Display GPT Analysis Result
+		fmt.Println(green + "\nGPT Analysis:\n" + reset + gptResponse)
 
 		return nil
 	},
 }
 
-func queryPb(client *internalHTTP.HTTPClient, query, startTime, endTime string) (string, error) {
-	queryTemplate := `{
-		"query": "%s",
-		"startTime": "%s",
-		"endTime": "%s"
-	}`
-	finalQuery := fmt.Sprintf(queryTemplate, query, startTime, endTime)
+// Dummy function to simulate schema detection
+func detectSchema(streamName string) {
+	// Simulate schema detection
+	fmt.Printf(yellow+"Starting schema detection for stream: %s\n"+reset, streamName)
 
-	req, err := client.NewRequest("POST", "query", bytes.NewBuffer([]byte(finalQuery)))
-	if err != nil {
-		return "", fmt.Errorf("failed to create new request: %w", err)
+	// Dummy condition to check if the schema is known
+	if streamName == "k8s-events" {
+		fmt.Println(green + "Kubernetes events schema found. Schema is known to the tool.\n" + reset)
+	} else {
+		fmt.Println(red + "Schema not recognized. Please ensure it's defined in the tool.\n" + reset)
 	}
-
-	resp, err := client.Client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request execution failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		fmt.Println(string(body))
-		return "", fmt.Errorf("non-200 status code received: %s", resp.Status)
-	}
-
-	var jsonResponse []map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&jsonResponse); err != nil {
-		return "", fmt.Errorf("error decoding JSON response: %w", err)
-	}
-	encodedResponse, _ := json.MarshalIndent(jsonResponse, "", "  ")
-
-	return string(encodedResponse), nil
-}
-
-func storeInDuckDB(data string) error {
-	// Parse the JSON response
-	var jsonResponse []map[string]interface{}
-	if err := json.Unmarshal([]byte(data), &jsonResponse); err != nil {
-		return fmt.Errorf("error decoding JSON response: %w", err)
-	}
-
-	// Open a connection to DuckDB
-	db, err := sql.Open("duckdb", "mydatabasenew.duckdb")
-	if err != nil {
-		return fmt.Errorf("error connecting to DuckDB: %w", err)
-	}
-	defer db.Close()
-
-	// Create a table if it doesn't exist
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS k8s_events (
-		reason VARCHAR,
-		message VARCHAR,
-		involvedObject_name VARCHAR,
-		involvedObject_namespace VARCHAR,
-		reportingComponent VARCHAR,
-		p_timestamp TIMESTAMP
-	)`)
-	if err != nil {
-		return fmt.Errorf("error creating table: %w", err)
-	}
-
-	// Insert data into the table
-	for _, record := range jsonResponse {
-		_, err := db.Exec(
-			`INSERT INTO k8s_events (reason, message, involvedObject_name, involvedObject_namespace, reportingComponent, p_timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
-			record["reason"],
-			record["message"],
-			record["involvedObject_name"],
-			record["involvedObject_namespace"],
-			record["reportingComponent"],
-			record["p_timestamp"],
-		)
-		if err != nil {
-			return fmt.Errorf("error inserting record into DuckDB: %w", err)
-		}
-	}
-
-	// Run the reason_counts query to get summary statistics
-	summaryQuery := `
-		WITH reason_counts AS (
-			SELECT 
-				involvedObject_name,
-				involvedObject_namespace,
-				reason,
-				COUNT(*) AS reason_count
-			FROM 
-				k8s_events
-			GROUP BY 
-				involvedObject_name,
-				involvedObject_namespace,
-				reason
-		)
-		SELECT 
-			involvedObject_namespace,
-			involvedObject_name,
-			STRING_AGG(CONCAT(reason, ' ', reason_count, ' times'), ', ' ORDER BY reason) AS reason_summary
-		FROM 
-			reason_counts
-		GROUP BY 
-			involvedObject_namespace,
-			involvedObject_name
-		ORDER BY 
-			involvedObject_namespace, involvedObject_name;
-	`
-
-	// Execute the summary query
-	rows, err := db.Query(summaryQuery)
-	if err != nil {
-		return fmt.Errorf("error executing summary query: %w", err)
-	}
-	defer rows.Close()
-
-	// Create a summary table if it doesn't exist
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS reason_summary_stats (
-		involvedObject_namespace VARCHAR,
-		involvedObject_name VARCHAR,
-		reason_summary VARCHAR
-	)`)
-	if err != nil {
-		return fmt.Errorf("error creating summary table: %w", err)
-	}
-
-	// Insert the summary stats into the new table
-	for rows.Next() {
-		var namespace, objectName, reasonSummary string
-		if err := rows.Scan(&namespace, &objectName, &reasonSummary); err != nil {
-			return fmt.Errorf("error scanning summary row: %w", err)
-		}
-		_, err := db.Exec(
-			`INSERT INTO reason_summary_stats (involvedObject_namespace, involvedObject_name, reason_summary) VALUES (?, ?, ?)`,
-			namespace, objectName, reasonSummary,
-		)
-		if err != nil {
-			return fmt.Errorf("error inserting summary record into DuckDB: %w", err)
-		}
-	}
-
-	return nil
-}
-
-func fetchSummaryStats() ([]SummaryStat, error) {
-	// Open a connection to DuckDB
-	db, err := sql.Open("duckdb", "mydatabasenew.duckdb")
-	if err != nil {
-		return nil, fmt.Errorf("error connecting to DuckDB: %w", err)
-	}
-	defer db.Close()
-
-	// Query to fetch summary statistics
-	rows, err := db.Query(`
-		SELECT involvedObject_namespace, involvedObject_name, reason_summary
-		FROM reason_summary_stats
-		ORDER BY involvedObject_namespace, involvedObject_name
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("error executing summary query: %w", err)
-	}
-	defer rows.Close()
-
-	var stats []SummaryStat
-	for rows.Next() {
-		var namespace, objectName, reasonSummary string
-		if err := rows.Scan(&namespace, &objectName, &reasonSummary); err != nil {
-			return nil, fmt.Errorf("error scanning summary row: %w", err)
-		}
-		stats = append(stats, SummaryStat{
-			Namespace:     namespace,
-			ObjectName:    objectName,
-			ReasonSummary: reasonSummary,
-		})
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error reading rows: %w", err)
-	}
-
-	return stats, nil
-}
-
-func displaySummaryTable(stats []SummaryStat) {
-	table := tablewriter.NewWriter(os.Stdout) // Use os.Stdout for io.Writer
-	table.SetHeader([]string{"Namespace", "Involved Object", "Reason Summary"})
-
-	for _, stat := range stats {
-		table.Append([]string{stat.Namespace, stat.ObjectName, stat.ReasonSummary})
-	}
-
-	table.Render()
-}
-
-func displaySelectedData(namespace, objectName string) {
-	// Open a connection to DuckDB
-	db, err := sql.Open("duckdb", "mydatabasenew.duckdb")
-	if err != nil {
-		fmt.Printf("Error connecting to DuckDB: %v\n", err)
-		return
-	}
-	defer db.Close()
-
-	// Query to fetch selected data based on namespace and object name
-	query := `
-		SELECT reason, message, reportingComponent, p_timestamp
-		FROM k8s_events
-		WHERE involvedObject_namespace = ? AND involvedObject_name = ?
-	`
-	rows, err := db.Query(query, namespace, objectName)
-	if err != nil {
-		fmt.Printf("Error executing query: %v\n", err)
-		return
-	}
-	defer rows.Close()
-
-	// Display the result
-	fmt.Printf("\nSelected Data for Namespace: %s, Object: %s\n", namespace, objectName)
-	for rows.Next() {
-		var reason, message, component, timestamp string
-		if err := rows.Scan(&reason, &message, &component, &timestamp); err != nil {
-			fmt.Printf("Error scanning row: %v\n", err)
-			return
-		}
-		fmt.Printf("Reason: %s\nMessage: %s\nComponent: %s\nTimestamp: %s\n\n", reason, message, component, timestamp)
-	}
-
-	if err := rows.Err(); err != nil {
-		fmt.Printf("Error reading rows: %v\n", err)
-	}
-}
-
-// Struct to hold summary statistics
-type SummaryStat struct {
-	Namespace     string
-	ObjectName    string
-	ReasonSummary string
 }
