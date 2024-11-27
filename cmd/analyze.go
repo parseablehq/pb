@@ -145,10 +145,6 @@ var AnalyzeCmd = &cobra.Command{
 			if llmProvider == "openai" {
 				// Use OpenAI's AnalyzeEventsWithGPT function
 				gptResponse, err = openai.AnalyzeEventsWithGPT(pod, namespace, result)
-
-				fmt.Println(
-					gptResponse,
-				)
 			} else if llmProvider == "anthropic" {
 				// Use Anthropic's AnalyzeEventsWithAnthropic function
 				gptResponse, err = anthropic.AnalyzeEventsWithAnthropic(pod, namespace, result)
@@ -379,14 +375,41 @@ func parseAndSelectAnalysis(response string) bool {
 			fmt.Printf("%d. %s\n", i+1, step)
 		}
 
-		// After displaying mitigation steps, ask if the user wants to analyze another pod/namespace
-		prompt := promptui.Prompt{
-			Label:   "Analyze another namespace/pod (yes/no)",
-			Default: "no",
+		// Now prompt the user to choose between "Mitigation" or "Pods"
+		secondPrompt := promptui.Select{
+			Label: "What would you like to do next?",
+			Items: []string{"Root Cause Analysis", "Analyze another pod in namespace (yes/no)"},
+			Size:  3,
 		}
-		choice, _ := prompt.Run()
-		if strings.ToLower(choice) != "yes" {
-			return false // Exit the loop if "no"
+
+		_, secondChoice, err := secondPrompt.Run()
+		if err != nil {
+			log.Fatalf("Prompt failed: %v", err)
+		}
+
+		switch secondChoice {
+		case "Root Cause Analysis":
+			// Show Root Cause Analysis
+			fmt.Println(green + "Root Cause Analysis:\n" + reset + analysis.RootCauseAnalysis)
+
+			// After displaying Root Cause Analysis steps, ask if the user wants to analyze another pod/namespace
+			prompt := promptui.Prompt{
+				Label:   "Analyze another namespace/pod (yes/no)",
+				Default: "no",
+			}
+			choice, _ := prompt.Run()
+			if strings.ToLower(choice) != "yes" {
+				return false // Exit the loop if "no"
+			}
+		case "Analyze another pod in namespace (yes/no)":
+			prompt := promptui.Prompt{
+				Label:   "Analyze another namespace/pod (yes/no)",
+				Default: "no",
+			}
+			choice, _ := prompt.Run()
+			if strings.ToLower(choice) != "yes" {
+				return false // Exit the loop if "no"
+			}
 		}
 	}
 

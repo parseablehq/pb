@@ -22,12 +22,25 @@ type Message struct {
 	Content string `json:"content"`
 }
 
-// Define the structure for the response from Anthropic
+// AnthropicResponse structure for the Anthropic response
 type AnthropicResponse struct {
-	Completion string `json:"completion"`
+	ID      string `json:"id"`
+	Type    string `json:"type"`
+	Role    string `json:"role"`
+	Model   string `json:"model"`
+	Content []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"content"`
+	StopReason   string `json:"stop_reason"`
+	StopSequence string `json:"stop_sequence"`
+	Usage        struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
 }
 
-// Function to send events to Anthropic API
+// AnalyzeEventsWithAnthropic to send events to Anthropic API
 func AnalyzeEventsWithAnthropic(podName, namespace string, data []duckdb.SummaryStat) (string, error) {
 	// Format the data into a readable string
 	var formattedData string
@@ -90,15 +103,16 @@ func AnalyzeEventsWithAnthropic(podName, namespace string, data []duckdb.Summary
 		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	// Debugging: Print the raw response body for inspection
-	fmt.Printf("Raw LLM Response: %s\n", string(bodyBytes))
-
 	// Parse the Anthropic response
 	var anthropicResponse AnthropicResponse
-	if err := json.NewDecoder(resp.Body).Decode(&anthropicResponse); err != nil {
+	if err := json.Unmarshal(bodyBytes, &anthropicResponse); err != nil {
 		return "", fmt.Errorf("failed to decode Anthropic response: %w", err)
 	}
 
-	// Return the Anthropic response
-	return anthropicResponse.Completion, nil
+	// Check and return the text content from the first item in the content array
+	if len(anthropicResponse.Content) > 0 && anthropicResponse.Content[0].Type == "text" {
+		return anthropicResponse.Content[0].Text, nil
+	}
+
+	return "", fmt.Errorf("no text content found in the response")
 }
