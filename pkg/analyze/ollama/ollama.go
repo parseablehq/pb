@@ -39,12 +39,13 @@ func AnalyzeEventsWithOllama(podName, namespace string, data []duckdb.SummarySta
 		When sending the response give it in a structured body json. With fields summary, root_cause_analysis and mitigation_steps.
 		Don't add any json keywords in the response, make sure it just a clean json dump. Please adhere to the following structure
 		type AnalysisResponse struct {
-			summary           string   json:"summary"
+			summary             string   json:"summary"
 			root_cause_analysis string   json:"root_cause_analysis"
 			mitigation_steps   []string json:"mitigation_steps"
 		}
 		In mitigation steps give a command to get logs. The general command to get logs is 'kubectl logs <pod_name> -n <namespace>. 
 		Make sure you give a clean json response, without an '''json in the beginning. Please respect the json tags should be summary, root_cause_analysis and mitigation_steps.
+		Make sure summary is a string, root_cause_analysis is a string and mitigation_steps is []string. Please respect the datatypes.
 		In case you are unable to figure out what happened, just say "I'm unable to figure out what is happening here.".
 		%s`, podName, namespace, formattedData)
 
