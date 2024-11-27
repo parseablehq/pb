@@ -129,6 +129,12 @@ var AnalyzeCmd = &cobra.Command{
 				return fmt.Errorf(red+"Error fetching pod events: %w\n"+reset, err)
 			}
 
+			// debug for empty results
+			if result == nil {
+				fmt.Println(yellow + "No results found in DuckDB." + reset)
+				return nil
+			}
+
 			s.Suffix = " Analyzing events with LLM..."
 			s.Start()
 
@@ -139,6 +145,10 @@ var AnalyzeCmd = &cobra.Command{
 			if llmProvider == "openai" {
 				// Use OpenAI's AnalyzeEventsWithGPT function
 				gptResponse, err = openai.AnalyzeEventsWithGPT(pod, namespace, result)
+
+				fmt.Println(
+					gptResponse,
+				)
 			} else if llmProvider == "anthropic" {
 				// Use Anthropic's AnalyzeEventsWithAnthropic function
 				gptResponse, err = anthropic.AnalyzeEventsWithAnthropic(pod, namespace, result)
@@ -299,7 +309,7 @@ func parseAndSelectAnalysis(response string) bool {
 	var analysis AnalysisResponse
 	err := json.Unmarshal([]byte(response), &analysis)
 	if err != nil {
-		log.Fatalf("Failed to parse LLM response: %v", err)
+		log.Println("Failed to parse LLM response: %v", err)
 	}
 
 	// Display the summary by default
@@ -308,7 +318,7 @@ func parseAndSelectAnalysis(response string) bool {
 	// Prompt the user to choose between "Root Cause Analysis" and "Mitigation Steps"
 	initialPrompt := promptui.Select{
 		Label: "Select Analysis to View",
-		Items: []string{"Root Cause Analysis", "Mitigation Steps"},
+		Items: []string{"Root Cause Analysis", "Mitigation Steps", "Analyze another pod in namespace (yes/no)"},
 		Size:  3,
 	}
 
@@ -325,7 +335,7 @@ func parseAndSelectAnalysis(response string) bool {
 		// Now prompt the user to choose between "Mitigation" or "Pods"
 		secondPrompt := promptui.Select{
 			Label: "What would you like to do next?",
-			Items: []string{"Mitigation"},
+			Items: []string{"Mitigation", "Analyze another pod in namespace (yes/no)"},
 			Size:  3,
 		}
 
@@ -351,7 +361,15 @@ func parseAndSelectAnalysis(response string) bool {
 			if strings.ToLower(choice) != "yes" {
 				return false // Exit the loop if "no"
 			}
-
+		case "Analyze another pod in namespace (yes/no)":
+			prompt := promptui.Prompt{
+				Label:   "Analyze another namespace/pod (yes/no)",
+				Default: "no",
+			}
+			choice, _ := prompt.Run()
+			if strings.ToLower(choice) != "yes" {
+				return false // Exit the loop if "no"
+			}
 		}
 
 	case "Mitigation Steps":
