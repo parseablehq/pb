@@ -147,8 +147,8 @@ var AnalyzeCmd = &cobra.Command{
 
 			// debug for empty results
 			if result == nil {
-				fmt.Println(yellow + "No results found in DuckDB." + reset)
-				return nil
+				fmt.Println(yellow + "No results found for pod in DuckDB, analyzing the namespace." + reset)
+				result, err = duckdb.FetchNamespaceEventsfromDb(namespace)
 			}
 
 			s.Suffix = " Analyzing events with LLM..."
@@ -167,7 +167,6 @@ var AnalyzeCmd = &cobra.Command{
 			} else if llmProvider == "ollama" {
 				// Use Ollama's respective function (assuming a similar function exists)
 				gptResponse, err = ollama.AnalyzeEventsWithOllama(pod, namespace, result)
-				fmt.Println(gptResponse)
 			} else {
 				// This should never happen since validateLLMConfig ensures the provider is valid
 				return fmt.Errorf("invalid LLM provider: %s", llmProvider)
@@ -362,7 +361,8 @@ func parseAndSelectAnalysis(response string) bool {
 	var analysis AnalysisResponse
 	err := json.Unmarshal([]byte(response), &analysis)
 	if err != nil {
-		log.Println("Failed to parse LLM response: %v", err)
+		fmt.Println(green + "Summary:\n" + reset + response)
+		return true
 	}
 
 	// Display the summary by default

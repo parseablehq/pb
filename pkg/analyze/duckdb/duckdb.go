@@ -205,3 +205,50 @@ func FetchPodEventsfromDb(podName string) ([]SummaryStat, error) {
 
 	return stats, nil
 }
+
+// FetchNamespaceEventsfromDb fetches summary statistics for a given namespace from DuckDB.
+func FetchNamespaceEventsfromDb(namespace string) ([]SummaryStat, error) {
+	// Open a connection to DuckDB
+	db, err := sql.Open("duckdb", "k8s_events.duckdb")
+	if err != nil {
+		return nil, fmt.Errorf("error connecting to DuckDB: %w", err)
+	}
+	defer db.Close()
+
+	// Prepare the query with a placeholder for podName
+	query := `
+		SELECT DISTINCT ON (message) *
+		FROM k8s_events
+		WHERE involvedObject_namespace = ?
+		ORDER BY "timestamp";
+	`
+
+	// Execute the query with namespace as a parameter
+	rows, err := db.Query(query, namespace)
+	if err != nil {
+		return nil, fmt.Errorf("error executing summary query: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []SummaryStat
+	for rows.Next() {
+		var reason, message, objectName, objectNamespace, reportingComponent, timestamp string
+		if err := rows.Scan(&reason, &message, &objectName, &objectNamespace, &reportingComponent, &timestamp); err != nil {
+			return nil, fmt.Errorf("error scanning summary row: %w", err)
+		}
+		stats = append(stats, SummaryStat{
+			Reason:             reason,
+			Message:            message,
+			ObjectName:         objectName,
+			ObjectNamespace:    objectNamespace,
+			ReportingComponent: reportingComponent,
+			Timestamp:          timestamp,
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error reading rows: %w", err)
+	}
+
+	return stats, nil
+}
