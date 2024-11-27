@@ -1,3 +1,18 @@
+// Copyright (c) 2024 Parseable, Inc
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 package cmd
 
 import (
@@ -223,8 +238,17 @@ func checkAndInstallDuckDB() {
 		os.Exit(1)
 	}
 
-	// Move the binary to /usr/local/bin
-	finalPath := "/usr/local/bin/duckdb"
+	// Install to the user’s bin directory
+	userBinDir, _ := os.UserHomeDir()
+	finalPath := filepath.Join(userBinDir, "bin", binaryName)
+
+	// Ensure the directory exists
+	if err := os.MkdirAll(filepath.Dir(finalPath), os.ModePerm); err != nil {
+		fmt.Printf(red+"Failed to create bin directory: %v\n"+reset, err)
+		os.Exit(1)
+	}
+
+	// Move the binary to ~/bin
 	err = os.Rename(filepath.Join(extractPath, binaryName), finalPath)
 	if err != nil {
 		fmt.Printf(red+"Failed to install DuckDB: %v\n"+reset, err)
@@ -237,7 +261,38 @@ func checkAndInstallDuckDB() {
 		os.Exit(1)
 	}
 
-	fmt.Println(green + "DuckDB successfully installed." + reset)
+	// Add ~/bin to PATH automatically
+	addToPath()
+
+	fmt.Println(green + "DuckDB successfully installed in " + finalPath + reset)
+}
+
+// addToPath ensures ~/bin is in the user's PATH
+func addToPath() {
+	shellProfile := ""
+	if _, exists := os.LookupEnv("ZSH_VERSION"); exists {
+		shellProfile = filepath.Join(os.Getenv("HOME"), ".zshrc")
+	} else {
+		shellProfile = filepath.Join(os.Getenv("HOME"), ".bashrc")
+	}
+
+	// Check if ~/bin is already in the PATH
+	data, err := os.ReadFile(shellProfile)
+	if err == nil && !strings.Contains(string(data), "export PATH=$PATH:$HOME/bin") {
+		// Append the export command
+		f, err := os.OpenFile(shellProfile, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			fmt.Printf(red+"Failed to update PATH: %v\n"+reset, err)
+			return
+		}
+		defer f.Close()
+
+		if _, err := f.WriteString("\nexport PATH=$PATH:$HOME/bin\n"); err != nil {
+			fmt.Printf(red+"Failed to write to shell profile: %v\n"+reset, err)
+		} else {
+			fmt.Println(green + "Updated PATH in " + shellProfile + reset)
+		}
+	}
 }
 
 // downloadFile downloads a file from the given URL
