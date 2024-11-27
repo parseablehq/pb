@@ -23,6 +23,7 @@ import (
 	"pb/pkg/analyze/anthropic"
 	"pb/pkg/analyze/duckdb"
 	"pb/pkg/analyze/k8s"
+	"pb/pkg/analyze/ollama"
 	"pb/pkg/analyze/openai"
 
 	_ "github.com/marcboeker/go-duckdb"
@@ -150,7 +151,8 @@ var AnalyzeCmd = &cobra.Command{
 				gptResponse, err = anthropic.AnalyzeEventsWithAnthropic(pod, namespace, result)
 			} else if llmProvider == "ollama" {
 				// Use Ollama's respective function (assuming a similar function exists)
-				//gptResponse, err = ollama.AnalyzeEventsWithOllama(pod, namespace, result)
+				gptResponse, err = ollama.AnalyzeEventsWithOllama(pod, namespace, result)
+				fmt.Println(gptResponse)
 			} else {
 				// This should never happen since validateLLMConfig ensures the provider is valid
 				return fmt.Errorf("invalid LLM provider: %s", llmProvider)
