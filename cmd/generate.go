@@ -15,32 +15,98 @@
 
 package cmd
 
-// import (
-// 	"fmt"
-// 	"log"
-// 	"os"
-// 	"sync"
-// 	"time"
+import (
+	"log"
+	"pb/pkg/helm"
 
-// 	internalHTTP "pb/pkg/http"
+	"github.com/spf13/cobra"
+)
 
-// 	"github.com/briandowns/spinner"
+var GenerateK8sCmd = &cobra.Command{
+	Use:     "k8s-events",
+	Short:   "Generate k8s events on your k8s cluster by deploying apps in different states.",
+	Example: "pb generate k8s events",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		apps := []helm.Helm{
+			{
+				ReleaseName: "ingress-nginx",
+				Namespace:   "pb-ingress",
+				RepoName:    "ingress-nginx",
+				RepoUrl:     "https://kubernetes.github.io/ingress-nginx",
+				ChartName:   "ingress-nginx",
+				Version:     "4.0.3", // Example version, adjust as needed
+			},
+			{
+				ReleaseName: "prometheus",
+				Namespace:   "pb-monitoring",
+				RepoName:    "prometheus-community",
+				RepoUrl:     "https://prometheus-community.github.io/helm-charts",
+				ChartName:   "prometheus",
+				Version:     "15.0.0",
+			},
+			{
+				ReleaseName: "grafana",
+				Namespace:   "pb-grafana",
+				RepoName:    "grafana",
+				RepoUrl:     "https://grafana.github.io/helm-charts",
+				ChartName:   "grafana",
+				Version:     "6.16.0",
+			},
+			{
+				ReleaseName: "postgres",
+				Namespace:   "pb-db",
+				RepoName:    "bitnami",
+				RepoUrl:     "https://charts.bitnami.com/bitnami",
+				ChartName:   "postgresql",
+				Version:     "11.6.15",
+			},
+		}
 
-// 	"pb/pkg/analyze/anthropic"
-// 	"pb/pkg/analyze/duckdb"
-// 	"pb/pkg/analyze/k8s"
-// 	"pb/pkg/analyze/ollama"
-// 	"pb/pkg/analyze/openai"
+		for _, app := range apps {
+			log.Printf("Deploying %s...", app.ReleaseName)
+			if err := helm.Apply(app); err != nil {
+				log.Printf("Failed to deploy %s: %v", app.ReleaseName, err)
+				return err
+			}
+			log.Printf("%s deployed successfully.", app.ReleaseName)
+		}
+		return nil
+	},
+}
 
-// 	_ "github.com/marcboeker/go-duckdb"
-// 	"github.com/spf13/cobra"
-// )
+var GenerateK8sUninstallCmd = &cobra.Command{
+	Use:     "k8s-uninstall",
+	Short:   "Uninstall Helm releases and generate Kubernetes events.",
+	Example: "pb generate k8s uninstall",
+	Args:    cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		apps := []helm.Helm{
+			{
+				ReleaseName: "ingress-nginx",
+				Namespace:   "pb-ingress",
+			},
+			{
+				ReleaseName: "prometheus",
+				Namespace:   "pb-monitoring",
+			},
+			{
+				ReleaseName: "grafana",
+				Namespace:   "pb-grafana",
+			},
+			{
+				ReleaseName: "postgres",
+				Namespace:   "pb-db",
+			},
+		}
 
-// var GenerateCmd = &cobra.Command{
-// 	Use:     "k8s",
-// 	Short:   "Generate k8s events on your k8s cluster by deploying apps in different states.",
-// 	Example: "pb generate k8s events",
-// 	Args:    cobra.ExactArgs(1),
-// 	RunE: func(cmd *cobra.Command, args []string) error {
-// 	}
-// }
+		for _, app := range apps {
+			log.Printf("Uninstalling %s...", app.ReleaseName)
+			if err := helm.DeleteRelease(app.ReleaseName, app.Namespace); err != nil {
+				log.Printf("Failed to uninstall %s: %v", app.ReleaseName, err)
+				return err
+			}
+			log.Printf("%s uninstalled successfully.", app.ReleaseName)
+		}
+		return nil
+	},
+}

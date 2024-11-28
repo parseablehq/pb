@@ -97,9 +97,21 @@ var AnalyzeCmd = &cobra.Command{
 		s.Start()
 
 		client := internalHTTP.DefaultClient(&DefaultProfile)
-		query := `with distinct_name as (select distinct(\"involvedObject_name\") as name from \"k8s-events\" where reason ilike '%kill%' or reason ilike '%fail%' or reason ilike '%back%') select reason, message, \"involvedObject_name\", \"involvedObject_namespace\", \"reportingComponent\", timestamp from \"k8s-events\" as t1 join distinct_name t2 on t1.\"involvedObject_name\" = t2.name order by timestamp`
+		query := `with distinct_name as (select distinct(\"involvedObject_name\") as name from \"k8s-events\") select reason, message, \"involvedObject_name\", \"involvedObject_namespace\", \"reportingComponent\", timestamp from \"k8s-events\" as t1 join distinct_name t2 on t1.\"involvedObject_name\" = t2.name order by timestamp`
 
-		allData, err := duckdb.QueryPb(&client, query, "2024-11-11T00:00:00+00:00", "2024-11-27T00:00:00+00:00")
+		endTime := time.Now().UTC()
+		startTime := endTime.Add(-5 * time.Hour)
+
+		// Format the timestamps for the query
+		startTimeStr := startTime.Format(time.RFC3339)
+		endTimeStr := endTime.Format(time.RFC3339)
+
+		allData, err := duckdb.QueryPb(&client, query, startTimeStr, endTimeStr)
+
+		if allData == "" {
+			return fmt.Errorf("error no data found")
+		}
+		fmt.Println("data", allData)
 		s.Stop()
 		if err != nil {
 			log.Printf(red+"Error querying data in Parseable: %v\n"+reset, err)

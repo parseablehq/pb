@@ -143,13 +143,25 @@ func StoreInDuckDB(data string) error {
 
 	// Insert the summary stats into the new table
 	for rows.Next() {
-		var namespace, objectName, reasonSummary string
+		var namespace, objectName, reasonSummary sql.NullString
 		if err := rows.Scan(&namespace, &objectName, &reasonSummary); err != nil {
 			return fmt.Errorf("error scanning summary row: %w", err)
 		}
+
+		// Handle NULL values and convert to empty strings if needed
+		if !namespace.Valid {
+			namespace.String = "" // or some default value
+		}
+		if !objectName.Valid {
+			objectName.String = "" // or some default value
+		}
+		if !reasonSummary.Valid {
+			reasonSummary.String = "" // or some default value
+		}
+
 		_, err := db.Exec(
 			`INSERT INTO reason_summary_stats (involvedObject_namespace, involvedObject_name, reason_summary) VALUES (?, ?, ?)`,
-			namespace, objectName, reasonSummary,
+			namespace.String, objectName.String, reasonSummary.String,
 		)
 		if err != nil {
 			return fmt.Errorf("error inserting summary record into DuckDB: %w", err)

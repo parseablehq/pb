@@ -143,6 +143,23 @@ var role = &cobra.Command{
 	},
 }
 
+var generate = &cobra.Command{
+	Use:               "generate",
+	Short:             "Generate events in parseable",
+	Long:              "\ngenerate command is used to generate events..",
+	PersistentPreRunE: combinedPreRun,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "role", args)
+		}()
+	},
+}
+
 var stream = &cobra.Command{
 	Use:               "stream",
 	Short:             "Manage streams",
@@ -202,6 +219,9 @@ func main() {
 
 	analyze.AddCommand(pb.AnalyzeCmd)
 
+	generate.AddCommand(pb.GenerateK8sCmd)
+	generate.AddCommand(pb.GenerateK8sUninstallCmd)
+
 	cli.AddCommand(profile)
 	cli.AddCommand(query)
 	cli.AddCommand(stream)
@@ -209,7 +229,7 @@ func main() {
 	cli.AddCommand(role)
 	cli.AddCommand(pb.TailCmd)
 	cli.AddCommand(analyze)
-
+	cli.AddCommand(generate)
 	cli.AddCommand(pb.AutocompleteCmd)
 
 	// Set as command
