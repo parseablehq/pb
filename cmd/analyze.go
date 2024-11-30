@@ -16,9 +16,13 @@
 package cmd
 
 import (
+	"fmt"
+
+	"github.com/jung-kurt/gofpdf"
+
 	"archive/zip"
 	"encoding/json"
-	"fmt"
+
 	"io"
 	"log"
 	"net/http"
@@ -111,7 +115,7 @@ var AnalyzeCmd = &cobra.Command{
 		if allData == "" {
 			return fmt.Errorf("error no data found")
 		}
-		fmt.Println("data", allData)
+
 		s.Stop()
 		if err != nil {
 			log.Printf(red+"Error querying data in Parseable: %v\n"+reset, err)
@@ -190,7 +194,7 @@ var AnalyzeCmd = &cobra.Command{
 				return fmt.Errorf(red+"Failed to analyze events: %w\n"+reset, err)
 			}
 			// Display results using pager
-			shouldContinue := parseAndSelectAnalysis(gptResponse)
+			shouldContinue := parseAndSelectAnalysis(gptResponse, namespace, pod)
 			if !shouldContinue {
 				break // Exit the loop if "no"
 			}
@@ -368,8 +372,7 @@ type AnalysisResponse struct {
 	MitigationSteps   []string `json:"mitigation_steps"`
 }
 
-// In parseAndSelectAnalysis, modify to handle user decision to continue or not.
-func parseAndSelectAnalysis(response string) bool {
+func parseAndSelectAnalysis(response, namespace, pod string) bool {
 	var analysis AnalysisResponse
 	err := json.Unmarshal([]byte(response), &analysis)
 	if err != nil {
@@ -377,110 +380,100 @@ func parseAndSelectAnalysis(response string) bool {
 		return true
 	}
 
-	// Display the summary by default
-	fmt.Println(green + "Summary:\n" + reset + analysis.Summary)
+	// Start with Summary
+	currentView := "Summary"
 
-	// Prompt the user to choose between "Root Cause Analysis" and "Mitigation Steps"
-	initialPrompt := promptui.Select{
-		Label: "Select Analysis to View",
-		Items: []string{"Root Cause Analysis", "Mitigation Steps", "Analyze another pod in namespace (yes/no)"},
-		Size:  3,
-	}
+	for {
+		switch currentView {
+		case "Summary":
+			fmt.Println(green + "Summary:\n" + reset + analysis.Summary)
+			currentView = promptNextStep([]string{"Root Cause Analysis", "Mitigation Steps", "Generate Postmortem Report", "Analyze another pod in namespace"})
 
-	_, choice, err := initialPrompt.Run()
-	if err != nil {
-		log.Fatalf("Prompt failed: %v", err)
-	}
+		case "Root Cause Analysis":
+			fmt.Println(green + "Root Cause Analysis:\n" + reset + analysis.RootCauseAnalysis)
+			currentView = promptNextStep([]string{"Mitigation Steps", "Generate Postmortem Report", "Analyze another pod in namespace", "Summary"})
 
-	switch choice {
-	case "Root Cause Analysis":
-		// Show Root Cause Analysis
-		fmt.Println(green + "Root Cause Analysis:\n" + reset + analysis.RootCauseAnalysis)
-
-		// Now prompt the user to choose between "Mitigation" or "Pods"
-		secondPrompt := promptui.Select{
-			Label: "What would you like to do next?",
-			Items: []string{"Mitigation", "Analyze another pod in namespace (yes/no)"},
-			Size:  3,
-		}
-
-		_, secondChoice, err := secondPrompt.Run()
-		if err != nil {
-			log.Fatalf("Prompt failed: %v", err)
-		}
-
-		switch secondChoice {
-		case "Mitigation":
-			// Show Mitigation Steps
+		case "Mitigation Steps":
 			fmt.Println(green + "Mitigation Steps:\n" + reset)
 			for i, step := range analysis.MitigationSteps {
 				fmt.Printf("%d. %s\n", i+1, step)
 			}
+			currentView = promptNextStep([]string{"Root Cause Analysis", "Generate Postmortem Report", "Analyze another pod in namespace", "Summary"})
 
-			// After displaying mitigation steps, ask if the user wants to analyze another pod/namespace
-			prompt := promptui.Prompt{
-				Label:   "Analyze another namespace/pod (yes/no)",
-				Default: "no",
-			}
-			choice, _ := prompt.Run()
-			if strings.ToLower(choice) != "yes" {
-				return false // Exit the loop if "no"
-			}
-		case "Analyze another pod in namespace (yes/no)":
-			prompt := promptui.Prompt{
-				Label:   "Analyze another namespace/pod (yes/no)",
-				Default: "no",
-			}
-			choice, _ := prompt.Run()
-			if strings.ToLower(choice) != "yes" {
-				return false // Exit the loop if "no"
-			}
-		}
+		case "Generate Postmortem Report":
+			createPDF(analysis.Summary, analysis.RootCauseAnalysis, strings.Join(analysis.MitigationSteps, "\n"), namespace, pod)
+			return true // Exit after generating report
 
-	case "Mitigation Steps":
-		// Show Mitigation Steps directly
-		fmt.Println(green + "Mitigation Steps:\n" + reset)
-		for i, step := range analysis.MitigationSteps {
-			fmt.Printf("%d. %s\n", i+1, step)
-		}
-
-		// Now prompt the user to choose between "Mitigation" or "Pods"
-		secondPrompt := promptui.Select{
-			Label: "What would you like to do next?",
-			Items: []string{"Root Cause Analysis", "Analyze another pod in namespace (yes/no)"},
-			Size:  3,
-		}
-
-		_, secondChoice, err := secondPrompt.Run()
-		if err != nil {
-			log.Fatalf("Prompt failed: %v", err)
-		}
-
-		switch secondChoice {
-		case "Root Cause Analysis":
-			// Show Root Cause Analysis
-			fmt.Println(green + "Root Cause Analysis:\n" + reset + analysis.RootCauseAnalysis)
-
-			// After displaying Root Cause Analysis steps, ask if the user wants to analyze another pod/namespace
-			prompt := promptui.Prompt{
-				Label:   "Analyze another namespace/pod (yes/no)",
-				Default: "no",
-			}
-			choice, _ := prompt.Run()
-			if strings.ToLower(choice) != "yes" {
-				return false // Exit the loop if "no"
-			}
-		case "Analyze another pod in namespace (yes/no)":
-			prompt := promptui.Prompt{
-				Label:   "Analyze another namespace/pod (yes/no)",
-				Default: "no",
-			}
-			choice, _ := prompt.Run()
-			if strings.ToLower(choice) != "yes" {
-				return false // Exit the loop if "no"
-			}
+		case "Analyze another pod in namespace":
+			return askToAnalyzeAnotherPod() // Return to main prompt for a new pod
 		}
 	}
+}
 
-	return true // Continue the loop if "yes"
+// Helper function to handle user prompt and return the selected option
+func promptNextStep(options []string) string {
+	prompt := promptui.Select{
+		Label: "What would you like to do next?",
+		Items: options,
+		Size:  len(options),
+	}
+
+	_, choice, err := prompt.Run()
+	if err != nil {
+		log.Fatalf("Prompt failed: %v", err)
+	}
+	return choice
+}
+
+// Updated createPDF function
+func createPDF(summary, rootCause, mitigation, namespace, pod string) {
+	pdf := gofpdf.New("P", "mm", "A4", "")
+	pdf.AddPage()
+	pdf.SetFont("Arial", "B", 16)
+
+	// Title
+	pdf.Cell(40, 10, "Postmortem Report")
+	pdf.Ln(12)
+
+	// Add sections
+	addSection(pdf, "Summary:", summary)
+	addSection(pdf, "Root Cause Analysis:", rootCause)
+	addSection(pdf, "Mitigation Steps:", mitigation)
+
+	// Generate filename with timestamp
+	timestamp := time.Now().Format("20060102-150405")
+	filename := fmt.Sprintf("postmortem-%s-%s-%s.pdf", sanitize(namespace), sanitize(pod), timestamp)
+
+	// Save file
+	err := pdf.OutputFileAndClose(filename)
+	if err != nil {
+		fmt.Println("Error generating PDF:", err)
+	} else {
+		fmt.Printf(green+"Report saved as %s"+reset+"\n", filename)
+	}
+}
+
+// Helper function to sanitize filenames by replacing invalid characters
+func sanitize(input string) string {
+	return strings.ReplaceAll(input, "/", "_") // Replace slashes with underscores
+}
+
+func addSection(pdf *gofpdf.Fpdf, title, content string) {
+	pdf.SetFont("Arial", "B", 14)
+	pdf.Cell(0, 10, title)
+	pdf.Ln(10)
+
+	pdf.SetFont("Arial", "", 12)
+	pdf.MultiCell(0, 10, content, "", "", false)
+	pdf.Ln(10)
+}
+
+// Helper function to ask about analyzing another pod/namespace
+func askToAnalyzeAnotherPod() bool {
+	prompt := promptui.Prompt{
+		Label:   "Analyze another namespace/pod (yes/no)",
+		Default: "no",
+	}
+	choice, _ := prompt.Run()
+	return strings.ToLower(choice) == "yes"
 }

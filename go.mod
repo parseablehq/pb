@@ -12,6 +12,7 @@ require (
 	github.com/charmbracelet/lipgloss v0.12.1
 	github.com/dustin/go-humanize v1.0.1
 	github.com/gofrs/flock v0.12.1
+	github.com/jung-kurt/gofpdf v1.16.2
 	github.com/manifoldco/promptui v0.9.0
 	github.com/marcboeker/go-duckdb v1.8.3
 	github.com/oklog/ulid/v2 v2.1.0

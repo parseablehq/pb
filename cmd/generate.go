@@ -18,6 +18,7 @@ package cmd
 import (
 	"log"
 	"pb/pkg/helm"
+	"sync"
 
 	"github.com/spf13/cobra"
 )
@@ -34,7 +35,7 @@ var GenerateK8sCmd = &cobra.Command{
 				RepoName:    "ingress-nginx",
 				RepoUrl:     "https://kubernetes.github.io/ingress-nginx",
 				ChartName:   "ingress-nginx",
-				Version:     "4.0.3", // Example version, adjust as needed
+				Version:     "4.0.3",
 			},
 			{
 				ReleaseName: "prometheus",
@@ -62,14 +63,38 @@ var GenerateK8sCmd = &cobra.Command{
 			},
 		}
 
+		// Create a WaitGroup to manage Go routines
+		var wg sync.WaitGroup
+
+		// Use a channel to capture errors from Go routines
+		errCh := make(chan error, len(apps))
+
 		for _, app := range apps {
-			log.Printf("Deploying %s...", app.ReleaseName)
-			if err := helm.Apply(app); err != nil {
-				log.Printf("Failed to deploy %s: %v", app.ReleaseName, err)
-				return err
-			}
-			log.Printf("%s deployed successfully.", app.ReleaseName)
+			wg.Add(1)
+			go func(app helm.Helm) {
+				defer wg.Done() // Mark this Go routine as done when it finishes
+				log.Printf("Deploying %s...", app.ReleaseName)
+				if err := helm.Apply(app); err != nil {
+					log.Printf("Failed to deploy %s: %v", app.ReleaseName, err)
+					errCh <- err // Send the error to the channel
+					return
+				}
+				log.Printf("%s deployed successfully.", app.ReleaseName)
+			}(app) // Pass the app variable to the closure to avoid capturing issues
 		}
+
+		// Wait for all Go routines to complete
+		wg.Wait()
+		close(errCh) // Close the error channel after all routines finish
+
+		// Check for errors from Go routines
+		for err := range errCh {
+			if err != nil {
+				return err // Return the first error encountered
+			}
+		}
+
+		log.Println("All applications deployed successfully.")
 		return nil
 	},
 }

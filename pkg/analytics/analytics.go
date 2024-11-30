@@ -150,7 +150,7 @@ func PostRunAnalytics(cmd *cobra.Command, name string, args []string) {
 		flags,
 	)
 	if err != nil {
-		fmt.Println("Error sending analytics event:", err)
+		//fmt.Println("Error sending analytics event:", err)
 	}
 
 }
