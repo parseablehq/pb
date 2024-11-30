@@ -219,7 +219,6 @@ func FetchPodEventsfromDb(podName string) ([]SummaryStat, error) {
 
 		// Check if the message mentions another object like PVC
 		referencedObject, _ := extractReferencedObject(message, objectName, objectNamespace)
-		fmt.Println("rfo", referencedObject)
 		if referencedObject != "" {
 			// Fetch additional events for the referenced object
 			relatedEvents, err := fetchRelatedEvents(db, referencedObject)
@@ -294,7 +293,6 @@ func fetchRelatedEvents(db *sql.DB, objectName string) ([]SummaryStat, error) {
 		ORDER BY "timestamp";
 	`
 
-	fmt.Println("try", query)
 	rows, err := db.Query(query, objectName)
 	if err != nil {
 		return nil, fmt.Errorf("error executing related events query: %w", err)
