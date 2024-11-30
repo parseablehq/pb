@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"pb/pkg/analyze/k8s"
+	"pb/pkg/common"
 	"pb/pkg/helm"
 	"strings"
 	"sync"
@@ -37,22 +38,22 @@ var InstallOssCmd = &cobra.Command{
 		// Prompt for Kubernetes context
 		_, err := k8s.PromptK8sContext()
 		if err != nil {
-			return fmt.Errorf(red+"Error prompting Kubernetes context: %w"+reset, err)
+			return fmt.Errorf(common.Red+"Error prompting Kubernetes context: %w"+common.Reset, err)
 		}
 
 		// Prompt user for namespace
-		fmt.Print(yellow + "Enter the Kubernetes namespace for deployment: " + reset)
+		fmt.Print(common.Yellow + "Enter the Kubernetes namespace for deployment: " + common.Reset)
 		reader := bufio.NewReader(os.Stdin)
 		namespace, _ := reader.ReadString('\n')
 		namespace = strings.TrimSpace(namespace)
 
 		// Prompt for username
-		fmt.Print(yellow + "Enter the Parseable username: " + reset)
+		fmt.Print(common.Yellow + "Enter the Parseable username: " + common.Reset)
 		username, _ := reader.ReadString('\n')
 		username = strings.TrimSpace(username)
 
 		// Prompt for password
-		fmt.Print(yellow + "Enter the Parseable password: " + reset)
+		fmt.Print(common.Yellow + "Enter the Parseable password: " + common.Reset)
 		password, _ := reader.ReadString('\n')
 		password = strings.TrimSpace(password)
 
@@ -111,7 +112,7 @@ data:
 
 		// Apply the Kubernetes Secret
 		if err := ApplyManifest(secretManifest); err != nil {
-			return fmt.Errorf(red+"Failed to create secret: %w"+reset, err)
+			return fmt.Errorf(common.Red+"Failed to create secret: %w"+common.Reset, err)
 		}
 
 		// Deploy using Helm
@@ -123,7 +124,7 @@ data:
 				defer wg.Done()
 				log.Printf("Deploying %s in namespace %s...", app.ReleaseName, app.Namespace)
 				if err := helm.Apply(app); err != nil {
-					log.Printf(red+"Failed to deploy %s: %v"+reset, app.ReleaseName, err)
+					log.Printf(common.Red+"Failed to deploy %s: %v"+common.Reset, app.ReleaseName, err)
 					errCh <- err
 					return
 				}
@@ -140,7 +141,7 @@ data:
 			}
 		}
 
-		log.Println(green + "Parseable deployed successfully." + reset)
+		log.Println(common.Green + "Parseable deployed successfully." + common.Reset)
 		return nil
 	},
 }
@@ -248,5 +249,5 @@ func printBanner() {
   Welcome to Parseable OSS Installation
  --------------------------------------
 `
-	fmt.Println(green + banner + reset)
+	fmt.Println(common.Green + banner + common.Reset)
 }
