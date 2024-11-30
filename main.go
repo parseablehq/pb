@@ -165,16 +165,16 @@ var install = &cobra.Command{
 	Short:             "Install parseable on kubernetes cluster",
 	Long:              "\ninstall command is used to install parseable oss/enterprise on k8s cluster..",
 	PersistentPreRunE: combinedPreRun,
-	// PersistentPostRun: func(cmd *cobra.Command, args []string) {
-	// 	if os.Getenv("PB_ANALYTICS") == "disable" {
-	// 		return
-	// 	}
-	// 	wg.Add(1)
-	// 	go func() {
-	// 		defer wg.Done()
-	// 		analytics.PostRunAnalytics(cmd, "install", args)
-	// 	}()
-	// },
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "install", args)
+		}()
+	},
 }
 
 var stream = &cobra.Command{
@@ -249,6 +249,7 @@ func main() {
 	cli.AddCommand(analyze)
 	cli.AddCommand(generate)
 	cli.AddCommand(install)
+	cli.AddCommand(pb.ProxyCmd)
 	cli.AddCommand(pb.AutocompleteCmd)
 
 	// Set as command
