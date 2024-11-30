@@ -2,11 +2,18 @@ package duckdb
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
+	"pb/pkg/analyze/k8s"
 	internalHTTP "pb/pkg/http"
+	"strings"
+
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 // Struct to hold summary statistics (same as before)
@@ -209,6 +216,18 @@ func FetchPodEventsfromDb(podName string) ([]SummaryStat, error) {
 			ReportingComponent: reportingComponent,
 			Timestamp:          timestamp,
 		})
+
+		// Check if the message mentions another object like PVC
+		referencedObject, _ := extractReferencedObject(message, objectName, objectNamespace)
+		fmt.Println("rfo", referencedObject)
+		if referencedObject != "" {
+			// Fetch additional events for the referenced object
+			relatedEvents, err := fetchRelatedEvents(db, referencedObject)
+			if err != nil {
+				return nil, fmt.Errorf("error fetching related events for %s: %w", referencedObject, err)
+			}
+			stats = append(stats, relatedEvents...)
+		}
 	}
 
 	if err := rows.Err(); err != nil {
@@ -256,6 +275,7 @@ func FetchNamespaceEventsfromDb(namespace string) ([]SummaryStat, error) {
 			ReportingComponent: reportingComponent,
 			Timestamp:          timestamp,
 		})
+
 	}
 
 	if err := rows.Err(); err != nil {
@@ -263,4 +283,101 @@ func FetchNamespaceEventsfromDb(namespace string) ([]SummaryStat, error) {
 	}
 
 	return stats, nil
+}
+
+// fetchRelatedEvents retrieves events for the specified object from DuckDB.
+func fetchRelatedEvents(db *sql.DB, objectName string) ([]SummaryStat, error) {
+	query := `
+		SELECT DISTINCT ON (message) *
+		FROM k8s_events
+		WHERE involvedObject_name = ?
+		ORDER BY "timestamp";
+	`
+
+	fmt.Println("try", query)
+	rows, err := db.Query(query, objectName)
+	if err != nil {
+		return nil, fmt.Errorf("error executing related events query: %w", err)
+	}
+	defer rows.Close()
+
+	var relatedStats []SummaryStat
+	for rows.Next() {
+		var reason, message, objectName, objectNamespace, reportingComponent, timestamp string
+		if err := rows.Scan(&reason, &message, &objectName, &objectNamespace, &reportingComponent, &timestamp); err != nil {
+			return nil, fmt.Errorf("error scanning related row: %w", err)
+		}
+
+		relatedStats = append(relatedStats, SummaryStat{
+			Reason:             reason,
+			Message:            message,
+			ObjectName:         objectName,
+			ObjectNamespace:    objectNamespace,
+			ReportingComponent: reportingComponent,
+			Timestamp:          timestamp,
+		})
+	}
+
+	return relatedStats, nil
+}
+
+// getPodLabels fetches labels of the given pod using the Kubernetes API.
+func getPodLabels(podName, namespace string) (map[string]string, error) {
+
+	clientset := k8s.GetKubeClient()
+
+	// Fetch the pod
+	pod, err := clientset.CoreV1().Pods(namespace).Get(context.TODO(), podName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("error fetching pod: %w", err)
+	}
+
+	return pod.Labels, nil
+}
+
+// findPVCWithLabels searches for a PVC in the namespace matching the pod labels.
+func findPVCWithLabels(clientset *kubernetes.Clientset, namespace string, labels map[string]string) (string, error) {
+	pvcs, err := clientset.CoreV1().PersistentVolumeClaims(namespace).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("error listing PVCs: %w", err)
+	}
+
+	for _, pvc := range pvcs.Items {
+		if pvcMatchesLabels(&pvc, labels) {
+			return pvc.Name, nil
+		}
+	}
+
+	return "", fmt.Errorf("no matching PVC found")
+}
+
+// pvcMatchesLabels checks if the PVC has at least one matching label.
+func pvcMatchesLabels(pvc *v1.PersistentVolumeClaim, labels map[string]string) bool {
+	for key, value := range labels {
+		if pvcValue, exists := pvc.Labels[key]; exists && pvcValue == value {
+			return true // Return true if any label matches.
+		}
+	}
+	return false // No matching label found.
+}
+
+// extractReferencedObject checks for mentions of specific objects and retrieves the PVC name.
+func extractReferencedObject(message, podName, namespace string) (string, error) {
+
+	if !strings.Contains(message, "PersistentVolumeClaims") {
+
+		labels, err := getPodLabels(podName, namespace)
+		if err != nil {
+			return "", fmt.Errorf("error fetching pod labels: %w", err)
+		}
+
+		pvcName, err := findPVCWithLabels(k8s.GetKubeClient(), namespace, labels)
+		if err != nil {
+			return "", fmt.Errorf("error finding PVC: %w", err)
+		}
+
+		return pvcName, nil
+	}
+
+	return "", nil
 }
