@@ -43,8 +43,14 @@ func Installer(_ Plan) (string, []string) {
 		log.Fatalf("Failed to prompt for deployment options: %v", err)
 	}
 
+	// Prompt for namespace and credentials
+	pbSecret, err := promptNamespaceAndCredentials()
+	if err != nil {
+		log.Fatalf("Failed to prompt for namespace and credentials: %v", err)
+	}
+
 	// Prompt for agent deployment
-	agent, agentValues, err := promptAgentDeployment(deployValues)
+	agent, agentValues, err := promptAgentDeployment(deployValues, deployment, pbSecret.Namespace)
 	if err != nil {
 		log.Fatalf("Failed to prompt for agent deployment: %v", err)
 	}
@@ -59,12 +65,6 @@ func Installer(_ Plan) (string, []string) {
 	objectStoreConfig, storeConfigValues, err := promptStoreConfigs(store, storeValues)
 	if err != nil {
 		log.Fatalf("Failed to prompt for object store configuration: %v", err)
-	}
-
-	// Prompt for namespace and credentials
-	pbSecret, err := promptNamespaceAndCredentials()
-	if err != nil {
-		log.Fatalf("Failed to prompt for namespace and credentials: %v", err)
 	}
 
 	if err := applyParseableSecret(*&pbSecret, store, objectStoreConfig); err != nil {
@@ -106,24 +106,24 @@ func promptStorageClass() (string, error) {
 }
 
 // promptIngestorCount prompts the user to enter a ingestor counts
-func promptIngestorCount() (string, error) {
-	// Prompt user for storage class
-	fmt.Print(common.Yellow + "Enter the kubernetes ingestor count: " + common.Reset)
-	reader := bufio.NewReader(os.Stdin)
-	ingestorCount, err := reader.ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("failed to read ingestor count class: %w", err)
-	}
+// func promptIngestorCount() (string, error) {
+// 	// Prompt user for storage class
+// 	fmt.Print(common.Yellow + "Enter the kubernetes ingestor count: " + common.Reset)
+// 	reader := bufio.NewReader(os.Stdin)
+// 	ingestorCount, err := reader.ReadString('\n')
+// 	if err != nil {
+// 		return "", fmt.Errorf("failed to read ingestor count class: %w", err)
+// 	}
 
-	ingestorCount = strings.TrimSpace(ingestorCount)
+// 	ingestorCount = strings.TrimSpace(ingestorCount)
 
-	// Validate that the ingestorCount is not empty
-	if ingestorCount == "" {
-		return "", fmt.Errorf("ingestor count cannot be empty")
-	}
+// 	// Validate that the ingestorCount is not empty
+// 	if ingestorCount == "" {
+// 		return "", fmt.Errorf("ingestor count cannot be empty")
+// 	}
 
-	return ingestorCount, nil
-}
+// 	return ingestorCount, nil
+// }
 
 // promptNamespaceAndCredentials prompts the user for namespace and credentials
 func promptNamespaceAndCredentials() (*ParseableSecret, error) {
@@ -321,7 +321,7 @@ data:
 }
 
 // promptAgentDeployment prompts the user for agent deployment options
-func promptAgentDeployment(chartValues []string) (string, []string, error) {
+func promptAgentDeployment(chartValues []string, deployment, namespace string) (string, []string, error) {
 	// Prompt for Agent Deployment type
 	promptAgentSelect := promptui.Select{
 		Label: fmt.Sprintf(common.Yellow + "Deploy logging agent"),
@@ -335,6 +335,11 @@ func promptAgentDeployment(chartValues []string) (string, []string, error) {
 	if agentDeploymentType == string(vector) {
 		chartValues = append(chartValues, "vector.enabled=true")
 	} else if agentDeploymentType == string(fluentbit) {
+		if deployment == string(standalone) {
+			chartValues = append(chartValues, "fluent-bit.serverHost=parseable."+namespace+".svc.cluster.local")
+		} else if deployment == string(deployment) {
+			chartValues = append(chartValues, "fluent-bit.serverHost=parseable-ingestor-service."+namespace+".svc.cluster.local")
+		}
 		chartValues = append(chartValues, "fluent-bit.enabled=true")
 	}
 
@@ -358,13 +363,13 @@ func promptDeploymentType(chartValues []string) (string, []string, error) {
 	case string(standalone):
 		newChartValues = []string{}
 	case string(distributed):
-		ingestorCount, err := promptIngestorCount()
-		if err != nil {
-			return "", nil, fmt.Errorf("failed get ingestor count, err %s", err)
-		}
+		// ingestorCount, err := promptIngestorCount()
+		// if err != nil {
+		// 	return "", nil, fmt.Errorf("failed get ingestor count, err %s", err)
+		// }
 		newChartValues = []string{
 			"parseable.highAvailability.enabled=true",
-			"parseable.highAvailability.ingestor=" + ingestorCount,
+			// "parseable.highAvailability.ingestor=" + ingestorCount,
 		}
 	default:
 		return "", nil, fmt.Errorf("invalid deployment type selected: %s", deploymentType)
