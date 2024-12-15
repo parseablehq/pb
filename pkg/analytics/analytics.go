@@ -169,10 +169,10 @@ func sendEvent(commandName string, arguments []string, errors *string, execution
 
 	httpClient := internalHTTP.DefaultClient(&profile)
 
-	about, err := FetchAbout(&httpClient)
-	if err != nil {
-		return fmt.Errorf("failed to get about metadata for profile: %v", err)
-	}
+	about, _ := FetchAbout(&httpClient)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to get about metadata for profile: %v", err)
+	// }
 
 	// Create the Command struct
 	cmd := Command{
