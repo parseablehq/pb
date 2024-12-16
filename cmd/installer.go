@@ -155,9 +155,8 @@ func printSuccessBanner(namespace, deployment, version, username, password strin
 	localPort := "8000"
 	fmt.Printf(common.Green+"Port-forwarding %s service on port %s...\n"+common.Reset, serviceName, localPort)
 
-	err = startPortForward(namespace, serviceName, "80", localPort)
-	if err != nil {
-		fmt.Errorf(common.Red+"failed to port-forward service: %w", err)
+	if err = startPortForward(namespace, serviceName, "80", localPort); err != nil {
+		fmt.Sprintf(common.Red+"failed to port-forward service: %w", err)
 	}
 
 	// Redirect to UI
