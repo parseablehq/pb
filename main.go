@@ -160,6 +160,23 @@ var query = &cobra.Command{
 	},
 }
 
+var install = &cobra.Command{
+	Use:               "install",
+	Short:             "Install parseable on kubernetes cluster",
+	Long:              "\ninstall command is used to install parseable oss/enterprise on k8s cluster..",
+	PersistentPreRunE: combinedPreRun,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "install", args)
+		}()
+	},
+}
+
 func main() {
 	profile.AddCommand(pb.AddProfileCmd)
 	profile.AddCommand(pb.RemoveProfileCmd)
@@ -183,6 +200,8 @@ func main() {
 	query.AddCommand(pb.QueryCmd)
 	query.AddCommand(pb.SavedQueryList)
 
+	install.AddCommand(pb.InstallOssCmd)
+
 	cli.AddCommand(profile)
 	cli.AddCommand(query)
 	cli.AddCommand(stream)
@@ -191,6 +210,7 @@ func main() {
 	cli.AddCommand(pb.TailCmd)
 
 	cli.AddCommand(pb.AutocompleteCmd)
+	cli.AddCommand(install)
 
 	// Set as command
 	pb.VersionCmd.Run = func(_ *cobra.Command, _ []string) {
