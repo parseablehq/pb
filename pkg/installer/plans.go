@@ -2,6 +2,7 @@ package installer
 
 import (
 	"fmt"
+
 	"pb/pkg/common"
 
 	"github.com/manifoldco/promptui"
@@ -21,7 +22,7 @@ type Plan struct {
 var Plans = map[string]Plan{
 	"Small": {
 		Name:              "Small",
-		IngestionSpeed:    "1,000 events/sec",
+		IngestionSpeed:    "1000 events/sec",
 		PerDayIngestion:   "~10GB",
 		QueryPerformance:  "Basic performance",
 		CPUAndMemorySpecs: "2 CPUs, 4GB RAM",
@@ -60,25 +61,25 @@ func PromptUserPlanSelection() (Plan, error) {
 		Label:    "{{ . }}",
 		Active:   "▶ {{ .Name | yellow }} ({{ .IngestionSpeed | cyan }})",
 		Inactive: "  {{ .Name | yellow }} ({{ .IngestionSpeed | cyan }})",
-		Selected: "✔ {{ .Name | green }}",
+		Selected: "{{ `Selected plan:` | green }} '{{ .Name | green }}' ✔ ",
 		Details: `
 --------- Plan Details ----------
 {{ "Plan:" | faint }}            	{{ .Name }}
-{{ "Ingestion Speed:" | faint }} 	{{ .IngestionSpeed }}
-{{ "Per Day Ingestion:" | faint }}	{{ .PerDayIngestion }}
-{{ "Query Performance:" | faint }}	{{ .QueryPerformance }}
-{{ "CPU & Memory:" | faint }}    	{{ .CPUAndMemorySpecs }}`,
+ {{ "Ingestion Speed:" | faint }} 	{{ .IngestionSpeed }}
+ {{ "Per Day Ingestion:" | faint }}	{{ .PerDayIngestion }}
+ {{ "Query Performance:" | faint }}	{{ .QueryPerformance }}
+ {{ "CPU & Memory:" | faint }}    	{{ .CPUAndMemorySpecs }}`,
 	}
 
 	prompt := promptui.Select{
-		Label:     fmt.Sprintf(common.Yellow + "Select Deployment Plan"),
+		Label:     fmt.Sprintf(common.Yellow + "Select deployment type"),
 		Items:     planList,
 		Templates: templates,
 	}
 
 	index, _, err := prompt.Run()
 	if err != nil {
-		return Plan{}, fmt.Errorf("failed to select deployment plan: %w", err)
+		return Plan{}, fmt.Errorf("failed to select deployment type: %w", err)
 	}
 
 	return planList[index], nil

@@ -7,21 +7,20 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"pb/pkg/common"
-	"pb/pkg/helm"
-	"pb/pkg/installer"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
+	"pb/pkg/common"
+	"pb/pkg/helm"
+	"pb/pkg/installer"
+
 	"github.com/briandowns/spinner"
 	"github.com/spf13/cobra"
 )
 
-var (
-	verbose bool
-)
+var verbose bool
 
 var InstallOssCmd = &cobra.Command{
 	Use:     "oss",
@@ -40,10 +39,12 @@ var InstallOssCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Println(common.Green + "You selected the following plan:" + common.Reset)
-		fmt.Printf(common.Cyan+"Plan: %s\n"+common.Yellow+"Ingestion Speed: %s\n"+common.Green+"Per Day Ingestion: %s\n"+
-			common.Blue+"Query Performance: %s\n"+common.Red+"CPU & Memory: %s\n"+common.Reset,
-			selectedPlan.Name, selectedPlan.IngestionSpeed, selectedPlan.PerDayIngestion,
+		fmt.Printf(
+			common.Cyan+"  Ingestion Speed: %s\n"+
+				common.Cyan+"  Per Day Ingestion: %s\n"+
+				common.Cyan+"  Query Performance: %s\n"+
+				common.Cyan+"  CPU & Memory: %s\n"+
+				common.Reset, selectedPlan.IngestionSpeed, selectedPlan.PerDayIngestion,
 			selectedPlan.QueryPerformance, selectedPlan.CPUAndMemorySpecs)
 
 		// Get namespace and chart values from installer
@@ -95,7 +96,6 @@ var InstallOssCmd = &cobra.Command{
 		// Stop the spinner and restore stdout
 		spinner.Stop()
 		if !verbose {
-			//w.Close()
 			os.Stdout = oldStdout
 		}
 
@@ -164,7 +164,6 @@ func printSuccessBanner(namespace, deployment, version, username, password strin
 	localURL := fmt.Sprintf("http://localhost:%s/login?q=%s", localPort, base64EncodedString)
 	fmt.Printf(common.Green+"Opening Parseable UI at %s\n"+common.Reset, localURL)
 	openBrowser(localURL)
-
 }
 
 func createDeploymentSpinner(namespace string) *spinner.Spinner {
