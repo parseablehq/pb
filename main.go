@@ -177,6 +177,23 @@ var install = &cobra.Command{
 	},
 }
 
+var uninstall = &cobra.Command{
+	Use:               "uninstall",
+	Short:             "Uninstall parseable on kubernetes cluster",
+	Long:              "\nuninstall command is used to uninstall parseable oss/enterprise on k8s cluster..",
+	PersistentPreRunE: combinedPreRun,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "uninstall", args)
+		}()
+	},
+}
+
 func main() {
 	profile.AddCommand(pb.AddProfileCmd)
 	profile.AddCommand(pb.RemoveProfileCmd)
@@ -202,6 +219,8 @@ func main() {
 
 	install.AddCommand(pb.InstallOssCmd)
 
+	uninstall.AddCommand(pb.UnInstallOssCmd)
+
 	cli.AddCommand(profile)
 	cli.AddCommand(query)
 	cli.AddCommand(stream)
@@ -211,6 +230,7 @@ func main() {
 
 	cli.AddCommand(pb.AutocompleteCmd)
 	cli.AddCommand(install)
+	cli.AddCommand(uninstall)
 
 	// Set as command
 	pb.VersionCmd.Run = func(_ *cobra.Command, _ []string) {

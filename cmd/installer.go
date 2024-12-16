@@ -17,6 +17,7 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -111,6 +112,19 @@ var InstallOssCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// loadParseableConfig loads the configuration from the specified file
+func loadParseableConfig(path string) (*installer.ValuesHolder, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var config installer.ValuesHolder
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, err
+	}
+	return &config, nil
 }
 
 // printSuccessBanner remains the same as in the original code
