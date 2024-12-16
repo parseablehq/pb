@@ -329,7 +329,7 @@ func promptStore(chartValues []string) (ObjectStore, []string, error) {
 			Inactive: "  {{ . | yellow }}",  // Default color for inactive items
 			Selected: "{{ `Selected object store:` | green }} '{{ . | green }}' ✔ ",
 		},
-		Items: []string{string(S3Store), string(LocalStore), string(BlobStore), string(GcsStore)},
+		Items: []string{string(S3Store), string(BlobStore), string(GcsStore)}, // local store not supported
 	}
 	_, promptStoreType, err := promptStore.Run()
 	if err != nil {
