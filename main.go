@@ -92,10 +92,19 @@ var profile = &cobra.Command{
 	},
 }
 
-var generate = &cobra.Command{
-	Use:               "generate",
-	Short:             "Generate schema for json data files",
-	Long:              "\nuse generate schema to generate schema for json files.",
+var schema = &cobra.Command{
+	Use:   "schema",
+	Short: "Generate or create schemas for JSON data or Parseable streams",
+	Long: `The "schema" command allows you to either:
+  - Generate a schema automatically from a JSON file for analysis or integration.
+  - Create a custom schema for Parseable streams (PB streams) to structure and process your data.
+
+Examples:
+  - To generate a schema from a JSON file:
+      pb schema generate --file=data.json
+  - To create a schema for a PB stream:
+      pb schema create --stream-name=my_stream --config=data.json
+`,
 	PersistentPreRunE: combinedPreRun,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		if os.Getenv("PB_ANALYTICS") == "disable" {
@@ -217,7 +226,8 @@ func main() {
 	query.AddCommand(pb.QueryCmd)
 	query.AddCommand(pb.SavedQueryList)
 
-	generate.AddCommand(pb.GenerateSchemaCmd)
+	schema.AddCommand(pb.GenerateSchemaCmd)
+	schema.AddCommand(pb.CreateSchemaCmd)
 
 	install.AddCommand(pb.InstallOssCmd)
 
@@ -230,7 +240,7 @@ func main() {
 
 	cli.AddCommand(pb.AutocompleteCmd)
 	cli.AddCommand(install)
-	cli.AddCommand(generate)
+	cli.AddCommand(schema)
 
 	// Set as command
 	pb.VersionCmd.Run = func(_ *cobra.Command, _ []string) {
