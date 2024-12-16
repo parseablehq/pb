@@ -92,6 +92,23 @@ var profile = &cobra.Command{
 	},
 }
 
+var generate = &cobra.Command{
+	Use:               "generate",
+	Short:             "Generate schema for json data files",
+	Long:              "\nuse generate schema to generate schema for json files.",
+	PersistentPreRunE: combinedPreRun,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "generate", args)
+		}()
+	},
+}
+
 var user = &cobra.Command{
 	Use:               "user",
 	Short:             "Manage users",
@@ -200,6 +217,8 @@ func main() {
 	query.AddCommand(pb.QueryCmd)
 	query.AddCommand(pb.SavedQueryList)
 
+	generate.AddCommand(pb.GenerateSchemaCmd)
+
 	install.AddCommand(pb.InstallOssCmd)
 
 	cli.AddCommand(profile)
@@ -211,6 +230,7 @@ func main() {
 
 	cli.AddCommand(pb.AutocompleteCmd)
 	cli.AddCommand(install)
+	cli.AddCommand(generate)
 
 	// Set as command
 	pb.VersionCmd.Run = func(_ *cobra.Command, _ []string) {
