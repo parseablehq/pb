@@ -26,9 +26,7 @@ import (
 )
 
 // Installer orchestrates the installation process
-func Installer(_ Plan) (string, []string) {
-	// Declare a slice to store chart values
-	var chartValues []string
+func Installer(_ Plan) (namespace, deployment string, chartValues []string) {
 
 	clusterName, err := promptK8sContext()
 	if err != nil {
@@ -82,7 +80,7 @@ func Installer(_ Plan) (string, []string) {
 		log.Fatalf("Failed to write Parseable configuration: %v", err)
 	}
 
-	return pbSecret.Namespace, append(chartValues, storeConfigValues...)
+	return pbSecret.Namespace, deployment, append(chartValues, storeConfigValues...)
 }
 
 // promptStorageClass prompts the user to enter a Kubernetes storage class

@@ -2,10 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"net"
 	"os"
+	"os/exec"
 	"pb/pkg/common"
 	"pb/pkg/helm"
 	"pb/pkg/installer"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -42,7 +45,7 @@ var InstallOssCmd = &cobra.Command{
 			selectedPlan.QueryPerformance, selectedPlan.CPUAndMemorySpecs)
 
 		// Get namespace and chart values from installer
-		namespace, chartValues := installer.Installer(selectedPlan)
+		namespace, deployment, chartValues := installer.Installer(selectedPlan)
 
 		// Helm application configuration
 		apps := []helm.Helm{
@@ -102,26 +105,51 @@ var InstallOssCmd = &cobra.Command{
 		}
 
 		// Print success banner
-		printSuccessBanner(namespace, apps[0].Version)
+		printSuccessBanner(namespace, deployment, apps[0].Version)
 
 		return nil
 	},
 }
 
 // printSuccessBanner remains the same as in the original code
-func printSuccessBanner(namespace, version string) {
+func printSuccessBanner(namespace, deployment, version string) {
+	var ingestionUrl, serviceName string
+	if deployment == "standalone" {
+		ingestionUrl = "parseable." + namespace + ".svc.cluster.local"
+		serviceName = "parseable"
+	} else if deployment == "distributed" {
+		ingestionUrl = "parseable-ingestor-svc." + namespace + ".svc.cluster.local"
+		serviceName = "parseable-query-svc"
+	}
+
 	fmt.Println("\n" + common.Green + "🎉 Parseable Deployment Successful! 🎉" + common.Reset)
 	fmt.Println(strings.Repeat("=", 50))
 
 	fmt.Printf("%s Deployment Details:\n", common.Blue+"ℹ️ ")
 	fmt.Printf("  • Namespace:        %s\n", common.Blue+namespace)
 	fmt.Printf("  • Chart Version:    %s\n", common.Blue+version)
+	fmt.Printf("  • Ingestion URL:    %s\n", ingestionUrl)
 
 	fmt.Println("\n" + common.Blue + "🔗  Resources:" + common.Reset)
 	fmt.Println(common.Blue + "  • Documentation:   https://www.parseable.com/docs/server/introduction")
 	fmt.Println(common.Blue + "  • Stream Management: https://www.parseable.com/docs/server/api")
 
 	fmt.Println("\n" + common.Blue + "Happy Logging!" + common.Reset)
+
+	// Port-forward the service
+	localPort := "8000"
+	fmt.Printf(common.Green+"Port-forwarding %s service on port %s...\n"+common.Reset, serviceName, localPort)
+
+	err := startPortForward(namespace, serviceName, "80", localPort)
+	if err != nil {
+		fmt.Printf("failed to port-forward service: %w", err)
+	}
+
+	// Redirect to UI
+	localURL := fmt.Sprintf("http://localhost:%s", localPort)
+	fmt.Printf(common.Green+"Opening Parseable UI at %s\n"+common.Reset, localURL)
+	openBrowser(localURL)
+
 }
 
 func createDeploymentSpinner(namespace string) *spinner.Spinner {
@@ -150,4 +178,64 @@ func printBanner() {
  --------------------------------------
 `
 	fmt.Println(common.Green + banner + common.Reset)
+}
+
+func startPortForward(namespace, serviceName, remotePort, localPort string) error {
+	// Build the port-forward command
+	cmd := exec.Command("kubectl", "port-forward",
+		fmt.Sprintf("svc/%s", serviceName),
+		fmt.Sprintf("%s:%s", localPort, remotePort),
+		"-n", namespace,
+	)
+
+	// Redirect the command's output to the standard output for debugging
+	if !verbose {
+		cmd.Stdout = nil // Suppress standard output
+		cmd.Stderr = nil // Suppress standard error
+	} else {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
+
+	// Run the command in the background
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start port-forward: %w", err)
+	}
+
+	// Run in a goroutine to keep it alive
+	go func() {
+		_ = cmd.Wait()
+	}()
+
+	// Check connection on the forwarded port
+	retries := 10
+	for i := 0; i < retries; i++ {
+		conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%s", localPort))
+		if err == nil {
+			conn.Close() // Connection successful, break out of the loop
+			fmt.Println(common.Green + "Port-forwarding successfully established!")
+			return nil
+		}
+		time.Sleep(1 * time.Second) // Wait before retrying
+	}
+
+	// If we reach here, port-forwarding failed
+	cmd.Process.Kill() // Stop the kubectl process
+	return fmt.Errorf(common.Red+"failed to establish port-forward connection to localhost:%s", localPort)
+}
+
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch os := runtime.GOOS; os {
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	default:
+		fmt.Printf("Please open the following URL manually: %s\n", url)
+		return
+	}
+	cmd.Start()
 }
