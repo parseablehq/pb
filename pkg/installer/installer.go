@@ -59,7 +59,7 @@ func Installer(_ Plan) (values *ValuesHolder, chartValues []string) {
 		log.Fatalf("Failed to prompt for object store configuration: %v", err)
 	}
 
-	if err := applyParseableSecret(*&pbSecret, store, objectStoreConfig); err != nil {
+	if err := applyParseableSecret(pbSecret, store, objectStoreConfig); err != nil {
 		log.Fatalf("Failed to apply secret object store configuration: %v", err)
 	}
 
