@@ -33,7 +33,6 @@ func Installer(_ Plan) (values *ValuesHolder, chartValues []string) {
 	}
 
 	// pb supports only distributed deployments
-	deployment := "distributed"
 	chartValues = append(chartValues, "parseable.highAvailability.enabled=true")
 
 	// Prompt for namespace and credentials
@@ -43,7 +42,7 @@ func Installer(_ Plan) (values *ValuesHolder, chartValues []string) {
 	}
 
 	// Prompt for agent deployment
-	agent, agentValues, err := promptAgentDeployment(chartValues, deployment, pbSecret.Namespace)
+	agent, agentValues, err := promptAgentDeployment(chartValues, distributed, pbSecret.Namespace)
 	if err != nil {
 		log.Fatalf("Failed to prompt for agent deployment: %v", err)
 	}
@@ -65,7 +64,7 @@ func Installer(_ Plan) (values *ValuesHolder, chartValues []string) {
 	}
 
 	valuesHolder := ValuesHolder{
-		DeploymentType:    deploymentType(deployment),
+		DeploymentType:    distributed,
 		ObjectStoreConfig: objectStoreConfig,
 		LoggingAgent:      loggingAgent(agent),
 		ParseableSecret:   *pbSecret,
@@ -289,7 +288,7 @@ data:
 }
 
 // promptAgentDeployment prompts the user for agent deployment options
-func promptAgentDeployment(chartValues []string, deployment, namespace string) (string, []string, error) {
+func promptAgentDeployment(chartValues []string, deployment deploymentType, namespace string) (string, []string, error) {
 	// Prompt for Agent Deployment type
 	promptAgentSelect := promptui.Select{
 		Items: []string{string(fluentbit), string(vector), "I have my agent running / I'll set up later"},
@@ -308,9 +307,9 @@ func promptAgentDeployment(chartValues []string, deployment, namespace string) (
 	if agentDeploymentType == string(vector) {
 		chartValues = append(chartValues, "vector.enabled=true")
 	} else if agentDeploymentType == string(fluentbit) {
-		if deployment == string(standalone) {
+		if deployment == standalone {
 			chartValues = append(chartValues, "fluent-bit.serverHost=parseable."+namespace+".svc.cluster.local")
-		} else if deployment == string(deployment) {
+		} else if deployment == distributed {
 			chartValues = append(chartValues, "fluent-bit.serverHost=parseable-ingestor-service."+namespace+".svc.cluster.local")
 		}
 		chartValues = append(chartValues, "fluent-bit.enabled=true")

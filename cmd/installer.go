@@ -115,12 +115,12 @@ var InstallOssCmd = &cobra.Command{
 
 // printSuccessBanner remains the same as in the original code
 func printSuccessBanner(namespace, deployment, version, username, password string) {
-	var ingestionUrl, serviceName string
+	var ingestionURL, serviceName string
 	if deployment == "standalone" {
-		ingestionUrl = "parseable." + namespace + ".svc.cluster.local"
+		ingestionURL = "parseable." + namespace + ".svc.cluster.local"
 		serviceName = "parseable"
 	} else if deployment == "distributed" {
-		ingestionUrl = "parseable-ingestor-svc." + namespace + ".svc.cluster.local"
+		ingestionURL = "parseable-ingestor-svc." + namespace + ".svc.cluster.local"
 		serviceName = "parseable-query-svc"
 	}
 
@@ -143,7 +143,7 @@ func printSuccessBanner(namespace, deployment, version, username, password strin
 	fmt.Printf("%s Deployment Details:\n", common.Blue+"ℹ️ ")
 	fmt.Printf("  • Namespace:        %s\n", common.Blue+namespace)
 	fmt.Printf("  • Chart Version:    %s\n", common.Blue+version)
-	fmt.Printf("  • Ingestion URL:    %s\n", ingestionUrl)
+	fmt.Printf("  • Ingestion URL:    %s\n", ingestionURL)
 
 	fmt.Println("\n" + common.Blue + "🔗  Resources:" + common.Reset)
 	fmt.Println(common.Blue + "  • Documentation:   https://www.parseable.com/docs/server/introduction")
