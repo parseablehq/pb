@@ -26,7 +26,7 @@ import (
 )
 
 // Installer orchestrates the installation process
-func Installer(_ Plan) (namespace, deployment string, chartValues []string) {
+func Installer(_ Plan) (values *ValuesHolder, chartValues []string) {
 
 	clusterName, err := promptK8sContext()
 	if err != nil {
@@ -47,6 +47,7 @@ func Installer(_ Plan) (namespace, deployment string, chartValues []string) {
 		log.Fatalf("Failed to prompt for namespace and credentials: %v", err)
 	}
 
+	fmt.Println(pbSecret.Namespace)
 	// Prompt for agent deployment
 	agent, agentValues, err := promptAgentDeployment(deployValues, deployment, pbSecret.Namespace)
 	if err != nil {
@@ -76,11 +77,11 @@ func Installer(_ Plan) (namespace, deployment string, chartValues []string) {
 		ParseableSecret:   *pbSecret,
 	}
 
-	if err := writeParseableConfig(valuesHolder); err != nil {
+	if err := writeParseableConfig(&valuesHolder); err != nil {
 		log.Fatalf("Failed to write Parseable configuration: %v", err)
 	}
 
-	return pbSecret.Namespace, deployment, append(chartValues, storeConfigValues...)
+	return &valuesHolder, append(chartValues, storeConfigValues...)
 }
 
 // promptStorageClass prompts the user to enter a Kubernetes storage class
@@ -582,7 +583,7 @@ func promptForInput(label string) string {
 	return strings.TrimSpace(input)
 }
 
-func writeParseableConfig(valuesHolder ValuesHolder) error {
+func writeParseableConfig(valuesHolder *ValuesHolder) error {
 	// Create config directory
 	configDir := filepath.Join(os.Getenv("HOME"), ".parseable")
 	if err := os.MkdirAll(configDir, 0755); err != nil {

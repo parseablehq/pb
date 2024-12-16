@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -45,13 +47,13 @@ var InstallOssCmd = &cobra.Command{
 			selectedPlan.QueryPerformance, selectedPlan.CPUAndMemorySpecs)
 
 		// Get namespace and chart values from installer
-		namespace, deployment, chartValues := installer.Installer(selectedPlan)
+		valuesHolder, chartValues := installer.Installer(selectedPlan)
 
 		// Helm application configuration
 		apps := []helm.Helm{
 			{
 				ReleaseName: "parseable",
-				Namespace:   namespace,
+				Namespace:   valuesHolder.ParseableSecret.Namespace,
 				RepoName:    "parseable",
 				RepoURL:     "https://charts.parseable.com",
 				ChartName:   "parseable",
@@ -61,7 +63,7 @@ var InstallOssCmd = &cobra.Command{
 		}
 
 		// Create a spinner
-		spinner := createDeploymentSpinner(namespace)
+		spinner := createDeploymentSpinner(valuesHolder.ParseableSecret.Namespace)
 
 		// Redirect standard output if not in verbose mode
 		var oldStdout *os.File
@@ -105,14 +107,14 @@ var InstallOssCmd = &cobra.Command{
 		}
 
 		// Print success banner
-		printSuccessBanner(namespace, deployment, apps[0].Version)
+		printSuccessBanner(valuesHolder.ParseableSecret.Namespace, string(valuesHolder.DeploymentType), apps[0].Version, valuesHolder.ParseableSecret.Username, valuesHolder.ParseableSecret.Password)
 
 		return nil
 	},
 }
 
 // printSuccessBanner remains the same as in the original code
-func printSuccessBanner(namespace, deployment, version string) {
+func printSuccessBanner(namespace, deployment, version, username, password string) {
 	var ingestionUrl, serviceName string
 	if deployment == "standalone" {
 		ingestionUrl = "parseable." + namespace + ".svc.cluster.local"
@@ -121,6 +123,19 @@ func printSuccessBanner(namespace, deployment, version string) {
 		ingestionUrl = "parseable-ingestor-svc." + namespace + ".svc.cluster.local"
 		serviceName = "parseable-query-svc"
 	}
+
+	// Encode credentials to Base64
+	credentials := map[string]string{
+		"username": username,
+		"password": password,
+	}
+	credentialsJSON, err := json.Marshal(credentials)
+	if err != nil {
+		fmt.Printf("failed to marshal credentials: %v\n", err)
+		return
+	}
+
+	base64EncodedString := base64.StdEncoding.EncodeToString(credentialsJSON)
 
 	fmt.Println("\n" + common.Green + "🎉 Parseable Deployment Successful! 🎉" + common.Reset)
 	fmt.Println(strings.Repeat("=", 50))
@@ -140,13 +155,13 @@ func printSuccessBanner(namespace, deployment, version string) {
 	localPort := "8000"
 	fmt.Printf(common.Green+"Port-forwarding %s service on port %s...\n"+common.Reset, serviceName, localPort)
 
-	err := startPortForward(namespace, serviceName, "80", localPort)
+	err = startPortForward(namespace, serviceName, "80", localPort)
 	if err != nil {
 		fmt.Printf("failed to port-forward service: %w", err)
 	}
 
 	// Redirect to UI
-	localURL := fmt.Sprintf("http://localhost:%s", localPort)
+	localURL := fmt.Sprintf("http://localhost:%s/login?q=%s", localPort, base64EncodedString)
 	fmt.Printf(common.Green+"Opening Parseable UI at %s\n"+common.Reset, localURL)
 	openBrowser(localURL)
 
@@ -214,9 +229,10 @@ func startPortForward(namespace, serviceName, remotePort, localPort string) erro
 		if err == nil {
 			conn.Close() // Connection successful, break out of the loop
 			fmt.Println(common.Green + "Port-forwarding successfully established!")
+			time.Sleep(5 * time.Second) // some delay
 			return nil
 		}
-		time.Sleep(1 * time.Second) // Wait before retrying
+		time.Sleep(3 * time.Second) // Wait before retrying
 	}
 
 	// If we reach here, port-forwarding failed
