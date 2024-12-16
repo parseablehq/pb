@@ -12,6 +12,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	generateStaticSchemaPath = "/logstream/schema/detect"
+)
+
 var GenerateSchemaCmd = &cobra.Command{
 	Use:     "schema",
 	Short:   "Generate Schema for JSON",
@@ -37,7 +41,7 @@ var GenerateSchemaCmd = &cobra.Command{
 		client := internalHTTP.DefaultClient(&DefaultProfile)
 
 		// Create the HTTP request
-		req, err := client.NewRequest("POST", "/logstream/schema/detect", bytes.NewBuffer(fileContent))
+		req, err := client.NewRequest(http.MethodPost, generateStaticSchemaPath, bytes.NewBuffer(fileContent))
 		if err != nil {
 			return fmt.Errorf("failed to create new request: %w", err)
 		}
