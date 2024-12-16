@@ -47,7 +47,6 @@ func Installer(_ Plan) (values *ValuesHolder, chartValues []string) {
 		log.Fatalf("Failed to prompt for namespace and credentials: %v", err)
 	}
 
-	fmt.Println(pbSecret.Namespace)
 	// Prompt for agent deployment
 	agent, agentValues, err := promptAgentDeployment(deployValues, deployment, pbSecret.Namespace)
 	if err != nil {
