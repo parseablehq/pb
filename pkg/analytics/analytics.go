@@ -237,7 +237,6 @@ func sendEvent(commandName string, arguments []string, errors *string, execution
 		return fmt.Errorf("received non-2xx response: %v", resp.Status)
 	}
 
-	// fmt.Println("Event sent successfully:", string(eventJSON))
 	return nil
 }
 
