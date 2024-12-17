@@ -7,21 +7,20 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"pb/pkg/common"
-	"pb/pkg/helm"
-	"pb/pkg/installer"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
+	"pb/pkg/common"
+	"pb/pkg/helm"
+	"pb/pkg/installer"
+
 	"github.com/briandowns/spinner"
 	"github.com/spf13/cobra"
 )
 
-var (
-	verbose bool
-)
+var verbose bool
 
 var InstallOssCmd = &cobra.Command{
 	Use:     "oss",
@@ -40,10 +39,12 @@ var InstallOssCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Println(common.Green + "You selected the following plan:" + common.Reset)
-		fmt.Printf(common.Cyan+"Plan: %s\n"+common.Yellow+"Ingestion Speed: %s\n"+common.Green+"Per Day Ingestion: %s\n"+
-			common.Blue+"Query Performance: %s\n"+common.Red+"CPU & Memory: %s\n"+common.Reset,
-			selectedPlan.Name, selectedPlan.IngestionSpeed, selectedPlan.PerDayIngestion,
+		fmt.Printf(
+			common.Cyan+"  Ingestion Speed: %s\n"+
+				common.Cyan+"  Per Day Ingestion: %s\n"+
+				common.Cyan+"  Query Performance: %s\n"+
+				common.Cyan+"  CPU & Memory: %s\n"+
+				common.Reset, selectedPlan.IngestionSpeed, selectedPlan.PerDayIngestion,
 			selectedPlan.QueryPerformance, selectedPlan.CPUAndMemorySpecs)
 
 		// Get namespace and chart values from installer
@@ -95,7 +96,6 @@ var InstallOssCmd = &cobra.Command{
 		// Stop the spinner and restore stdout
 		spinner.Stop()
 		if !verbose {
-			//w.Close()
 			os.Stdout = oldStdout
 		}
 
@@ -115,12 +115,12 @@ var InstallOssCmd = &cobra.Command{
 
 // printSuccessBanner remains the same as in the original code
 func printSuccessBanner(namespace, deployment, version, username, password string) {
-	var ingestionUrl, serviceName string
+	var ingestionURL, serviceName string
 	if deployment == "standalone" {
-		ingestionUrl = "parseable." + namespace + ".svc.cluster.local"
+		ingestionURL = "parseable." + namespace + ".svc.cluster.local"
 		serviceName = "parseable"
 	} else if deployment == "distributed" {
-		ingestionUrl = "parseable-ingestor-svc." + namespace + ".svc.cluster.local"
+		ingestionURL = "parseable-ingestor-svc." + namespace + ".svc.cluster.local"
 		serviceName = "parseable-query-svc"
 	}
 
@@ -143,7 +143,7 @@ func printSuccessBanner(namespace, deployment, version, username, password strin
 	fmt.Printf("%s Deployment Details:\n", common.Blue+"ℹ️ ")
 	fmt.Printf("  • Namespace:        %s\n", common.Blue+namespace)
 	fmt.Printf("  • Chart Version:    %s\n", common.Blue+version)
-	fmt.Printf("  • Ingestion URL:    %s\n", ingestionUrl)
+	fmt.Printf("  • Ingestion URL:    %s\n", ingestionURL)
 
 	fmt.Println("\n" + common.Blue + "🔗  Resources:" + common.Reset)
 	fmt.Println(common.Blue + "  • Documentation:   https://www.parseable.com/docs/server/introduction")
@@ -155,16 +155,14 @@ func printSuccessBanner(namespace, deployment, version, username, password strin
 	localPort := "8000"
 	fmt.Printf(common.Green+"Port-forwarding %s service on port %s...\n"+common.Reset, serviceName, localPort)
 
-	err = startPortForward(namespace, serviceName, "80", localPort)
-	if err != nil {
-		fmt.Errorf(common.Red+"failed to port-forward service: %w", err)
+	if err = startPortForward(namespace, serviceName, "80", localPort); err != nil {
+		fmt.Printf(common.Red+"failed to port-forward service: %s", err.Error())
 	}
 
 	// Redirect to UI
 	localURL := fmt.Sprintf("http://localhost:%s/login?q=%s", localPort, base64EncodedString)
 	fmt.Printf(common.Green+"Opening Parseable UI at %s\n"+common.Reset, localURL)
 	openBrowser(localURL)
-
 }
 
 func createDeploymentSpinner(namespace string) *spinner.Spinner {

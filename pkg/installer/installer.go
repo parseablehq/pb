@@ -9,8 +9,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"pb/pkg/common"
 	"strings"
+
+	"pb/pkg/common"
 
 	"github.com/manifoldco/promptui"
 	yamlv2 "gopkg.in/yaml.v2"
@@ -27,19 +28,12 @@ import (
 
 // Installer orchestrates the installation process
 func Installer(_ Plan) (values *ValuesHolder, chartValues []string) {
-
-	clusterName, err := promptK8sContext()
-	if err != nil {
+	if _, err := promptK8sContext(); err != nil {
 		log.Fatalf("Failed to prompt for kubernetes context: %v", err)
 	}
 
-	fmt.Printf(common.Yellow+"Kubernetes context set to cluster name %s: "+common.Reset+"\n", clusterName)
-
-	// Prompt for deployment options
-	deployment, deployValues, err := promptDeploymentType(chartValues)
-	if err != nil {
-		log.Fatalf("Failed to prompt for deployment options: %v", err)
-	}
+	// pb supports only distributed deployments
+	chartValues = append(chartValues, "parseable.highAvailability.enabled=true")
 
 	// Prompt for namespace and credentials
 	pbSecret, err := promptNamespaceAndCredentials()
@@ -48,7 +42,7 @@ func Installer(_ Plan) (values *ValuesHolder, chartValues []string) {
 	}
 
 	// Prompt for agent deployment
-	agent, agentValues, err := promptAgentDeployment(deployValues, deployment, pbSecret.Namespace)
+	agent, agentValues, err := promptAgentDeployment(chartValues, distributed, pbSecret.Namespace)
 	if err != nil {
 		log.Fatalf("Failed to prompt for agent deployment: %v", err)
 	}
@@ -65,12 +59,12 @@ func Installer(_ Plan) (values *ValuesHolder, chartValues []string) {
 		log.Fatalf("Failed to prompt for object store configuration: %v", err)
 	}
 
-	if err := applyParseableSecret(*&pbSecret, store, objectStoreConfig); err != nil {
+	if err := applyParseableSecret(pbSecret, store, objectStoreConfig); err != nil {
 		log.Fatalf("Failed to apply secret object store configuration: %v", err)
 	}
 
 	valuesHolder := ValuesHolder{
-		DeploymentType:    deploymentType(deployment),
+		DeploymentType:    distributed,
 		ObjectStoreConfig: objectStoreConfig,
 		LoggingAgent:      loggingAgent(agent),
 		ParseableSecret:   *pbSecret,
@@ -102,26 +96,6 @@ func promptStorageClass() (string, error) {
 
 	return storageClass, nil
 }
-
-// promptIngestorCount prompts the user to enter a ingestor counts
-// func promptIngestorCount() (string, error) {
-// 	// Prompt user for storage class
-// 	fmt.Print(common.Yellow + "Enter the kubernetes ingestor count: " + common.Reset)
-// 	reader := bufio.NewReader(os.Stdin)
-// 	ingestorCount, err := reader.ReadString('\n')
-// 	if err != nil {
-// 		return "", fmt.Errorf("failed to read ingestor count class: %w", err)
-// 	}
-
-// 	ingestorCount = strings.TrimSpace(ingestorCount)
-
-// 	// Validate that the ingestorCount is not empty
-// 	if ingestorCount == "" {
-// 		return "", fmt.Errorf("ingestor count cannot be empty")
-// 	}
-
-// 	return ingestorCount, nil
-// }
 
 // promptNamespaceAndCredentials prompts the user for namespace and credentials
 func promptNamespaceAndCredentials() (*ParseableSecret, error) {
@@ -159,7 +133,6 @@ func promptNamespaceAndCredentials() (*ParseableSecret, error) {
 
 // applyParseableSecret creates and applies the Kubernetes secret
 func applyParseableSecret(ps *ParseableSecret, store ObjectStore, objectStoreConfig ObjectStoreConfig) error {
-
 	var secretManifest string
 	if store == LocalStore {
 		secretManifest = getParseableSecretLocal(ps)
@@ -181,7 +154,6 @@ func applyParseableSecret(ps *ParseableSecret, store ObjectStore, objectStoreCon
 }
 
 func getParseableSecretBlob(ps *ParseableSecret, objectStore ObjectStoreConfig) string {
-
 	// Create the Secret manifest
 	secretManifest := fmt.Sprintf(`
 apiVersion: v1
@@ -217,7 +189,6 @@ data:
 }
 
 func getParseableSecretS3(ps *ParseableSecret, objectStore ObjectStoreConfig) string {
-
 	// Create the Secret manifest
 	secretManifest := fmt.Sprintf(`
 apiVersion: v1
@@ -254,7 +225,6 @@ data:
 }
 
 func getParseableSecretGcs(ps *ParseableSecret, objectStore ObjectStoreConfig) string {
-
 	// Create the Secret manifest
 	secretManifest := fmt.Sprintf(`
 apiVersion: v1
@@ -291,7 +261,6 @@ data:
 }
 
 func getParseableSecretLocal(ps *ParseableSecret) string {
-
 	// Create the Secret manifest
 	secretManifest := fmt.Sprintf(`
 apiVersion: v1
@@ -319,11 +288,16 @@ data:
 }
 
 // promptAgentDeployment prompts the user for agent deployment options
-func promptAgentDeployment(chartValues []string, deployment, namespace string) (string, []string, error) {
+func promptAgentDeployment(chartValues []string, deployment deploymentType, namespace string) (string, []string, error) {
 	// Prompt for Agent Deployment type
 	promptAgentSelect := promptui.Select{
-		Label: fmt.Sprintf(common.Yellow + "Deploy logging agent"),
 		Items: []string{string(fluentbit), string(vector), "I have my agent running / I'll set up later"},
+		Templates: &promptui.SelectTemplates{
+			Label:    "{{ `Logging agent` | yellow }}",
+			Active:   "▸ {{ . | yellow }} ", // Yellow arrow and context name for active selection
+			Inactive: "  {{ . | yellow }}",  // Default color for inactive items
+			Selected: "{{ `Selected option:` | green }} '{{ . | green }}' ✔ ",
+		},
 	}
 	_, agentDeploymentType, err := promptAgentSelect.Run()
 	if err != nil {
@@ -333,9 +307,9 @@ func promptAgentDeployment(chartValues []string, deployment, namespace string) (
 	if agentDeploymentType == string(vector) {
 		chartValues = append(chartValues, "vector.enabled=true")
 	} else if agentDeploymentType == string(fluentbit) {
-		if deployment == string(standalone) {
+		if deployment == standalone {
 			chartValues = append(chartValues, "fluent-bit.serverHost=parseable."+namespace+".svc.cluster.local")
-		} else if deployment == string(deployment) {
+		} else if deployment == distributed {
 			chartValues = append(chartValues, "fluent-bit.serverHost=parseable-ingestor-service."+namespace+".svc.cluster.local")
 		}
 		chartValues = append(chartValues, "fluent-bit.enabled=true")
@@ -344,45 +318,17 @@ func promptAgentDeployment(chartValues []string, deployment, namespace string) (
 	return agentDeploymentType, chartValues, nil
 }
 
-// promptDeploy prompts the user for deployment options
-func promptDeploymentType(chartValues []string) (string, []string, error) {
-	// Prompt for Deployment Type
-	promptDeploy := promptui.Select{
-		Label: fmt.Sprintf(common.Yellow + "Select deployment type"),
-		Items: []string{string(standalone), string(distributed)},
-	}
-	_, deploymentType, err := promptDeploy.Run()
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to prompt for deployment type: %w", err)
-	}
-
-	var newChartValues []string
-	switch deploymentType {
-	case string(standalone):
-		newChartValues = []string{}
-	case string(distributed):
-		// ingestorCount, err := promptIngestorCount()
-		// if err != nil {
-		// 	return "", nil, fmt.Errorf("failed get ingestor count, err %s", err)
-		// }
-		newChartValues = []string{
-			"parseable.highAvailability.enabled=true",
-			// "parseable.highAvailability.ingestor=" + ingestorCount,
-		}
-	default:
-		return "", nil, fmt.Errorf("invalid deployment type selected: %s", deploymentType)
-	}
-
-	chartValues = append(chartValues, newChartValues...)
-	return deploymentType, chartValues, nil
-}
-
 // promptStore prompts the user for object store options
 func promptStore(chartValues []string) (ObjectStore, []string, error) {
 	// Prompt for store type
 	promptStore := promptui.Select{
-		Label: "Select Object Store",
-		Items: []string{string(S3Store), string(LocalStore), string(BlobStore), string(GcsStore)},
+		Templates: &promptui.SelectTemplates{
+			Label:    "{{ `Object store` | yellow }}",
+			Active:   "▸ {{ . | yellow }} ", // Yellow arrow and context name for active selection
+			Inactive: "  {{ . | yellow }}",  // Default color for inactive items
+			Selected: "{{ `Selected object store:` | green }} '{{ . | green }}' ✔ ",
+		},
+		Items: []string{string(S3Store), string(BlobStore), string(GcsStore)}, // local store not supported
 	}
 	_, promptStoreType, err := promptStore.Run()
 	if err != nil {
@@ -402,17 +348,17 @@ func promptStoreConfigs(store ObjectStore, chartValues []string) (ObjectStoreCon
 	// Initialize a struct to hold store values
 	var storeValues ObjectStoreConfig
 
-	// Store selected store type in chart values
+	fmt.Println(common.Green + "Configuring:" + common.Reset + " " + store)
 
+	// Store selected store type in chart values
 	switch store {
 	case S3Store:
-		fmt.Println(common.Green + "Configuring s3 store..." + common.Reset)
 		storeValues.S3Store = S3{
-			URL:       promptForInput(common.Yellow + "Enter S3 URL: " + common.Reset),
-			AccessKey: promptForInput(common.Yellow + "Enter S3 Access Key: " + common.Reset),
-			SecretKey: promptForInput(common.Yellow + "Enter S3 Secret Key: " + common.Reset),
-			Bucket:    promptForInput(common.Yellow + "Enter S3 Bucket: " + common.Reset),
-			Region:    promptForInput(common.Yellow + "Enter S3 Region: " + common.Reset),
+			URL:       promptForInput(common.Yellow + "  Enter S3 URL: " + common.Reset),
+			AccessKey: promptForInput(common.Yellow + "  Enter S3 Access Key: " + common.Reset),
+			SecretKey: promptForInput(common.Yellow + "  Enter S3 Secret Key: " + common.Reset),
+			Bucket:    promptForInput(common.Yellow + "  Enter S3 Bucket: " + common.Reset),
+			Region:    promptForInput(common.Yellow + "  Enter S3 Region: " + common.Reset),
 		}
 		sc, err := promptStorageClass()
 		if err != nil {
@@ -425,29 +371,14 @@ func promptStoreConfigs(store ObjectStore, chartValues []string) (ObjectStoreCon
 		chartValues = append(chartValues, "parseable.persistence.staging.enabled=true")
 		chartValues = append(chartValues, "parseable.persistence.staging.storageClass="+sc)
 		return storeValues, chartValues, nil
-	case LocalStore:
-		fmt.Println(common.Green + "Configuring local store..." + common.Reset)
-		sc, err := promptStorageClass()
-		if err != nil {
-			log.Fatalf("Failed to prompt for storage class: %v", err)
-		}
-		storeValues.StorageClass = sc
-		storeValues.ObjectStore = LocalStore
-		chartValues = append(chartValues, "parseable.store="+string(LocalStore))
-		chartValues = append(chartValues, "parseable.localModeSecret.enabled=true")
-		chartValues = append(chartValues, "parseable.persistence.staging.enabled=true")
-		chartValues = append(chartValues, "parseable.persistence.staging.storageClass="+sc)
-
-		return storeValues, chartValues, nil
 	case BlobStore:
-		fmt.Println(common.Green + "Configuring blob store..." + common.Reset)
 		sc, err := promptStorageClass()
 		if err != nil {
 			log.Fatalf("Failed to prompt for storage class: %v", err)
 		}
 		storeValues.BlobStore = Blob{
-			URL:       promptForInput(common.Yellow + "Enter Blob URL: " + common.Reset),
-			Container: promptForInput(common.Yellow + "Enter Blob Container: " + common.Reset),
+			URL:       promptForInput(common.Yellow + "  Enter Blob URL: " + common.Reset),
+			Container: promptForInput(common.Yellow + "  Enter Blob Container: " + common.Reset),
 		}
 		storeValues.StorageClass = sc
 		storeValues.ObjectStore = BlobStore
@@ -457,17 +388,16 @@ func promptStoreConfigs(store ObjectStore, chartValues []string) (ObjectStoreCon
 		chartValues = append(chartValues, "parseable.persistence.staging.storageClass="+sc)
 		return storeValues, chartValues, nil
 	case GcsStore:
-		fmt.Println(common.Green + "Configuring gcs store..." + common.Reset)
 		sc, err := promptStorageClass()
 		if err != nil {
 			log.Fatalf("Failed to prompt for storage class: %v", err)
 		}
 		storeValues.GCSStore = GCS{
-			URL:       promptForInput(common.Yellow + "Enter GCS URL: " + common.Reset),
-			AccessKey: promptForInput(common.Yellow + "Enter GCS Access Key: " + common.Reset),
-			SecretKey: promptForInput(common.Yellow + "Enter GCS Secret Key: " + common.Reset),
-			Bucket:    promptForInput(common.Yellow + "Enter GCS Bucket: " + common.Reset),
-			Region:    promptForInput(common.Yellow + "Enter GCS Region: " + common.Reset),
+			URL:       promptForInput(common.Yellow + "  Enter GCS URL: " + common.Reset),
+			AccessKey: promptForInput(common.Yellow + "  Enter GCS Access Key: " + common.Reset),
+			SecretKey: promptForInput(common.Yellow + "  Enter GCS Secret Key: " + common.Reset),
+			Bucket:    promptForInput(common.Yellow + "  Enter GCS Bucket: " + common.Reset),
+			Region:    promptForInput(common.Yellow + "  Enter GCS Region: " + common.Reset),
 		}
 		storeValues.StorageClass = sc
 		storeValues.ObjectStore = GcsStore
@@ -585,7 +515,7 @@ func promptForInput(label string) string {
 func writeParseableConfig(valuesHolder *ValuesHolder) error {
 	// Create config directory
 	configDir := filepath.Join(os.Getenv("HOME"), ".parseable")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -599,7 +529,7 @@ func writeParseableConfig(valuesHolder *ValuesHolder) error {
 	}
 
 	// Write config file
-	if err := os.WriteFile(configPath, configBytes, 0644); err != nil {
+	if err := os.WriteFile(configPath, configBytes, 0o644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -629,12 +559,12 @@ func promptK8sContext() (clusterName string, err error) {
 
 	// Prompt user to select Kubernetes context
 	promptK8s := promptui.Select{
-		Label: "\033[32mSelect your Kubernetes context:\033[0m",
 		Items: contexts,
 		Templates: &promptui.SelectTemplates{
-			Active:   "\033[33m▸ {{ . }}\033[0m", // Yellow arrow and context name for active selection
-			Inactive: "{{ . }}",                  // Default color for inactive items
-			Selected: "\033[32mKubernetes context '{{ . }}' selected successfully.\033[0m",
+			Label:    "{{ `Select your Kubernetes context` | yellow }}",
+			Active:   "▸ {{ . | yellow }} ", // Yellow arrow and context name for active selection
+			Inactive: "  {{ . | yellow }}",  // Default color for inactive items
+			Selected: "{{ `Selected Kubernetes context:` | green }} '{{ . | green }}' ✔",
 		},
 	}
 
