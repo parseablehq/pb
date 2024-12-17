@@ -57,7 +57,7 @@ func Uninstaller(verbose bool) error {
 		return fmt.Errorf("failed to get user confirmation: %v", err)
 	}
 	if !confirm {
-		return fmt.Errorf("Uninstall cancelled.")
+		return fmt.Errorf("Uninstall canceled.")
 	}
 
 	// Helm application configuration
