@@ -1,3 +1,18 @@
+// Copyright (c) 2024 Parseable, Inc
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 package helm
 
 import (
@@ -40,7 +55,7 @@ func ListReleases(namespace string) ([]*release.Release, error) {
 	}
 
 	client := action.NewList(actionConfig)
-	//client.Deployed = true
+	// client.Deployed = true
 
 	return client.Run()
 }
@@ -48,7 +63,6 @@ func ListReleases(namespace string) ([]*release.Release, error) {
 // Apply applies a Helm chart using the provided Helm struct configuration.
 // It returns an error if any operation fails, otherwise, it returns nil.
 func Apply(h Helm, verbose bool) error {
-
 	// Create a logger that does nothing by default
 	silentLogger := func(_ string, _ ...interface{}) {}
 
@@ -82,7 +96,7 @@ func Apply(h Helm, verbose bool) error {
 	// Add repository
 	repoAdd(h)
 
-	//RepoUpdate()
+	// RepoUpdate()
 
 	// Locate chart path
 	cp, err := client.ChartPathOptions.LocateChart(fmt.Sprintf("%s/%s", h.RepoName, h.ChartName), settings)
@@ -104,7 +118,7 @@ func Apply(h Helm, verbose bool) error {
 	client.Wait = true
 	client.Timeout = 300 * time.Second
 	client.WaitForJobs = true
-	//client.IncludeCRDs = true
+	// client.IncludeCRDs = true
 
 	// Merge values
 	values := values.Options{
@@ -132,7 +146,7 @@ func repoAdd(h Helm) error {
 	// Get the repository file path
 	repoFile := settings.RepositoryConfig
 
-	//Ensure the file directory exists as it is required for file locking
+	// Ensure the file directory exists as it is required for file locking
 	err := os.MkdirAll(filepath.Dir(repoFile), os.ModePerm)
 	if err != nil && !os.IsExist(err) {
 		return err
@@ -200,7 +214,7 @@ func repoAdd(h Helm) error {
 	f.Update(&c)
 
 	// Write the updated repository file
-	if err := f.WriteFile(repoFile, 0644); err != nil {
+	if err := f.WriteFile(repoFile, 0o644); err != nil {
 		return err
 	}
 	return nil
@@ -294,7 +308,6 @@ func DeleteRelease(chartName, namespace string) error {
 }
 
 func Upgrade(h Helm) error {
-
 	settings := cli.New()
 
 	// Initialize action configuration
@@ -311,7 +324,7 @@ func Upgrade(h Helm) error {
 	// Add repository
 	repoAdd(h)
 
-	//RepoUpdate()
+	// RepoUpdate()
 
 	// Locate chart path
 	cp, err := client.ChartPathOptions.LocateChart(fmt.Sprintf("%s/%s", h.RepoName, h.ChartName), settings)
@@ -332,7 +345,7 @@ func Upgrade(h Helm) error {
 	client.Wait = true
 	client.Timeout = 300 * time.Second
 	client.WaitForJobs = true
-	//client.IncludeCRDs = true
+	// client.IncludeCRDs = true
 
 	// Merge values
 	values := values.Options{
@@ -352,7 +365,6 @@ func Upgrade(h Helm) error {
 }
 
 func Uninstall(h Helm, verbose bool) (*release.UninstallReleaseResponse, error) {
-
 	// Create a logger that does nothing by default
 	silentLogger := func(_ string, _ ...interface{}) {}
 

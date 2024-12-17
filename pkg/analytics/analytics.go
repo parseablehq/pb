@@ -1,3 +1,18 @@
+// Copyright (c) 2024 Parseable, Inc
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 package analytics
 
 import (
@@ -92,7 +107,7 @@ func CheckAndCreateULID(_ *cobra.Command, _ []string) error {
 	// Check if config path exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		// Create the directory if needed
-		if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 			fmt.Printf("could not create config directory: %v\n", err)
 			return err
 		}
@@ -123,7 +138,7 @@ func CheckAndCreateULID(_ *cobra.Command, _ []string) error {
 		}
 
 		// Write updated config with ULID back to the file
-		if err := os.WriteFile(configPath, newData, 0644); err != nil {
+		if err := os.WriteFile(configPath, newData, 0o644); err != nil {
 			fmt.Printf("could not write to config file: %v\n", err)
 			return err
 		}
@@ -152,7 +167,6 @@ func PostRunAnalytics(cmd *cobra.Command, name string, args []string) {
 	if err != nil {
 		fmt.Println("Error sending analytics event:", err)
 	}
-
 }
 
 // sendEvent is a placeholder function to simulate sending an event after command execution.
@@ -223,7 +237,6 @@ func sendEvent(commandName string, arguments []string, errors *string, execution
 		return fmt.Errorf("received non-2xx response: %v", resp.Status)
 	}
 
-	//fmt.Println("Event sent successfully:", string(eventJSON))
 	return nil
 }
 
@@ -383,5 +396,4 @@ func GetProfile() (config.Profile, error) {
 	}
 
 	return conf.Profiles[conf.DefaultProfile], nil
-
 }
