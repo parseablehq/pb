@@ -350,3 +350,48 @@ func Upgrade(h Helm) error {
 	}
 	return nil
 }
+
+func Uninstall(h Helm, verbose bool) (*release.UninstallReleaseResponse, error) {
+
+	// Create a logger that does nothing by default
+	silentLogger := func(_ string, _ ...interface{}) {}
+
+	// Create settings
+	settings := cli.New()
+
+	// Create action configuration
+	actionConfig := new(action.Configuration)
+
+	// Choose logging method based on verbose flag
+	logMethod := silentLogger
+	if verbose {
+		logMethod = log.Printf
+	}
+
+	// Initialize action configuration with chosen logger
+	if err := actionConfig.Init(
+		settings.RESTClientGetter(),
+		h.Namespace,
+		os.Getenv("HELM_DRIVER"),
+		logMethod,
+	); err != nil {
+		return &release.UninstallReleaseResponse{}, fmt.Errorf("failed to initialize Helm configuration: %w", err)
+	}
+
+	client := action.NewUninstall(actionConfig)
+	// Setting Namespace
+	settings.SetNamespace(h.Namespace)
+	settings.EnvVars()
+
+	settings.EnvVars()
+
+	client.Wait = true
+	client.Timeout = 5 * time.Minute
+
+	resp, err := client.Run(h.ReleaseName)
+	if err != nil {
+		return &release.UninstallReleaseResponse{}, err
+	}
+
+	return resp, nil
+}
