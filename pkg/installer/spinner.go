@@ -37,7 +37,7 @@ func createDeploymentSpinner(namespace, infoMsg string) *spinner.Spinner {
 		spinner.WithSuffix(" ..."),
 	)
 
-	s.Prefix = fmt.Sprintf(common.Yellow+infoMsg+" %s ", namespace)
+	s.Prefix = fmt.Sprintf(common.Yellow + infoMsg)
 
 	return s
 }

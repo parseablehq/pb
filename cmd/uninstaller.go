@@ -16,11 +16,6 @@
 package cmd
 
 import (
-	"fmt"
-
-	"pb/pkg/common"
-	"pb/pkg/installer"
-
 	"github.com/spf13/cobra"
 )
 
@@ -33,11 +28,11 @@ var UnInstallOssCmd = &cobra.Command{
 		cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
 
 		// Print the banner
-		printBanner()
+		//printBanner()
 
-		if err := installer.Uninstaller(verbose); err != nil {
-			fmt.Println(common.Red + err.Error())
-		}
+		// if err := installer.Uninstaller(verbose); err != nil {
+		// 	fmt.Println(common.Red + err.Error())
+		// }
 
 		return nil
 	},

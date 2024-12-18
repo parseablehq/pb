@@ -20,29 +20,48 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
+	"time"
 
 	"pb/pkg/common"
+	"pb/pkg/helm"
 
 	"github.com/manifoldco/promptui"
-	yamlv2 "gopkg.in/yaml.v2"
+	yamlv3 "gopkg.in/yaml.v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-// Installer orchestrates the installation process
-func Installer(_ Plan) (values *ValuesHolder, chartValues []string) {
+func Installer(verbose bool) {
+	printBanner()
+	waterFall(verbose)
+}
+
+// waterFall orchestrates the installation process
+func waterFall(verbose bool) {
+	var chartValues []string
+	_, err := promptUserPlanSelection()
+	if err != nil {
+		log.Fatalf("Failed to prompt for plan selection: %v", err)
+	}
+
 	if _, err := promptK8sContext(); err != nil {
 		log.Fatalf("Failed to prompt for kubernetes context: %v", err)
 	}
@@ -51,13 +70,13 @@ func Installer(_ Plan) (values *ValuesHolder, chartValues []string) {
 	chartValues = append(chartValues, "parseable.highAvailability.enabled=true")
 
 	// Prompt for namespace and credentials
-	pbSecret, err := promptNamespaceAndCredentials()
+	pbInfo, err := promptNamespaceAndCredentials()
 	if err != nil {
 		log.Fatalf("Failed to prompt for namespace and credentials: %v", err)
 	}
 
 	// Prompt for agent deployment
-	agent, agentValues, err := promptAgentDeployment(chartValues, distributed, pbSecret.Namespace)
+	_, agentValues, err := promptAgentDeployment(chartValues, distributed, pbInfo.Name, pbInfo.Namespace)
 	if err != nil {
 		log.Fatalf("Failed to prompt for agent deployment: %v", err)
 	}
@@ -69,54 +88,102 @@ func Installer(_ Plan) (values *ValuesHolder, chartValues []string) {
 	}
 
 	// Prompt for object store configuration and get the final chart values
-	objectStoreConfig, storeConfigValues, err := promptStoreConfigs(store, storeValues)
+	objectStoreConfig, storeConfigs, err := promptStoreConfigs(store, storeValues)
 	if err != nil {
 		log.Fatalf("Failed to prompt for object store configuration: %v", err)
 	}
 
-	if err := applyParseableSecret(pbSecret, store, objectStoreConfig); err != nil {
+	if err := applyParseableSecret(pbInfo, store, objectStoreConfig); err != nil {
 		log.Fatalf("Failed to apply secret object store configuration: %v", err)
 	}
 
-	valuesHolder := ValuesHolder{
-		DeploymentType:    distributed,
-		ObjectStoreConfig: objectStoreConfig,
-		LoggingAgent:      loggingAgent(agent),
-		ParseableSecret:   *pbSecret,
+	// Define the deployment configuration
+	config := HelmDeploymentConfig{
+		ReleaseName: pbInfo.Name,
+		Namespace:   pbInfo.Namespace,
+		RepoName:    "parseable",
+		RepoURL:     "https://charts.parseable.com",
+		ChartName:   "parseable",
+		Version:     "1.6.5",
+		Values:      storeConfigs,
+		Verbose:     verbose,
 	}
 
-	if err := writeParseableConfig(&valuesHolder); err != nil {
-		log.Fatalf("Failed to write Parseable configuration: %v", err)
+	if err := deployRelease(config); err != nil {
+		log.Fatalf("Failed to deploy parseable, err: %v", err)
 	}
 
-	return &valuesHolder, append(chartValues, storeConfigValues...)
+	if err := updateInstallerFile(installerEntry{
+		Name:      pbInfo.Name,
+		Namespace: pbInfo.Namespace,
+		Version:   config.Version,
+		Status:    "success",
+	}); err != nil {
+		log.Fatalf("Failed to update parseable installer file, err: %v", err)
+	}
+	printSuccessBanner(pbInfo.Name, pbInfo.Namespace, string(distributed), config.Version, pbInfo.Username, pbInfo.Password)
+
 }
 
-// promptStorageClass prompts the user to enter a Kubernetes storage class
+// promptStorageClass fetches and prompts the user to select a Kubernetes storage class
 func promptStorageClass() (string, error) {
-	// Prompt user for storage class
-	fmt.Print(common.Yellow + "Enter the kubernetes storage class: " + common.Reset)
-	reader := bufio.NewReader(os.Stdin)
-	storageClass, err := reader.ReadString('\n')
+	// Load the kubeconfig from the default location
+	kubeconfig := clientcmd.NewDefaultClientConfigLoadingRules().GetDefaultFilename()
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
-		return "", fmt.Errorf("failed to read storage class: %w", err)
+		return "", fmt.Errorf("failed to load kubeconfig: %w", err)
 	}
 
-	storageClass = strings.TrimSpace(storageClass)
-
-	// Validate that the storage class is not empty
-	if storageClass == "" {
-		return "", fmt.Errorf("storage class cannot be empty")
+	// Create a Kubernetes client
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return "", fmt.Errorf("failed to create Kubernetes client: %w", err)
 	}
 
-	return storageClass, nil
+	// Fetch the storage classes
+	storageClasses, err := clientset.StorageV1().StorageClasses().List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch storage classes: %w", err)
+	}
+
+	// Extract the names of storage classes
+	var storageClassNames []string
+	for _, sc := range storageClasses.Items {
+		storageClassNames = append(storageClassNames, sc.Name)
+	}
+
+	// Check if there are no storage classes available
+	if len(storageClassNames) == 0 {
+		return "", fmt.Errorf("no storage classes found in the cluster")
+	}
+
+	// Use promptui to allow the user to select a storage class
+	prompt := promptui.Select{
+		Label: "Select a Kubernetes storage class",
+		Items: storageClassNames,
+	}
+
+	_, selectedStorageClass, err := prompt.Run()
+	if err != nil {
+		return "", fmt.Errorf("failed to select storage class: %w", err)
+	}
+
+	return selectedStorageClass, nil
 }
 
 // promptNamespaceAndCredentials prompts the user for namespace and credentials
-func promptNamespaceAndCredentials() (*ParseableSecret, error) {
+func promptNamespaceAndCredentials() (*ParseableInfo, error) {
+	// Prompt user for release name
+	fmt.Print(common.Yellow + "Enter the Name for deployment: " + common.Reset)
+	reader := bufio.NewReader(os.Stdin)
+	name, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, fmt.Errorf("failed to read namespace: %w", err)
+	}
+	name = strings.TrimSpace(name)
+
 	// Prompt user for namespace
 	fmt.Print(common.Yellow + "Enter the Kubernetes namespace for deployment: " + common.Reset)
-	reader := bufio.NewReader(os.Stdin)
 	namespace, err := reader.ReadString('\n')
 	if err != nil {
 		return nil, fmt.Errorf("failed to read namespace: %w", err)
@@ -139,7 +206,8 @@ func promptNamespaceAndCredentials() (*ParseableSecret, error) {
 	}
 	password = strings.TrimSpace(password)
 
-	return &ParseableSecret{
+	return &ParseableInfo{
+		Name:      name,
 		Namespace: namespace,
 		Username:  username,
 		Password:  password,
@@ -147,7 +215,7 @@ func promptNamespaceAndCredentials() (*ParseableSecret, error) {
 }
 
 // applyParseableSecret creates and applies the Kubernetes secret
-func applyParseableSecret(ps *ParseableSecret, store ObjectStore, objectStoreConfig ObjectStoreConfig) error {
+func applyParseableSecret(ps *ParseableInfo, store ObjectStore, objectStoreConfig ObjectStoreConfig) error {
 	var secretManifest string
 	if store == LocalStore {
 		secretManifest = getParseableSecretLocal(ps)
@@ -168,7 +236,7 @@ func applyParseableSecret(ps *ParseableSecret, store ObjectStore, objectStoreCon
 	return nil
 }
 
-func getParseableSecretBlob(ps *ParseableSecret, objectStore ObjectStoreConfig) string {
+func getParseableSecretBlob(ps *ParseableInfo, objectStore ObjectStoreConfig) string {
 	// Create the Secret manifest
 	secretManifest := fmt.Sprintf(`
 apiVersion: v1
@@ -203,7 +271,7 @@ data:
 	return secretManifest
 }
 
-func getParseableSecretS3(ps *ParseableSecret, objectStore ObjectStoreConfig) string {
+func getParseableSecretS3(ps *ParseableInfo, objectStore ObjectStoreConfig) string {
 	// Create the Secret manifest
 	secretManifest := fmt.Sprintf(`
 apiVersion: v1
@@ -239,7 +307,7 @@ data:
 	return secretManifest
 }
 
-func getParseableSecretGcs(ps *ParseableSecret, objectStore ObjectStoreConfig) string {
+func getParseableSecretGcs(ps *ParseableInfo, objectStore ObjectStoreConfig) string {
 	// Create the Secret manifest
 	secretManifest := fmt.Sprintf(`
 apiVersion: v1
@@ -275,7 +343,7 @@ data:
 	return secretManifest
 }
 
-func getParseableSecretLocal(ps *ParseableSecret) string {
+func getParseableSecretLocal(ps *ParseableInfo) string {
 	// Create the Secret manifest
 	secretManifest := fmt.Sprintf(`
 apiVersion: v1
@@ -303,7 +371,7 @@ data:
 }
 
 // promptAgentDeployment prompts the user for agent deployment options
-func promptAgentDeployment(chartValues []string, deployment deploymentType, namespace string) (string, []string, error) {
+func promptAgentDeployment(chartValues []string, deployment deploymentType, name, namespace string) (string, []string, error) {
 	// Prompt for Agent Deployment type
 	promptAgentSelect := promptui.Select{
 		Items: []string{string(fluentbit), string(vector), "I have my agent running / I'll set up later"},
@@ -322,11 +390,7 @@ func promptAgentDeployment(chartValues []string, deployment deploymentType, name
 	if agentDeploymentType == string(vector) {
 		chartValues = append(chartValues, "vector.enabled=true")
 	} else if agentDeploymentType == string(fluentbit) {
-		if deployment == standalone {
-			chartValues = append(chartValues, "fluent-bit.serverHost=parseable."+namespace+".svc.cluster.local")
-		} else if deployment == distributed {
-			chartValues = append(chartValues, "fluent-bit.serverHost=parseable-ingestor-service."+namespace+".svc.cluster.local")
-		}
+		chartValues = append(chartValues, "fluent-bit.serverHost="+name+"-ingestor-service."+namespace+".svc.cluster.local")
 		chartValues = append(chartValues, "fluent-bit.enabled=true")
 	}
 
@@ -527,30 +591,6 @@ func promptForInput(label string) string {
 	return strings.TrimSpace(input)
 }
 
-func writeParseableConfig(valuesHolder *ValuesHolder) error {
-	// Create config directory
-	configDir := filepath.Join(os.Getenv("HOME"), ".parseable")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
-	}
-
-	// Define config file path
-	configPath := filepath.Join(configDir, valuesHolder.ParseableSecret.Namespace+".yaml")
-
-	// Marshal values to YAML
-	configBytes, err := yamlv2.Marshal(valuesHolder)
-	if err != nil {
-		return fmt.Errorf("failed to marshal config to YAML: %w", err)
-	}
-
-	// Write config file
-	if err := os.WriteFile(configPath, configBytes, 0o644); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-
-	return nil
-}
-
 // promptK8sContext retrieves Kubernetes contexts from kubeconfig.
 func promptK8sContext() (clusterName string, err error) {
 	kubeconfigPath := os.Getenv("KUBECONFIG")
@@ -596,4 +636,246 @@ func promptK8sContext() (clusterName string, err error) {
 	}
 
 	return clusterName, nil
+}
+
+// printBanner displays a welcome banner
+func printBanner() {
+	banner := `
+ --------------------------------------
+  Welcome to Parseable OSS Installation
+ --------------------------------------
+`
+	fmt.Println(common.Green + banner + common.Reset)
+}
+
+type HelmDeploymentConfig struct {
+	ReleaseName string
+	Namespace   string
+	RepoName    string
+	RepoURL     string
+	ChartName   string
+	Version     string
+	Values      []string
+	Verbose     bool
+}
+
+// deployRelease handles the deployment of a Helm release using a configuration struct
+func deployRelease(config HelmDeploymentConfig) error {
+	// Helm application configuration
+	app := helm.Helm{
+		ReleaseName: config.ReleaseName,
+		Namespace:   config.Namespace,
+		RepoName:    config.RepoName,
+		RepoURL:     config.RepoURL,
+		ChartName:   config.ChartName,
+		Version:     config.Version,
+		Values:      config.Values,
+	}
+
+	// Create a spinner
+	msg := fmt.Sprintf(" Deploying parseable to release name [%s] namespace [%s]", config.ReleaseName, config.Namespace)
+	spinner := createDeploymentSpinner(config.Namespace, msg)
+
+	// Redirect standard output if not in verbose mode
+	var oldStdout *os.File
+	if !config.Verbose {
+		oldStdout = os.Stdout
+		_, w, _ := os.Pipe()
+		os.Stdout = w
+	}
+
+	spinner.Start()
+
+	// Deploy using Helm
+	errCh := make(chan error, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		if err := helm.Apply(app, config.Verbose); err != nil {
+			errCh <- err
+		}
+	}()
+
+	wg.Wait()
+	close(errCh)
+
+	// Stop the spinner and restore stdout
+	spinner.Stop()
+	if !config.Verbose {
+		os.Stdout = oldStdout
+	}
+
+	// Check for errors
+	if err, ok := <-errCh; ok {
+		return err
+	}
+
+	return nil
+}
+
+// printSuccessBanner remains the same as in the original code
+func printSuccessBanner(name, namespace, deployment, version, username, password string) {
+	var ingestionURL, serviceName string
+	if deployment == "standalone" {
+		ingestionURL = name + "." + namespace + ".svc.cluster.local"
+		serviceName = name
+	} else if deployment == "distributed" {
+		ingestionURL = name + "-ingestor-service." + namespace + ".svc.cluster.local"
+		serviceName = name + "-querier-service"
+	}
+
+	// Encode credentials to Base64
+	credentials := map[string]string{
+		"username": username,
+		"password": password,
+	}
+	credentialsJSON, err := json.Marshal(credentials)
+	if err != nil {
+		fmt.Printf("failed to marshal credentials: %v\n", err)
+		return
+	}
+
+	base64EncodedString := base64.StdEncoding.EncodeToString(credentialsJSON)
+
+	fmt.Println("\n" + common.Green + "🎉 Parseable Deployment Successful! 🎉" + common.Reset)
+	fmt.Println(strings.Repeat("=", 50))
+
+	fmt.Printf("%s Deployment Details:\n", common.Blue+"ℹ️ ")
+	fmt.Printf("  • Namespace:        %s\n", common.Blue+namespace)
+	fmt.Printf("  • Chart Version:    %s\n", common.Blue+version)
+	fmt.Printf("  • Ingestion URL:    %s\n", ingestionURL)
+
+	fmt.Println("\n" + common.Blue + "🔗  Resources:" + common.Reset)
+	fmt.Println(common.Blue + "  • Documentation:   https://www.parseable.com/docs/server/introduction")
+	fmt.Println(common.Blue + "  • Stream Management: https://www.parseable.com/docs/server/api")
+
+	fmt.Println("\n" + common.Blue + "Happy Logging!" + common.Reset)
+
+	// Port-forward the service
+	localPort := "8001"
+	fmt.Printf(common.Green+"Port-forwarding %s service on port %s in namespace %s...\n"+common.Reset, serviceName, localPort, namespace)
+
+	if err = startPortForward(namespace, serviceName, "80", localPort, false); err != nil {
+		fmt.Printf(common.Red+"failed to port-forward service: %s", err.Error())
+	}
+
+	// Redirect to UI
+	localURL := fmt.Sprintf("http://localhost:%s/login?q=%s", localPort, base64EncodedString)
+	fmt.Printf(common.Green+"Opening Parseable UI at %s\n"+common.Reset, localURL)
+	openBrowser(localURL)
+}
+
+func startPortForward(namespace, serviceName, remotePort, localPort string, verbose bool) error {
+	// Build the port-forward command
+	cmd := exec.Command("kubectl", "port-forward",
+		fmt.Sprintf("svc/%s", serviceName),
+		fmt.Sprintf("%s:%s", localPort, remotePort),
+		"-n", namespace,
+	)
+
+	// Redirect the command's output to the standard output for debugging
+	if !verbose {
+		cmd.Stdout = nil // Suppress standard output
+		cmd.Stderr = nil // Suppress standard error
+	} else {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
+
+	// Run the command in the background
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start port-forward: %w", err)
+	}
+
+	// Run in a goroutine to keep it alive
+	go func() {
+		_ = cmd.Wait()
+	}()
+
+	// Check connection on the forwarded port
+	retries := 10
+	for i := 0; i < retries; i++ {
+		conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%s", localPort))
+		if err == nil {
+			conn.Close() // Connection successful, break out of the loop
+			fmt.Println(common.Green + "Port-forwarding successfully established!")
+			time.Sleep(5 * time.Second) // some delay
+			return nil
+		}
+		time.Sleep(3 * time.Second) // Wait before retrying
+	}
+
+	// If we reach here, port-forwarding failed
+	cmd.Process.Kill() // Stop the kubectl process
+	return fmt.Errorf(common.Red+"failed to establish port-forward connection to localhost:%s", localPort)
+}
+
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch os := runtime.GOOS; os {
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	default:
+		fmt.Printf("Please open the following URL manually: %s\n", url)
+		return
+	}
+	cmd.Start()
+}
+
+// installerEntry represents an entry in the installer.yaml file
+type installerEntry struct {
+	Name      string `yaml:"name"`
+	Namespace string `yaml:"namespace"`
+	Version   string `yaml:"version"`
+	Status    string `yaml:"status"` // todo ideally should be a heartbeat
+}
+
+// updateInstallerFile updates or creates the installer.yaml file with deployment info
+func updateInstallerFile(entry installerEntry) error {
+	// Define the file path
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user home directory: %w", err)
+	}
+	filePath := filepath.Join(homeDir, ".parseable", "installer.yaml")
+
+	// Create the directory if it doesn't exist
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		return fmt.Errorf("failed to create directory for installer file: %w", err)
+	}
+
+	// Read existing entries if the file exists
+	var entries []installerEntry
+	if _, err := os.Stat(filePath); err == nil {
+		// File exists, load existing content
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return fmt.Errorf("failed to read existing installer file: %w", err)
+		}
+
+		if err := yaml.Unmarshal(data, &entries); err != nil {
+			return fmt.Errorf("failed to parse existing installer file: %w", err)
+		}
+	}
+
+	// Append the new entry
+	entries = append(entries, entry)
+
+	// Write the updated entries back to the file
+	data, err := yamlv3.Marshal(entries)
+	if err != nil {
+		return fmt.Errorf("failed to marshal installer data: %w", err)
+	}
+
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write installer file: %w", err)
+	}
+
+	return nil
 }
