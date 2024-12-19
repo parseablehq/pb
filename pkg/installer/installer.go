@@ -113,7 +113,7 @@ func waterFall(verbose bool) {
 		log.Fatalf("Failed to deploy parseable, err: %v", err)
 	}
 
-	if err := updateInstallerFile(installerEntry{
+	if err := updateInstallerFile(InstallerEntry{
 		Name:      pbInfo.Name,
 		Namespace: pbInfo.Namespace,
 		Version:   config.Version,
@@ -828,8 +828,8 @@ func openBrowser(url string) {
 	cmd.Start()
 }
 
-// installerEntry represents an entry in the installer.yaml file
-type installerEntry struct {
+// InstallerEntry represents an entry in the installer.yaml file
+type InstallerEntry struct {
 	Name      string `yaml:"name"`
 	Namespace string `yaml:"namespace"`
 	Version   string `yaml:"version"`
@@ -837,7 +837,7 @@ type installerEntry struct {
 }
 
 // updateInstallerFile updates or creates the installer.yaml file with deployment info
-func updateInstallerFile(entry installerEntry) error {
+func updateInstallerFile(entry InstallerEntry) error {
 	// Define the file path
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -851,7 +851,7 @@ func updateInstallerFile(entry installerEntry) error {
 	}
 
 	// Read existing entries if the file exists
-	var entries []installerEntry
+	var entries []InstallerEntry
 	if _, err := os.Stat(filePath); err == nil {
 		// File exists, load existing content
 		data, err := os.ReadFile(filePath)
