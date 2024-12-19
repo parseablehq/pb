@@ -37,9 +37,10 @@ const (
 	_ loggingAgent = "I have my agent running / I'll set up later"
 )
 
-// ParseableSecret represents the secret used to authenticate with Parseable.
-type ParseableSecret struct {
-	Namespace string // Namespace where the secret is located.
+// ParseableInfo represents the info used to authenticate, metadata with Parseable.
+type ParseableInfo struct {
+	Name      string // Name for parseable
+	Namespace string // Namespace for parseable
 	Username  string // Username for authentication.
 	Password  string // Password for authentication.
 }
@@ -91,12 +92,4 @@ type Blob struct {
 	AccountName string // Account name for Azure Blob Storage.
 	Container   string // Container name in the Azure Blob store.
 	URL         string // URL of the Azure Blob store.
-}
-
-// ValuesHolder holds the configuration values required for deployment.
-type ValuesHolder struct {
-	DeploymentType    deploymentType    // Deployment type (standalone or distributed).
-	ObjectStoreConfig ObjectStoreConfig // Configuration for the object storage backend.
-	LoggingAgent      loggingAgent      // Logging agent to be used.
-	ParseableSecret   ParseableSecret   // Secret used to authenticate with Parseable.
 }

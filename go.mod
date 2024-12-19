@@ -14,6 +14,7 @@ require (
 	github.com/gofrs/flock v0.12.1
 	github.com/manifoldco/promptui v0.9.0
 	github.com/oklog/ulid/v2 v2.1.0
+	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/pflag v1.0.5
 	golang.org/x/exp v0.0.0-20240604190554-fc45aab8b7f8

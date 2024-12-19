@@ -64,7 +64,7 @@ var Plans = map[string]Plan{
 	},
 }
 
-func PromptUserPlanSelection() (Plan, error) {
+func promptUserPlanSelection() (Plan, error) {
 	planList := []Plan{
 		Plans["Small"],
 		Plans["Medium"],
@@ -96,6 +96,14 @@ func PromptUserPlanSelection() (Plan, error) {
 	if err != nil {
 		return Plan{}, fmt.Errorf("failed to select deployment type: %w", err)
 	}
+
+	fmt.Printf(
+		common.Cyan+"  Ingestion Speed: %s\n"+
+			common.Cyan+"  Per Day Ingestion: %s\n"+
+			common.Cyan+"  Query Performance: %s\n"+
+			common.Cyan+"  CPU & Memory: %s\n"+
+			common.Reset, planList[index].IngestionSpeed, planList[index].PerDayIngestion,
+		planList[index].QueryPerformance, planList[index].CPUAndMemorySpecs)
 
 	return planList[index], nil
 }
