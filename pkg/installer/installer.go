@@ -57,7 +57,7 @@ func Installer(verbose bool) {
 // waterFall orchestrates the installation process
 func waterFall(verbose bool) {
 	var chartValues []string
-	_, err := promptUserPlanSelection()
+	plan, err := promptUserPlanSelection()
 	if err != nil {
 		log.Fatalf("Failed to prompt for plan selection: %v", err)
 	}
@@ -76,7 +76,7 @@ func waterFall(verbose bool) {
 	}
 
 	// Prompt for agent deployment
-	_, agentValues, err := promptAgentDeployment(chartValues, distributed, pbInfo.Name, pbInfo.Namespace)
+	_, agentValues, err := promptAgentDeployment(chartValues, distributed, *pbInfo)
 	if err != nil {
 		log.Fatalf("Failed to prompt for agent deployment: %v", err)
 	}
@@ -88,7 +88,7 @@ func waterFall(verbose bool) {
 	}
 
 	// Prompt for object store configuration and get the final chart values
-	objectStoreConfig, storeConfigs, err := promptStoreConfigs(store, storeValues)
+	objectStoreConfig, storeConfigs, err := promptStoreConfigs(store, storeValues, plan)
 	if err != nil {
 		log.Fatalf("Failed to prompt for object store configuration: %v", err)
 	}
@@ -104,7 +104,7 @@ func waterFall(verbose bool) {
 		RepoName:    "parseable",
 		RepoURL:     "https://charts.parseable.com",
 		ChartName:   "parseable",
-		Version:     "1.6.5",
+		Version:     "1.6.6",
 		Values:      storeConfigs,
 		Verbose:     verbose,
 	}
@@ -121,7 +121,7 @@ func waterFall(verbose bool) {
 	}); err != nil {
 		log.Fatalf("Failed to update parseable installer file, err: %v", err)
 	}
-	printSuccessBanner(pbInfo.Name, pbInfo.Namespace, string(distributed), config.Version, pbInfo.Username, pbInfo.Password)
+	printSuccessBanner(*pbInfo, config.Version)
 
 }
 
@@ -371,7 +371,7 @@ data:
 }
 
 // promptAgentDeployment prompts the user for agent deployment options
-func promptAgentDeployment(chartValues []string, deployment deploymentType, name, namespace string) (string, []string, error) {
+func promptAgentDeployment(chartValues []string, deployment deploymentType, pbInfo ParseableInfo) (string, []string, error) {
 	// Prompt for Agent Deployment type
 	promptAgentSelect := promptui.Select{
 		Items: []string{string(fluentbit), string(vector), "I have my agent running / I'll set up later"},
@@ -387,11 +387,32 @@ func promptAgentDeployment(chartValues []string, deployment deploymentType, name
 		return "", nil, fmt.Errorf("failed to prompt for agent deployment type: %w", err)
 	}
 
-	if agentDeploymentType == string(vector) {
-		chartValues = append(chartValues, "vector.enabled=true")
-	} else if agentDeploymentType == string(fluentbit) {
-		chartValues = append(chartValues, "fluent-bit.serverHost="+name+"-ingestor-service."+namespace+".svc.cluster.local")
+	ingestorUrl, _ := getParseableSvcUrls(pbInfo.Name, pbInfo.Namespace)
+
+	if agentDeploymentType == string(fluentbit) {
+		chartValues = append(chartValues, "fluent-bit.serverHost="+ingestorUrl)
+		chartValues = append(chartValues, "fluent-bit.serverUsername="+pbInfo.Username)
+		chartValues = append(chartValues, "fluent-bit.serverPassword="+pbInfo.Password)
+		chartValues = append(chartValues, "fluent-bit.serverStream="+"$NAMESPACE")
+
+		// Prompt for namespaces to exclude
+		promptExcludeNamespaces := promptui.Prompt{
+			Label: "Enter namespaces to exclude from collection (comma-separated, e.g., kube-system,default): ",
+			Templates: &promptui.PromptTemplates{
+				Prompt:  "{{ `Namespaces to exclude` | yellow }}: ",
+				Valid:   "{{ `` | green }}: {{ . | yellow }}",
+				Invalid: "{{ `Invalid input` | red }}",
+			},
+		}
+		excludeNamespaces, err := promptExcludeNamespaces.Run()
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to prompt for exclude namespaces: %w", err)
+		}
+
+		chartValues = append(chartValues, "fluent-bit.excludeNamespaces="+strings.ReplaceAll(excludeNamespaces, ",", "\\,"))
 		chartValues = append(chartValues, "fluent-bit.enabled=true")
+	} else if agentDeploymentType == string(vector) {
+		chartValues = append(chartValues, "vector.enabled=true")
 	}
 
 	return agentDeploymentType, chartValues, nil
@@ -423,7 +444,14 @@ func promptStore(chartValues []string) (ObjectStore, []string, error) {
 }
 
 // promptStoreConfigs prompts for object store configurations and appends chart values
-func promptStoreConfigs(store ObjectStore, chartValues []string) (ObjectStoreConfig, []string, error) {
+func promptStoreConfigs(store ObjectStore, chartValues []string, plan Plan) (ObjectStoreConfig, []string, error) {
+
+	cpuIngestors := "parseable.highAvailability.ingestor.resources.limits.cpu=" + plan.CPU
+	memoryIngestors := "parseable.highAvailability.ingestor.resources.limits.memory=" + plan.Memory
+
+	cpuQuery := "parseable.resources.limits.cpu=" + plan.CPU
+	memoryQuery := "parseable.resources.limits.memory=" + plan.Memory
+
 	// Initialize a struct to hold store values
 	var storeValues ObjectStoreConfig
 
@@ -448,7 +476,13 @@ func promptStoreConfigs(store ObjectStore, chartValues []string) (ObjectStoreCon
 		chartValues = append(chartValues, "parseable.store="+string(S3Store))
 		chartValues = append(chartValues, "parseable.s3ModeSecret.enabled=true")
 		chartValues = append(chartValues, "parseable.persistence.staging.enabled=true")
+		chartValues = append(chartValues, "parseable.persistence.staging.size=5Gi")
 		chartValues = append(chartValues, "parseable.persistence.staging.storageClass="+sc)
+		chartValues = append(chartValues, cpuIngestors)
+		chartValues = append(chartValues, memoryIngestors)
+		chartValues = append(chartValues, cpuQuery)
+		chartValues = append(chartValues, memoryQuery)
+
 		return storeValues, chartValues, nil
 	case BlobStore:
 		sc, err := promptStorageClass()
@@ -464,7 +498,12 @@ func promptStoreConfigs(store ObjectStore, chartValues []string) (ObjectStoreCon
 		chartValues = append(chartValues, "parseable.store="+string(BlobStore))
 		chartValues = append(chartValues, "parseable.blobModeSecret.enabled=true")
 		chartValues = append(chartValues, "parseable.persistence.staging.enabled=true")
+		chartValues = append(chartValues, "parseable.persistence.staging.size=5Gi")
 		chartValues = append(chartValues, "parseable.persistence.staging.storageClass="+sc)
+		chartValues = append(chartValues, cpuIngestors)
+		chartValues = append(chartValues, memoryIngestors)
+		chartValues = append(chartValues, cpuQuery)
+		chartValues = append(chartValues, memoryQuery)
 		return storeValues, chartValues, nil
 	case GcsStore:
 		sc, err := promptStorageClass()
@@ -483,7 +522,12 @@ func promptStoreConfigs(store ObjectStore, chartValues []string) (ObjectStoreCon
 		chartValues = append(chartValues, "parseable.store="+string(GcsStore))
 		chartValues = append(chartValues, "parseable.gcsModeSecret.enabled=true")
 		chartValues = append(chartValues, "parseable.persistence.staging.enabled=true")
+		chartValues = append(chartValues, "parseable.persistence.staging.size=5Gi")
 		chartValues = append(chartValues, "parseable.persistence.staging.storageClass="+sc)
+		chartValues = append(chartValues, cpuIngestors)
+		chartValues = append(chartValues, memoryIngestors)
+		chartValues = append(chartValues, cpuQuery)
+		chartValues = append(chartValues, memoryQuery)
 		return storeValues, chartValues, nil
 	}
 
@@ -673,7 +717,7 @@ func deployRelease(config HelmDeploymentConfig) error {
 	}
 
 	// Create a spinner
-	msg := fmt.Sprintf(" Deploying parseable to release name [%s] namespace [%s]", config.ReleaseName, config.Namespace)
+	msg := fmt.Sprintf(" Deploying parseable release name [%s] namespace [%s] ", config.ReleaseName, config.Namespace)
 	spinner := createDeploymentSpinner(config.Namespace, msg)
 
 	// Redirect standard output if not in verbose mode
@@ -716,20 +760,14 @@ func deployRelease(config HelmDeploymentConfig) error {
 }
 
 // printSuccessBanner remains the same as in the original code
-func printSuccessBanner(name, namespace, deployment, version, username, password string) {
-	var ingestionURL, serviceName string
-	if deployment == "standalone" {
-		ingestionURL = name + "." + namespace + ".svc.cluster.local"
-		serviceName = name
-	} else if deployment == "distributed" {
-		ingestionURL = name + "-ingestor-service." + namespace + ".svc.cluster.local"
-		serviceName = name + "-querier-service"
-	}
+func printSuccessBanner(pbInfo ParseableInfo, version string) {
+
+	ingestionUrl, queryUrl := getParseableSvcUrls(pbInfo.Name, pbInfo.Namespace)
 
 	// Encode credentials to Base64
 	credentials := map[string]string{
-		"username": username,
-		"password": password,
+		"username": pbInfo.Username,
+		"password": pbInfo.Password,
 	}
 	credentialsJSON, err := json.Marshal(credentials)
 	if err != nil {
@@ -743,9 +781,9 @@ func printSuccessBanner(name, namespace, deployment, version, username, password
 	fmt.Println(strings.Repeat("=", 50))
 
 	fmt.Printf("%s Deployment Details:\n", common.Blue+"ℹ️ ")
-	fmt.Printf("  • Namespace:        %s\n", common.Blue+namespace)
+	fmt.Printf("  • Namespace:        %s\n", common.Blue+pbInfo.Namespace)
 	fmt.Printf("  • Chart Version:    %s\n", common.Blue+version)
-	fmt.Printf("  • Ingestion URL:    %s\n", ingestionURL)
+	fmt.Printf("  • Ingestion URL:    %s\n", ingestionUrl)
 
 	fmt.Println("\n" + common.Blue + "🔗  Resources:" + common.Reset)
 	fmt.Println(common.Blue + "  • Documentation:   https://www.parseable.com/docs/server/introduction")
@@ -755,9 +793,9 @@ func printSuccessBanner(name, namespace, deployment, version, username, password
 
 	// Port-forward the service
 	localPort := "8001"
-	fmt.Printf(common.Green+"Port-forwarding %s service on port %s in namespace %s...\n"+common.Reset, serviceName, localPort, namespace)
+	fmt.Printf(common.Green+"Port-forwarding %s service on port %s in namespace %s...\n"+common.Reset, queryUrl, localPort, pbInfo.Namespace)
 
-	if err = startPortForward(namespace, serviceName, "80", localPort, false); err != nil {
+	if err = startPortForward(pbInfo.Namespace, queryUrl, "80", localPort, false); err != nil {
 		fmt.Printf(common.Red+"failed to port-forward service: %s", err.Error())
 	}
 
@@ -878,4 +916,15 @@ func updateInstallerFile(entry InstallerEntry) error {
 	}
 
 	return nil
+}
+
+func getParseableSvcUrls(releaseName, namespace string) (ingestorUrl, queryUrl string) {
+	if releaseName == "parseable" {
+		ingestorUrl = releaseName + "-ingestor-service." + namespace + ".svc.cluster.local"
+		queryUrl = releaseName + "-querier-service"
+		return ingestorUrl, queryUrl
+	}
+	ingestorUrl = releaseName + "-parseable-ingestor-service." + namespace + ".svc.cluster.local"
+	queryUrl = releaseName + "-parseable-querier-service"
+	return ingestorUrl, queryUrl
 }

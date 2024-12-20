@@ -29,8 +29,8 @@ type Plan struct {
 	PerDayIngestion   string
 	QueryPerformance  string
 	CPUAndMemorySpecs string
-	CPU               int
-	Memory            int
+	CPU               string
+	Memory            string
 }
 
 // Plans define the plans with clear CPU and memory specs for consumption
@@ -41,8 +41,8 @@ var Plans = map[string]Plan{
 		PerDayIngestion:   "~10GB",
 		QueryPerformance:  "Basic performance",
 		CPUAndMemorySpecs: "2 CPUs, 4GB RAM",
-		CPU:               2,
-		Memory:            4,
+		CPU:               "2",
+		Memory:            "4Gi",
 	},
 	"Medium": {
 		Name:              "Medium",
@@ -50,8 +50,8 @@ var Plans = map[string]Plan{
 		PerDayIngestion:   "~100GB",
 		QueryPerformance:  "Moderate performance",
 		CPUAndMemorySpecs: "4 CPUs, 16GB RAM",
-		CPU:               4,
-		Memory:            16,
+		CPU:               "4",
+		Memory:            "16Gi",
 	},
 	"Large": {
 		Name:              "Large",
@@ -59,8 +59,8 @@ var Plans = map[string]Plan{
 		PerDayIngestion:   "~1TB",
 		QueryPerformance:  "High performance",
 		CPUAndMemorySpecs: "8 CPUs, 32GB RAM",
-		CPU:               8,
-		Memory:            32,
+		CPU:               "8",
+		Memory:            "32Gi",
 	},
 }
 
