@@ -62,7 +62,8 @@ func waterFall(verbose bool) {
 		log.Fatalf("Failed to prompt for plan selection: %v", err)
 	}
 
-	if _, err := promptK8sContext(); err != nil {
+	context, err := promptK8sContext()
+	if err != nil {
 		log.Fatalf("Failed to prompt for kubernetes context: %v", err)
 	}
 
@@ -117,6 +118,7 @@ func waterFall(verbose bool) {
 		Name:      pbInfo.Name,
 		Namespace: pbInfo.Namespace,
 		Version:   config.Version,
+		Context:   context,
 		Status:    "success",
 	}); err != nil {
 		log.Fatalf("Failed to update parseable installer file, err: %v", err)
@@ -866,14 +868,6 @@ func openBrowser(url string) {
 	cmd.Start()
 }
 
-// InstallerEntry represents an entry in the installer.yaml file
-type InstallerEntry struct {
-	Name      string `yaml:"name"`
-	Namespace string `yaml:"namespace"`
-	Version   string `yaml:"version"`
-	Status    string `yaml:"status"` // todo ideally should be a heartbeat
-}
-
 // updateInstallerFile updates or creates the installer.yaml file with deployment info
 func updateInstallerFile(entry InstallerEntry) error {
 	// Define the file path
@@ -881,7 +875,7 @@ func updateInstallerFile(entry InstallerEntry) error {
 	if err != nil {
 		return fmt.Errorf("failed to get user home directory: %w", err)
 	}
-	filePath := filepath.Join(homeDir, ".parseable", "installer.yaml")
+	filePath := filepath.Join(homeDir, ".parseable", "pb", "installer.yaml")
 
 	// Create the directory if it doesn't exist
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {

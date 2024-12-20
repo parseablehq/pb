@@ -20,6 +20,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"pb/pkg/common"
 	"pb/pkg/installer"
 
 	"github.com/olekukonko/tablewriter"
@@ -47,10 +48,10 @@ var ListOssCmd = &cobra.Command{
 
 		// Display the entries in a table format
 		table := tablewriter.NewWriter(os.Stdout)
-		table.SetHeader([]string{"Name", "Namespace", "Version", "Status"})
+		table.SetHeader([]string{"Name", "Namespace", "Version", "Kubernetes Context", "Status"})
 
 		for _, entry := range entries {
-			table.Append([]string{entry.Name, entry.Namespace, entry.Version, entry.Status})
+			table.Append([]string{entry.Name, entry.Namespace, entry.Version, entry.Context, entry.Status})
 		}
 
 		table.Render()
@@ -64,11 +65,15 @@ func readInstallerFile() ([]installer.InstallerEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user home directory: %w", err)
 	}
-	filePath := filepath.Join(homeDir, ".parseable", "installer.yaml")
+	filePath := filepath.Join(homeDir, ".parseable", "pb", "installer.yaml")
 
 	// Check if the file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("installer file not found at %s", filePath)
+		fmt.Println(common.Yellow + "\n────────────────────────────────────────────────────────────────────────────")
+		fmt.Println(common.Yellow + "⚠️  No Parseable clusters found!")
+		fmt.Println(common.Yellow + "To get started, run: `pb install oss`")
+		fmt.Println(common.Yellow + "────────────────────────────────────────────────────────────────────────────\n")
+		return nil, nil
 	}
 
 	// Read and parse the file

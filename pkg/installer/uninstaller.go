@@ -15,121 +15,179 @@
 
 package installer
 
-// func Uninstaller(verbose bool) error {
-// 	// Load configuration from the parseable.yaml file
-// 	configPath := filepath.Join(os.Getenv("HOME"), ".parseable", "parseable.yaml")
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"pb/pkg/common"
+	"pb/pkg/helm"
+	"strings"
+	"time"
 
-// 	// Prompt for Kubernetes context
-// 	_, err = promptK8sContext()
-// 	if err != nil {
-// 		return fmt.Errorf("failed to prompt for Kubernetes context: %v", err)
-// 	}
+	"github.com/manifoldco/promptui"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/client-go/kubernetes"
+)
 
-// 	// Prompt user to confirm namespace
-// 	namespace := config.ParseableSecret.Namespace
-// 	confirm, err := promptUserConfirmation(fmt.Sprintf(common.Yellow+"Do you wish to uninstall Parseable from namespace '%s'?", namespace))
-// 	if err != nil {
-// 		return fmt.Errorf("failed to get user confirmation: %v", err)
-// 	}
-// 	if !confirm {
-// 		return fmt.Errorf("Uninstall canceled.")
-// 	}
+// Uninstaller uninstalls Parseable from the selected cluster
+func Uninstaller(verbose bool) error {
+	// Define the installer file path
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user home directory: %w", err)
+	}
+	installerFilePath := filepath.Join(homeDir, ".parseable", "pb", "installer.yaml")
 
-// 	// Helm application configuration
-// 	helmApp := helm.Helm{
-// 		ReleaseName: "parseable",
-// 		Namespace:   namespace,
-// 		RepoName:    "parseable",
-// 		RepoURL:     "https://charts.parseable.com",
-// 		ChartName:   "parseable",
-// 		Version:     "1.6.5",
-// 	}
+	// Read the installer file
+	data, err := os.ReadFile(installerFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read installer file: %w", err)
+	}
 
-// 	// Create a spinner
-// 	spinner := createDeploymentSpinner(namespace, "Uninstalling parseable in ")
+	// Unmarshal the installer file content
+	var entries []InstallerEntry
+	if err := yaml.Unmarshal(data, &entries); err != nil {
+		return fmt.Errorf("failed to parse installer file: %w", err)
+	}
 
-// 	// Redirect standard output if not in verbose mode
-// 	var oldStdout *os.File
-// 	if !verbose {
-// 		oldStdout = os.Stdout
-// 		_, w, _ := os.Pipe()
-// 		os.Stdout = w
-// 	}
+	// Prompt the user to select a cluster
+	clusterNames := make([]string, len(entries))
+	for i, entry := range entries {
+		clusterNames[i] = fmt.Sprintf("[Name: %s] [Namespace: %s] [Context: %s]", entry.Name, entry.Namespace, entry.Context)
+	}
 
-// 	spinner.Start()
+	promptClusterSelect := promptui.Select{
+		Label: "Select a cluster to delete",
+		Items: clusterNames,
+		Templates: &promptui.SelectTemplates{
+			Label:    "{{ `Select Cluster` | yellow }}",
+			Active:   "▸ {{ . | yellow }}", // Yellow arrow for active selection
+			Inactive: "  {{ . | yellow }}",
+			Selected: "{{ `Selected:` | green }} {{ . | green }}",
+		},
+	}
 
-// 	// Run Helm uninstall
-// 	_, err = helm.Uninstall(helmApp, verbose)
-// 	spinner.Stop()
+	index, _, err := promptClusterSelect.Run()
+	if err != nil {
+		return fmt.Errorf("failed to prompt for cluster selection: %v", err)
+	}
 
-// 	// Restore stdout
-// 	if !verbose {
-// 		os.Stdout = oldStdout
-// 	}
+	selectedCluster := entries[index]
 
-// 	if err != nil {
-// 		return fmt.Errorf("failed to uninstall Parseable: %v", err)
-// 	}
+	// Display a warning banner
+	fmt.Println("\n────────────────────────────────────────────────────────────────────────────")
+	fmt.Println("⚠️  Deleting this cluster will not delete any data on object storage.")
+	fmt.Println("   This operation will clean up the Parseable deployment on Kubernetes.")
+	fmt.Println("────────────────────────────────────────────────────────────────────────────")
 
-// 	// Namespace cleanup using Kubernetes client
-// 	fmt.Printf(common.Yellow+"Cleaning up namespace '%s'...\n"+common.Reset, namespace)
-// 	cleanupErr := cleanupNamespaceWithClient(namespace)
-// 	if cleanupErr != nil {
-// 		return fmt.Errorf("failed to clean up namespace '%s': %v", namespace, cleanupErr)
-// 	}
+	// Confirm deletion
+	confirm, err := promptUserConfirmation(fmt.Sprintf(common.Yellow+"Do you still want to proceed with deleting the cluster '%s'?", selectedCluster.Name))
+	if err != nil {
+		return fmt.Errorf("failed to get user confirmation: %v", err)
+	}
+	if !confirm {
+		fmt.Println(common.Yellow + "Uninstall canceled." + common.Reset)
+		return nil
+	}
 
-// 	// Print success banner
-// 	fmt.Printf(common.Green+"Successfully uninstalled Parseable from namespace '%s'.\n"+common.Reset, namespace)
+	// Helm application configuration
+	helmApp := helm.Helm{
+		ReleaseName: selectedCluster.Name,
+		Namespace:   selectedCluster.Namespace,
+		RepoName:    "parseable",
+		RepoURL:     "https://charts.parseable.com",
+		ChartName:   "parseable",
+		Version:     selectedCluster.Version,
+	}
 
-// 	return nil
-// }
+	// Create a spinner
+	spinner := createDeploymentSpinner(selectedCluster.Namespace, "Uninstalling Parseable in ")
 
-// // promptUserConfirmation prompts the user for a yes/no confirmation
-// func promptUserConfirmation(message string) (bool, error) {
-// 	reader := bufio.NewReader(os.Stdin)
-// 	fmt.Printf("%s [y/N]: ", message)
-// 	response, err := reader.ReadString('\n')
-// 	if err != nil {
-// 		return false, err
-// 	}
-// 	response = strings.TrimSpace(strings.ToLower(response))
-// 	return response == "y" || response == "yes", nil
-// }
+	// Redirect standard output if not in verbose mode
+	var oldStdout *os.File
+	if !verbose {
+		oldStdout = os.Stdout
+		_, w, _ := os.Pipe()
+		os.Stdout = w
+	}
 
-// // cleanupNamespaceWithClient deletes the specified namespace using Kubernetes client-go
-// func cleanupNamespaceWithClient(namespace string) error {
-// 	// Load the kubeconfig
-// 	config, err := loadKubeConfig()
-// 	if err != nil {
-// 		return fmt.Errorf("failed to load kubeconfig: %w", err)
-// 	}
+	spinner.Start()
 
-// 	// Create the clientset
-// 	clientset, err := kubernetes.NewForConfig(config)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to create Kubernetes client: %v", err)
-// 	}
+	// Run Helm uninstall
+	_, err = helm.Uninstall(helmApp, verbose)
+	spinner.Stop()
 
-// 	// Create a context with a timeout for namespace deletion
-// 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-// 	defer cancel()
+	// Restore stdout
+	if !verbose {
+		os.Stdout = oldStdout
+	}
 
-// 	// Delete the namespace
-// 	err = clientset.CoreV1().Namespaces().Delete(ctx, namespace, v1.DeleteOptions{})
-// 	if err != nil {
-// 		return fmt.Errorf("error deleting namespace: %v", err)
-// 	}
+	if err != nil {
+		return fmt.Errorf("failed to uninstall Parseable: %v", err)
+	}
 
-// 	// Wait for the namespace to be fully removed
-// 	fmt.Printf("Waiting for namespace '%s' to be deleted...\n", namespace)
-// 	for {
-// 		_, err := clientset.CoreV1().Namespaces().Get(ctx, namespace, v1.GetOptions{})
-// 		if err != nil {
-// 			fmt.Printf("Namespace '%s' successfully deleted.\n", namespace)
-// 			break
-// 		}
-// 		time.Sleep(2 * time.Second)
-// 	}
+	// Call to clean up the secret instead of the namespace
+	fmt.Printf(common.Yellow+"Cleaning up 'parseable-env-secret' in namespace '%s'...\n"+common.Reset, selectedCluster.Namespace)
+	cleanupErr := cleanupParseableSecret(selectedCluster.Namespace)
+	if cleanupErr != nil {
+		return fmt.Errorf("failed to clean up secret in namespace '%s': %v", selectedCluster.Namespace, cleanupErr)
+	}
 
-// 	return nil
-// }
+	// Print success banner
+	fmt.Printf(common.Green+"Successfully uninstalled Parseable from namespace '%s'.\n"+common.Reset, selectedCluster.Namespace)
+
+	return nil
+}
+
+// promptUserConfirmation prompts the user for a yes/no confirmation
+func promptUserConfirmation(message string) (bool, error) {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("%s [y/N]: ", message)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return false, err
+	}
+	response = strings.TrimSpace(strings.ToLower(response))
+	return response == "y" || response == "yes", nil
+}
+
+// cleanupParseableSecret deletes the "parseable-env-secret" in the specified namespace using Kubernetes client-go
+func cleanupParseableSecret(namespace string) error {
+	// Load the kubeconfig
+	config, err := loadKubeConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load kubeconfig: %w", err)
+	}
+
+	// Create the clientset
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return fmt.Errorf("failed to create Kubernetes client: %v", err)
+	}
+
+	// Create a context with a timeout for secret deletion
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Define the secret name
+	secretName := "parseable-env-secret"
+
+	// Delete the secret
+	err = clientset.CoreV1().Secrets(namespace).Delete(ctx, secretName, v1.DeleteOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			fmt.Printf("Secret '%s' not found in namespace '%s'. Nothing to delete.\n", secretName, namespace)
+			return nil
+		}
+		return fmt.Errorf("error deleting secret '%s' in namespace '%s': %v", secretName, namespace, err)
+	}
+
+	// Confirm the deletion
+	fmt.Printf("Secret '%s' successfully deleted from namespace '%s'.\n", secretName, namespace)
+
+	return nil
+}

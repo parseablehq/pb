@@ -93,3 +93,12 @@ type Blob struct {
 	Container   string // Container name in the Azure Blob store.
 	URL         string // URL of the Azure Blob store.
 }
+
+// InstallerEntry represents an entry in the installer.yaml file
+type InstallerEntry struct {
+	Name      string `yaml:"name"`
+	Namespace string `yaml:"namespace"`
+	Version   string `yaml:"version"`
+	Context   string `yaml:"context"`
+	Status    string `yaml:"status"` // todo ideally should be a heartbeat
+}
