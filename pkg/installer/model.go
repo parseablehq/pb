@@ -99,6 +99,5 @@ type InstallerEntry struct {
 	Name      string `yaml:"name"`
 	Namespace string `yaml:"namespace"`
 	Version   string `yaml:"version"`
-	Context   string `yaml:"context"`
 	Status    string `yaml:"status"` // todo ideally should be a heartbeat
 }

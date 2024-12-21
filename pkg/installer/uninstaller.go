@@ -57,7 +57,7 @@ func Uninstaller(verbose bool) error {
 	// Prompt the user to select a cluster
 	clusterNames := make([]string, len(entries))
 	for i, entry := range entries {
-		clusterNames[i] = fmt.Sprintf("[Name: %s] [Namespace: %s] [Context: %s]", entry.Name, entry.Namespace, entry.Context)
+		clusterNames[i] = fmt.Sprintf("[Name: %s] [Namespace: %s] [Context: %s]", entry.Name, entry.Namespace)
 	}
 
 	promptClusterSelect := promptui.Select{

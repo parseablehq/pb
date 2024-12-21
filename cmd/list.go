@@ -1,31 +1,21 @@
 package cmd
 
-// Copyright (c) 2024 Parseable, Inc
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
+
 	"pb/pkg/common"
 	"pb/pkg/installer"
 
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // ListOssCmd lists the Parseable OSS servers
@@ -34,8 +24,13 @@ var ListOssCmd = &cobra.Command{
 	Short:   "List available Parseable OSS servers",
 	Example: "pb list oss",
 	Run: func(cmd *cobra.Command, _ []string) {
-		// Read the installer file
-		entries, err := readInstallerFile()
+		_, err := installer.PromptK8sContext()
+		if err != nil {
+			log.Fatalf("Failed to prompt for kubernetes context: %v", err)
+		}
+
+		// Read the installer data from the ConfigMap
+		entries, err := readInstallerConfigMap()
 		if err != nil {
 			log.Fatalf("Failed to list OSS servers: %v", err)
 		}
@@ -48,27 +43,44 @@ var ListOssCmd = &cobra.Command{
 
 		// Display the entries in a table format
 		table := tablewriter.NewWriter(os.Stdout)
-		table.SetHeader([]string{"Name", "Namespace", "Version", "Kubernetes Context", "Status"})
+		table.SetHeader([]string{"Name", "Namespace", "Version", "Status"})
 
 		for _, entry := range entries {
-			table.Append([]string{entry.Name, entry.Namespace, entry.Version, entry.Context, entry.Status})
+			table.Append([]string{entry.Name, entry.Namespace, entry.Version, entry.Status})
 		}
 
 		table.Render()
 	},
 }
 
-// readInstallerFile reads and parses the installer.yaml file
-func readInstallerFile() ([]installer.InstallerEntry, error) {
-	// Define the file path
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user home directory: %w", err)
-	}
-	filePath := filepath.Join(homeDir, ".parseable", "pb", "installer.yaml")
+// readInstallerConfigMap fetches and parses installer data from a ConfigMap
+func readInstallerConfigMap() ([]installer.InstallerEntry, error) {
+	const (
+		configMapName = "parseable-installer"
+		namespace     = "pb-system"
+		dataKey       = "installer-data"
+	)
 
-	// Check if the file exists
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+	// Load kubeconfig and create a Kubernetes client
+	config, err := loadKubeConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load kubeconfig: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	// Get the ConfigMap
+	cm, err := clientset.CoreV1().ConfigMaps(namespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch ConfigMap: %w", err)
+	}
+
+	// Retrieve and parse the installer data
+	rawData, ok := cm.Data[dataKey]
+	if !ok {
 		fmt.Println(common.Yellow + "\n────────────────────────────────────────────────────────────────────────────")
 		fmt.Println(common.Yellow + "⚠️  No Parseable clusters found!")
 		fmt.Println(common.Yellow + "To get started, run: `pb install oss`")
@@ -76,16 +88,16 @@ func readInstallerFile() ([]installer.InstallerEntry, error) {
 		return nil, nil
 	}
 
-	// Read and parse the file
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read installer file: %w", err)
-	}
-
 	var entries []installer.InstallerEntry
-	if err := yaml.Unmarshal(data, &entries); err != nil {
-		return nil, fmt.Errorf("failed to parse installer file: %w", err)
+	if err := yaml.Unmarshal([]byte(rawData), &entries); err != nil {
+		return nil, fmt.Errorf("failed to parse ConfigMap data: %w", err)
 	}
 
 	return entries, nil
+}
+
+// loadKubeConfig loads the kubeconfig from the default location
+func loadKubeConfig() (*rest.Config, error) {
+	kubeconfig := clientcmd.NewDefaultClientConfigLoadingRules().GetDefaultFilename()
+	return clientcmd.BuildConfigFromFlags("", kubeconfig)
 }

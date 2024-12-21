@@ -26,7 +26,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -36,7 +35,9 @@ import (
 	"pb/pkg/helm"
 
 	"github.com/manifoldco/promptui"
-	yamlv3 "gopkg.in/yaml.v3"
+	yamling "gopkg.in/yaml.v3"
+	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -62,7 +63,7 @@ func waterFall(verbose bool) {
 		log.Fatalf("Failed to prompt for plan selection: %v", err)
 	}
 
-	context, err := promptK8sContext()
+	_, err = PromptK8sContext()
 	if err != nil {
 		log.Fatalf("Failed to prompt for kubernetes context: %v", err)
 	}
@@ -110,18 +111,16 @@ func waterFall(verbose bool) {
 		Verbose:     verbose,
 	}
 
-	if err := deployRelease(config); err != nil {
-		log.Fatalf("Failed to deploy parseable, err: %v", err)
-	}
-
-	if err := updateInstallerFile(InstallerEntry{
+	if err := updateInstallerConfigMap(InstallerEntry{
 		Name:      pbInfo.Name,
 		Namespace: pbInfo.Namespace,
 		Version:   config.Version,
-		Context:   context,
 		Status:    "success",
 	}); err != nil {
 		log.Fatalf("Failed to update parseable installer file, err: %v", err)
+	}
+	if err := deployRelease(config); err != nil {
+		log.Fatalf("Failed to deploy parseable, err: %v", err)
 	}
 	printSuccessBanner(*pbInfo, config.Version)
 
@@ -637,8 +636,8 @@ func promptForInput(label string) string {
 	return strings.TrimSpace(input)
 }
 
-// promptK8sContext retrieves Kubernetes contexts from kubeconfig.
-func promptK8sContext() (clusterName string, err error) {
+// PromptK8sContext retrieves Kubernetes contexts from kubeconfig.
+func PromptK8sContext() (clusterName string, err error) {
 	kubeconfigPath := os.Getenv("KUBECONFIG")
 	if kubeconfigPath == "" {
 		kubeconfigPath = os.Getenv("HOME") + "/.kube/config"
@@ -868,45 +867,108 @@ func openBrowser(url string) {
 	cmd.Start()
 }
 
-// updateInstallerFile updates or creates the installer.yaml file with deployment info
-func updateInstallerFile(entry InstallerEntry) error {
-	// Define the file path
-	homeDir, err := os.UserHomeDir()
+func updateInstallerConfigMap(entry InstallerEntry) error {
+	const (
+		configMapName = "parseable-installer"
+		namespace     = "pb-system"
+		dataKey       = "installer-data"
+	)
+
+	// Load kubeconfig and create a Kubernetes client
+	config, err := loadKubeConfig()
 	if err != nil {
-		return fmt.Errorf("failed to get user home directory: %w", err)
-	}
-	filePath := filepath.Join(homeDir, ".parseable", "pb", "installer.yaml")
-
-	// Create the directory if it doesn't exist
-	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-		return fmt.Errorf("failed to create directory for installer file: %w", err)
+		return fmt.Errorf("failed to load kubeconfig: %w", err)
 	}
 
-	// Read existing entries if the file exists
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	// Ensure the namespace exists
+	_, err = clientset.CoreV1().Namespaces().Get(context.TODO(), namespace, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			_, err = clientset.CoreV1().Namespaces().Create(context.TODO(), &v1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: namespace,
+				},
+			}, metav1.CreateOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to create namespace: %v", err)
+			}
+		} else {
+			return fmt.Errorf("failed to check namespace existence: %v", err)
+		}
+	}
+
+	// Create a dynamic Kubernetes client
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return fmt.Errorf("failed to create dynamic client: %w", err)
+	}
+
+	// Define the ConfigMap resource
+	configMapResource := schema.GroupVersionResource{
+		Group:    "", // Core resources have an empty group
+		Version:  "v1",
+		Resource: "configmaps",
+	}
+
+	// Fetch the existing ConfigMap or initialize a new one
+	cm, err := dynamicClient.Resource(configMapResource).Namespace(namespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
+	var data map[string]interface{}
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to fetch ConfigMap: %v", err)
+		}
+		// If not found, initialize a new ConfigMap
+		data = map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"name":      configMapName,
+				"namespace": namespace,
+			},
+			"data": map[string]interface{}{},
+		}
+	} else {
+		data = cm.Object
+	}
+
+	// Retrieve existing data and append the new entry
+	existingData := data["data"].(map[string]interface{})
 	var entries []InstallerEntry
-	if _, err := os.Stat(filePath); err == nil {
-		// File exists, load existing content
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			return fmt.Errorf("failed to read existing installer file: %w", err)
-		}
-
-		if err := yaml.Unmarshal(data, &entries); err != nil {
-			return fmt.Errorf("failed to parse existing installer file: %w", err)
+	if raw, ok := existingData[dataKey]; ok {
+		if err := yaml.Unmarshal([]byte(raw.(string)), &entries); err != nil {
+			return fmt.Errorf("failed to parse existing ConfigMap data: %v", err)
 		}
 	}
-
-	// Append the new entry
 	entries = append(entries, entry)
 
-	// Write the updated entries back to the file
-	data, err := yamlv3.Marshal(entries)
+	// Marshal the updated data back to YAML
+	updatedData, err := yamling.Marshal(entries)
 	if err != nil {
-		return fmt.Errorf("failed to marshal installer data: %w", err)
+		return fmt.Errorf("failed to marshal updated data: %v", err)
 	}
 
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write installer file: %w", err)
+	// Update the ConfigMap data
+	existingData[dataKey] = string(updatedData)
+	data["data"] = existingData
+
+	// Apply the ConfigMap
+	if cm == nil {
+		_, err = dynamicClient.Resource(configMapResource).Namespace(namespace).Create(context.TODO(), &unstructured.Unstructured{
+			Object: data,
+		}, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to create ConfigMap: %v", err)
+		}
+	} else {
+		_, err = dynamicClient.Resource(configMapResource).Namespace(namespace).Update(context.TODO(), &unstructured.Unstructured{
+			Object: data,
+		}, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to update ConfigMap: %v", err)
+		}
 	}
 
 	return nil
