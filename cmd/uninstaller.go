@@ -17,7 +17,6 @@ package cmd
 
 import (
 	"fmt"
-
 	"pb/pkg/common"
 	"pb/pkg/installer"
 
@@ -31,9 +30,6 @@ var UnInstallOssCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		// Add verbose flag
 		cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
-
-		// Print the banner
-		printBanner()
 
 		if err := installer.Uninstaller(verbose); err != nil {
 			fmt.Println(common.Red + err.Error())
