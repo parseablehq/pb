@@ -31,6 +31,12 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+const (
+	configMapName = "parseable-installer"
+	namespace     = "pb-system"
+	dataKey       = "installer-data"
+)
+
 // ANSI escape codes for colors
 const (
 	Yellow = "\033[33m"
@@ -51,11 +57,6 @@ type InstallerEntry struct {
 
 // ReadInstallerConfigMap fetches and parses installer data from a ConfigMap
 func ReadInstallerConfigMap() ([]InstallerEntry, error) {
-	const (
-		configMapName = "parseable-installer"
-		namespace     = "pb-system"
-		dataKey       = "installer-data"
-	)
 
 	// Load kubeconfig and create a Kubernetes client
 	config, err := LoadKubeConfig()
@@ -199,4 +200,62 @@ func CreateDeploymentSpinner(namespace, infoMsg string) *spinner.Spinner {
 	s.Prefix = fmt.Sprintf(Yellow + infoMsg)
 
 	return s
+}
+func RemoveInstallerEntry(name string) error {
+	// Load kubeconfig and create a Kubernetes client
+	config, err := LoadKubeConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load kubeconfig: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	// Fetch the ConfigMap
+	configMap, err := clientset.CoreV1().ConfigMaps(namespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to fetch ConfigMap: %v", err)
+	}
+
+	// Log the current data in the ConfigMap
+
+	// Assuming the entries are stored as YAML or JSON string, unmarshal them into a slice
+	var entries []map[string]interface{}
+	if err := yaml.Unmarshal([]byte(configMap.Data["installer-data"]), &entries); err != nil {
+		return fmt.Errorf("failed to unmarshal installer data: %w", err)
+	}
+
+	// Find the entry to remove by name
+	var indexToRemove = -1
+	for i, entry := range entries {
+		if entry["name"] == name {
+			indexToRemove = i
+			break
+		}
+	}
+
+	// Check if the entry was found
+	if indexToRemove == -1 {
+		return fmt.Errorf("entry '%s' does not exist in ConfigMap", name)
+	}
+
+	// Remove the entry
+	entries = append(entries[:indexToRemove], entries[indexToRemove+1:]...)
+
+	// Marshal the updated entries back into YAML
+	updatedData, err := yaml.Marshal(entries)
+	if err != nil {
+		return fmt.Errorf("failed to marshal updated entries: %w", err)
+	}
+	configMap.Data["installer-data"] = string(updatedData)
+
+	// Update the ConfigMap in Kubernetes
+	_, err = clientset.CoreV1().ConfigMaps(namespace).Update(context.TODO(), configMap, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update ConfigMap: %v", err)
+	}
+
+	return nil
 }

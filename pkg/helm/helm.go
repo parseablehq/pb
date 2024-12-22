@@ -257,7 +257,7 @@ func ListRelease(releaseName, namespace string) (bool, error) {
 	return false, nil
 }
 
-func GetReleaseValues(chartName, namespace string) (map[string]interface{}, error) {
+func GetReleaseValues(releaseName, namespace string) (map[string]interface{}, error) {
 	settings := cli.New()
 
 	// Initialize action configuration
@@ -266,24 +266,15 @@ func GetReleaseValues(chartName, namespace string) (map[string]interface{}, erro
 		return nil, err
 	}
 
-	// Create a new List action
-	client := action.NewList(actionConfig)
+	// Create a new get action
+	client := action.NewGet(actionConfig)
 
-	// Run the List action to get releases
-	releases, err := client.Run()
+	release, err := client.Run(releaseName)
 	if err != nil {
 		return nil, err
 	}
 
-	// Iterate over the releases
-	for _, release := range releases {
-		// Check if the release's chart name matches the specified chart name
-		if release.Chart.Name() == chartName {
-			return release.Chart.Values, nil
-		}
-	}
-
-	return nil, nil
+	return release.Config, nil
 }
 
 // DeleteRelease deletes a Helm release based on the specified chart name and namespace.

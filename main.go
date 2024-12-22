@@ -220,6 +220,23 @@ var list = &cobra.Command{
 	},
 }
 
+var show = &cobra.Command{
+	Use:               "show",
+	Short:             "Show outputs values defined when installing parseable on kubernetes cluster",
+	Long:              "\nshow command is used to get values in parseable.",
+	PersistentPreRunE: combinedPreRun,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "install", args)
+		}()
+	},
+}
+
 var uninstall = &cobra.Command{
 	Use:               "uninstall",
 	Short:             "Uninstall parseable on kubernetes cluster",
@@ -269,6 +286,8 @@ func main() {
 
 	uninstall.AddCommand(pb.UninstallOssCmd)
 
+	show.AddCommand(pb.ShowValuesCmd)
+
 	cli.AddCommand(profile)
 	cli.AddCommand(query)
 	cli.AddCommand(stream)
@@ -281,6 +300,7 @@ func main() {
 	cli.AddCommand(uninstall)
 	cli.AddCommand(schema)
 	cli.AddCommand(list)
+	cli.AddCommand(show)
 
 	// Set as command
 	pb.VersionCmd.Run = func(_ *cobra.Command, _ []string) {
