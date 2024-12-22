@@ -1,3 +1,5 @@
+package cmd
+
 // Copyright (c) 2024 Parseable, Inc
 //
 // This program is free software: you can redistribute it and/or modify
@@ -12,7 +14,6 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
-package cmd
 
 import (
 	"fmt"
@@ -30,7 +31,7 @@ var ListOssCmd = &cobra.Command{
 	Use:     "oss",
 	Short:   "List available Parseable OSS servers",
 	Example: "pb list oss",
-	Run: func(cmd *cobra.Command, _ []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		_, err := common.PromptK8sContext()
 		if err != nil {
 			log.Fatalf("Failed to prompt for kubernetes context: %v", err)

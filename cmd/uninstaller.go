@@ -18,7 +18,7 @@ var UninstallOssCmd = &cobra.Command{
 	Use:     "oss",
 	Short:   "Uninstall Parseable OSS servers",
 	Example: "pb uninstall oss",
-	Run: func(cmd *cobra.Command, _ []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		_, err := common.PromptK8sContext()
 		if err != nil {
 			log.Fatalf("Failed to prompt for Kubernetes context: %v", err)
@@ -32,7 +32,7 @@ var UninstallOssCmd = &cobra.Command{
 
 		// Check if there are no entries
 		if len(entries) == 0 {
-			fmt.Println(common.Yellow + "\nNo Parseable OSS servers found to uninstall.\n")
+			fmt.Println(common.Yellow + "\nNo Parseable OSS servers found to uninstall.")
 			return
 		}
 
@@ -55,10 +55,10 @@ var UninstallOssCmd = &cobra.Command{
 			return
 		}
 
-		// Perform uninstallation
-		// if err := uninstallCluster(selectedCluster); err != nil {
-		// 	log.Fatalf("Failed to uninstall cluster: %v", err)
-		// }
+		//Perform uninstallation
+		if err := uninstallCluster(selectedCluster); err != nil {
+			log.Fatalf("Failed to uninstall cluster: %v", err)
+		}
 
 		// Remove entry from ConfigMap
 		if err := common.RemoveInstallerEntry(selectedCluster.Name); err != nil {
@@ -88,7 +88,7 @@ func uninstallCluster(entry common.InstallerEntry) error {
 
 	fmt.Println(common.Yellow + "Starting uninstallation process..." + common.Reset)
 
-	spinner := common.CreateDeploymentSpinner(entry.Namespace, fmt.Sprintf("Uninstalling Parseable OSS '%s'...", entry.Name))
+	spinner := common.CreateDeploymentSpinner(fmt.Sprintf("Uninstalling Parseable OSS '%s'...", entry.Name))
 	spinner.Start()
 
 	_, err := helm.Uninstall(helmApp, false)

@@ -84,7 +84,7 @@ func ReadInstallerConfigMap() ([]InstallerEntry, error) {
 		fmt.Println(Yellow + "\n────────────────────────────────────────────────────────────────────────────")
 		fmt.Println(Yellow + "⚠️  No Parseable clusters found!")
 		fmt.Println(Yellow + "To get started, run: `pb install oss`")
-		fmt.Println(Yellow + "────────────────────────────────────────────────────────────────────────────\n")
+		fmt.Println(Yellow + "────────────────────────────────────────────────────────────────────────────")
 		return nil, nil
 	}
 
@@ -184,7 +184,7 @@ func PromptConfirmation(message string) bool {
 	return err == nil
 }
 
-func CreateDeploymentSpinner(namespace, infoMsg string) *spinner.Spinner {
+func CreateDeploymentSpinner(infoMsg string) *spinner.Spinner {
 	// Custom spinner with multiple character sets for dynamic effect
 	spinnerChars := []string{
 		"●", "○", "◉", "○", "◉", "○", "◉", "○", "◉",
@@ -197,7 +197,7 @@ func CreateDeploymentSpinner(namespace, infoMsg string) *spinner.Spinner {
 		spinner.WithSuffix(" ..."),
 	)
 
-	s.Prefix = fmt.Sprintf(Yellow + infoMsg)
+	s.Prefix = Yellow + infoMsg
 
 	return s
 }

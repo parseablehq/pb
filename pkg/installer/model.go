@@ -15,16 +15,6 @@
 
 package installer
 
-// deploymentType represents the type of deployment for the application.
-type deploymentType string
-
-const (
-	// standalone is a single-node deployment.
-	standalone deploymentType = "standalone"
-	// distributed is a multi-node deployment.
-	distributed deploymentType = "distributed"
-)
-
 // loggingAgent represents the type of logging agent used.
 type loggingAgent string
 

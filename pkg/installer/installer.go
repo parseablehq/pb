@@ -78,7 +78,7 @@ func waterFall(verbose bool) {
 	}
 
 	// Prompt for agent deployment
-	_, agentValues, err := promptAgentDeployment(chartValues, distributed, *pbInfo)
+	_, agentValues, err := promptAgentDeployment(chartValues, *pbInfo)
 	if err != nil {
 		log.Fatalf("Failed to prompt for agent deployment: %v", err)
 	}
@@ -372,7 +372,7 @@ data:
 }
 
 // promptAgentDeployment prompts the user for agent deployment options
-func promptAgentDeployment(chartValues []string, deployment deploymentType, pbInfo ParseableInfo) (string, []string, error) {
+func promptAgentDeployment(chartValues []string, pbInfo ParseableInfo) (string, []string, error) {
 	// Prompt for Agent Deployment type
 	promptAgentSelect := promptui.Select{
 		Items: []string{string(fluentbit), string(vector), "I have my agent running / I'll set up later"},
@@ -388,10 +388,10 @@ func promptAgentDeployment(chartValues []string, deployment deploymentType, pbIn
 		return "", nil, fmt.Errorf("failed to prompt for agent deployment type: %w", err)
 	}
 
-	ingestorUrl, _ := getParseableSvcUrls(pbInfo.Name, pbInfo.Namespace)
+	ingestorURL, _ := getParseableSvcUrls(pbInfo.Name, pbInfo.Namespace)
 
 	if agentDeploymentType == string(fluentbit) {
-		chartValues = append(chartValues, "fluent-bit.serverHost="+ingestorUrl)
+		chartValues = append(chartValues, "fluent-bit.serverHost="+ingestorURL)
 		chartValues = append(chartValues, "fluent-bit.serverUsername="+pbInfo.Username)
 		chartValues = append(chartValues, "fluent-bit.serverPassword="+pbInfo.Password)
 		chartValues = append(chartValues, "fluent-bit.serverStream="+"$NAMESPACE")
@@ -672,7 +672,7 @@ func deployRelease(config HelmDeploymentConfig) error {
 
 	// Create a spinner
 	msg := fmt.Sprintf(" Deploying parseable release name [%s] namespace [%s] ", config.ReleaseName, config.Namespace)
-	spinner := common.CreateDeploymentSpinner(config.Namespace, msg)
+	spinner := common.CreateDeploymentSpinner(msg)
 
 	// Redirect standard output if not in verbose mode
 	var oldStdout *os.File
@@ -716,7 +716,7 @@ func deployRelease(config HelmDeploymentConfig) error {
 // printSuccessBanner remains the same as in the original code
 func printSuccessBanner(pbInfo ParseableInfo, version string) {
 
-	ingestionUrl, queryUrl := getParseableSvcUrls(pbInfo.Name, pbInfo.Namespace)
+	ingestorURL, queryURL := getParseableSvcUrls(pbInfo.Name, pbInfo.Namespace)
 
 	// Encode credentials to Base64
 	credentials := map[string]string{
@@ -737,7 +737,7 @@ func printSuccessBanner(pbInfo ParseableInfo, version string) {
 	fmt.Printf("%s Deployment Details:\n", common.Blue+"ℹ️ ")
 	fmt.Printf("  • Namespace:        %s\n", common.Blue+pbInfo.Namespace)
 	fmt.Printf("  • Chart Version:    %s\n", common.Blue+version)
-	fmt.Printf("  • Ingestion URL:    %s\n", ingestionUrl)
+	fmt.Printf("  • Ingestion URL:    %s\n", ingestorURL)
 
 	fmt.Println("\n" + common.Blue + "🔗  Resources:" + common.Reset)
 	fmt.Println(common.Blue + "  • Documentation:   https://www.parseable.com/docs/server/introduction")
@@ -747,9 +747,9 @@ func printSuccessBanner(pbInfo ParseableInfo, version string) {
 
 	// Port-forward the service
 	localPort := "8001"
-	fmt.Printf(common.Green+"Port-forwarding %s service on port %s in namespace %s...\n"+common.Reset, queryUrl, localPort, pbInfo.Namespace)
+	fmt.Printf(common.Green+"Port-forwarding %s service on port %s in namespace %s...\n"+common.Reset, queryURL, localPort, pbInfo.Namespace)
 
-	if err = startPortForward(pbInfo.Namespace, queryUrl, "80", localPort, false); err != nil {
+	if err = startPortForward(pbInfo.Namespace, queryURL, "80", localPort, false); err != nil {
 		fmt.Printf(common.Red+"failed to port-forward service: %s", err.Error())
 	}
 
@@ -927,13 +927,13 @@ func updateInstallerConfigMap(entry common.InstallerEntry) error {
 	return nil
 }
 
-func getParseableSvcUrls(releaseName, namespace string) (ingestorUrl, queryUrl string) {
+func getParseableSvcUrls(releaseName, namespace string) (ingestorURL, queryURL string) {
 	if releaseName == "parseable" {
-		ingestorUrl = releaseName + "-ingestor-service." + namespace + ".svc.cluster.local"
-		queryUrl = releaseName + "-querier-service"
-		return ingestorUrl, queryUrl
+		ingestorURL = releaseName + "-ingestor-service." + namespace + ".svc.cluster.local"
+		queryURL = releaseName + "-querier-service"
+		return ingestorURL, queryURL
 	}
-	ingestorUrl = releaseName + "-parseable-ingestor-service." + namespace + ".svc.cluster.local"
-	queryUrl = releaseName + "-parseable-querier-service"
-	return ingestorUrl, queryUrl
+	ingestorURL = releaseName + "-parseable-ingestor-service." + namespace + ".svc.cluster.local"
+	queryURL = releaseName + "-parseable-querier-service"
+	return ingestorURL, queryURL
 }

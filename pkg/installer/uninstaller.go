@@ -57,7 +57,7 @@ func Uninstaller(verbose bool) error {
 	// Prompt the user to select a cluster
 	clusterNames := make([]string, len(entries))
 	for i, entry := range entries {
-		clusterNames[i] = fmt.Sprintf("[Name: %s] [Namespace: %s] [Context: %s]", entry.Name, entry.Namespace)
+		clusterNames[i] = fmt.Sprintf("[Name: %s] [Namespace: %s]", entry.Name, entry.Namespace)
 	}
 
 	promptClusterSelect := promptui.Select{
@@ -77,12 +77,6 @@ func Uninstaller(verbose bool) error {
 	}
 
 	selectedCluster := entries[index]
-
-	// Display a warning banner
-	fmt.Println("\n────────────────────────────────────────────────────────────────────────────")
-	fmt.Println("⚠️  Deleting this cluster will not delete any data on object storage.")
-	fmt.Println("   This operation will clean up the Parseable deployment on Kubernetes.")
-	fmt.Println("────────────────────────────────────────────────────────────────────────────")
 
 	// Confirm deletion
 	confirm, err := promptUserConfirmation(fmt.Sprintf(common.Yellow+"Do you still want to proceed with deleting the cluster '%s'?", selectedCluster.Name))
@@ -105,7 +99,7 @@ func Uninstaller(verbose bool) error {
 	}
 
 	// Create a spinner
-	spinner := common.CreateDeploymentSpinner(selectedCluster.Namespace, "Uninstalling Parseable in ")
+	spinner := common.CreateDeploymentSpinner("Uninstalling Parseable in ")
 
 	// Redirect standard output if not in verbose mode
 	var oldStdout *os.File
