@@ -34,9 +34,9 @@ import (
 var verbose bool
 
 var InstallOssCmd = &cobra.Command{
-	Use:     "install oss",
-	Short:   "Deploy Parseable OSS",
-	Example: "pb cluster install oss",
+	Use:     "install",
+	Short:   "Deploy Parseable",
+	Example: "pb cluster install",
 	Run: func(cmd *cobra.Command, _ []string) {
 		// Add verbose flag
 		cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
@@ -46,9 +46,9 @@ var InstallOssCmd = &cobra.Command{
 
 // ListOssCmd lists the Parseable OSS servers
 var ListOssCmd = &cobra.Command{
-	Use:     "list oss",
-	Short:   "List available Parseable OSS servers",
-	Example: "pb list oss",
+	Use:     "list",
+	Short:   "List available Parseable servers",
+	Example: "pb list",
 	Run: func(_ *cobra.Command, _ []string) {
 		_, err := common.PromptK8sContext()
 		if err != nil {
@@ -58,12 +58,12 @@ var ListOssCmd = &cobra.Command{
 		// Read the installer data from the ConfigMap
 		entries, err := common.ReadInstallerConfigMap()
 		if err != nil {
-			log.Fatalf("Failed to list OSS servers: %v", err)
+			log.Fatalf("Failed to list servers: %v", err)
 		}
 
 		// Check if there are no entries
 		if len(entries) == 0 {
-			fmt.Println("No OSS servers found.")
+			fmt.Println("No clusters found.")
 			return
 		}
 
@@ -81,8 +81,8 @@ var ListOssCmd = &cobra.Command{
 
 // ShowValuesCmd lists the Parseable OSS servers
 var ShowValuesCmd = &cobra.Command{
-	Use:     "show values oss",
-	Short:   "Show values available in Parseable OSS servers",
+	Use:     "show values",
+	Short:   "Show values available in Parseable servers",
 	Example: "pb show values",
 	Run: func(_ *cobra.Command, _ []string) {
 		_, err := common.PromptK8sContext()
@@ -130,9 +130,9 @@ var ShowValuesCmd = &cobra.Command{
 
 // UninstallOssCmd removes Parseable OSS servers
 var UninstallOssCmd = &cobra.Command{
-	Use:     "uninstall oss",
-	Short:   "Uninstall Parseable OSS servers",
-	Example: "pb uninstall oss",
+	Use:     "uninstall",
+	Short:   "Uninstall Parseable servers",
+	Example: "pb uninstall",
 	Run: func(_ *cobra.Command, _ []string) {
 		_, err := common.PromptK8sContext()
 		if err != nil {
