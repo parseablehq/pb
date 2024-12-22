@@ -264,9 +264,10 @@ func main() {
 	schema.AddCommand(pb.CreateSchemaCmd)
 
 	install.AddCommand(pb.InstallOssCmd)
+
 	list.AddCommand(pb.ListOssCmd)
 
-	uninstall.AddCommand(pb.UnInstallOssCmd)
+	uninstall.AddCommand(pb.UninstallOssCmd)
 
 	cli.AddCommand(profile)
 	cli.AddCommand(query)

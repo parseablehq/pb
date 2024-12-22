@@ -63,7 +63,7 @@ func waterFall(verbose bool) {
 		log.Fatalf("Failed to prompt for plan selection: %v", err)
 	}
 
-	_, err = PromptK8sContext()
+	_, err = common.PromptK8sContext()
 	if err != nil {
 		log.Fatalf("Failed to prompt for kubernetes context: %v", err)
 	}
@@ -111,7 +111,7 @@ func waterFall(verbose bool) {
 		Verbose:     verbose,
 	}
 
-	if err := updateInstallerConfigMap(InstallerEntry{
+	if err := updateInstallerConfigMap(common.InstallerEntry{
 		Name:      pbInfo.Name,
 		Namespace: pbInfo.Namespace,
 		Version:   config.Version,
@@ -636,53 +636,6 @@ func promptForInput(label string) string {
 	return strings.TrimSpace(input)
 }
 
-// PromptK8sContext retrieves Kubernetes contexts from kubeconfig.
-func PromptK8sContext() (clusterName string, err error) {
-	kubeconfigPath := os.Getenv("KUBECONFIG")
-	if kubeconfigPath == "" {
-		kubeconfigPath = os.Getenv("HOME") + "/.kube/config"
-	}
-
-	// Load kubeconfig file
-	config, err := clientcmd.LoadFromFile(kubeconfigPath)
-	if err != nil {
-		fmt.Printf("\033[31mError loading kubeconfig: %v\033[0m\n", err)
-		os.Exit(1)
-	}
-
-	// Get current contexts
-	currentContext := config.Contexts
-	var contexts []string
-	for i := range currentContext {
-		contexts = append(contexts, i)
-	}
-
-	// Prompt user to select Kubernetes context
-	promptK8s := promptui.Select{
-		Items: contexts,
-		Templates: &promptui.SelectTemplates{
-			Label:    "{{ `Select your Kubernetes context` | yellow }}",
-			Active:   "▸ {{ . | yellow }} ", // Yellow arrow and context name for active selection
-			Inactive: "  {{ . | yellow }}",  // Default color for inactive items
-			Selected: "{{ `Selected Kubernetes context:` | green }} '{{ . | green }}' ✔",
-		},
-	}
-
-	_, clusterName, err = promptK8s.Run()
-	if err != nil {
-		return "", err
-	}
-
-	// Set current context as selected
-	config.CurrentContext = clusterName
-	err = clientcmd.WriteToFile(*config, kubeconfigPath)
-	if err != nil {
-		return "", err
-	}
-
-	return clusterName, nil
-}
-
 // printBanner displays a welcome banner
 func printBanner() {
 	banner := `
@@ -719,7 +672,7 @@ func deployRelease(config HelmDeploymentConfig) error {
 
 	// Create a spinner
 	msg := fmt.Sprintf(" Deploying parseable release name [%s] namespace [%s] ", config.ReleaseName, config.Namespace)
-	spinner := createDeploymentSpinner(config.Namespace, msg)
+	spinner := common.CreateDeploymentSpinner(config.Namespace, msg)
 
 	// Redirect standard output if not in verbose mode
 	var oldStdout *os.File
@@ -867,7 +820,7 @@ func openBrowser(url string) {
 	cmd.Start()
 }
 
-func updateInstallerConfigMap(entry InstallerEntry) error {
+func updateInstallerConfigMap(entry common.InstallerEntry) error {
 	const (
 		configMapName = "parseable-installer"
 		namespace     = "pb-system"
@@ -936,7 +889,7 @@ func updateInstallerConfigMap(entry InstallerEntry) error {
 
 	// Retrieve existing data and append the new entry
 	existingData := data["data"].(map[string]interface{})
-	var entries []InstallerEntry
+	var entries []common.InstallerEntry
 	if raw, ok := existingData[dataKey]; ok {
 		if err := yaml.Unmarshal([]byte(raw.(string)), &entries); err != nil {
 			return fmt.Errorf("failed to parse existing ConfigMap data: %v", err)

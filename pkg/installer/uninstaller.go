@@ -49,7 +49,7 @@ func Uninstaller(verbose bool) error {
 	}
 
 	// Unmarshal the installer file content
-	var entries []InstallerEntry
+	var entries []common.InstallerEntry
 	if err := yaml.Unmarshal(data, &entries); err != nil {
 		return fmt.Errorf("failed to parse installer file: %w", err)
 	}
@@ -105,7 +105,7 @@ func Uninstaller(verbose bool) error {
 	}
 
 	// Create a spinner
-	spinner := createDeploymentSpinner(selectedCluster.Namespace, "Uninstalling Parseable in ")
+	spinner := common.CreateDeploymentSpinner(selectedCluster.Namespace, "Uninstalling Parseable in ")
 
 	// Redirect standard output if not in verbose mode
 	var oldStdout *os.File
