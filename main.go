@@ -203,6 +203,23 @@ var install = &cobra.Command{
 	},
 }
 
+var cluster = &cobra.Command{
+	Use:               "cluster",
+	Short:             "Cluster operations for parseable.",
+	Long:              "\nCluster operations for parseable cluster on kubernetes.",
+	PersistentPreRunE: combinedPreRun,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "install", args)
+		}()
+	},
+}
+
 var list = &cobra.Command{
 	Use:               "list",
 	Short:             "List parseable on kubernetes cluster",
@@ -280,7 +297,10 @@ func main() {
 	schema.AddCommand(pb.GenerateSchemaCmd)
 	schema.AddCommand(pb.CreateSchemaCmd)
 
-	install.AddCommand(pb.InstallOssCmd)
+	cluster.AddCommand(pb.InstallOssCmd)
+	cluster.AddCommand(pb.ListOssCmd)
+	cluster.AddCommand(pb.ShowValuesCmd)
+	cluster.AddCommand(pb.UninstallOssCmd)
 
 	list.AddCommand(pb.ListOssCmd)
 
@@ -294,13 +314,9 @@ func main() {
 	cli.AddCommand(user)
 	cli.AddCommand(role)
 	cli.AddCommand(pb.TailCmd)
+	cli.AddCommand(cluster)
 
 	cli.AddCommand(pb.AutocompleteCmd)
-	cli.AddCommand(install)
-	cli.AddCommand(uninstall)
-	cli.AddCommand(schema)
-	cli.AddCommand(list)
-	cli.AddCommand(show)
 
 	// Set as command
 	pb.VersionCmd.Run = func(_ *cobra.Command, _ []string) {
