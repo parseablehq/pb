@@ -80,14 +80,17 @@ func promptUserPlanSelection() (Plan, error) {
 		Details: `
 --------- Plan Details ----------
 {{ "Plan:" | faint }}            	{{ .Name }}
- {{ "Ingestion Speed:" | faint }} 	{{ .IngestionSpeed }}
- {{ "Per Day Ingestion:" | faint }}	{{ .PerDayIngestion }}
- {{ "Query Performance:" | faint }}	{{ .QueryPerformance }}
- {{ "CPU & Memory:" | faint }}    	{{ .CPUAndMemorySpecs }}`,
+{{ "Ingestion Speed:" | faint }} 	{{ .IngestionSpeed }}
+{{ "Per Day Ingestion:" | faint }}	{{ .PerDayIngestion }}
+{{ "Query Performance:" | faint }}	{{ .QueryPerformance }}
+{{ "CPU & Memory:" | faint }}    	{{ .CPUAndMemorySpecs }}`,
 	}
 
+	// Add a note about the default plan in the label
+	label := fmt.Sprintf(common.Yellow + "Select deployment type:")
+
 	prompt := promptui.Select{
-		Label:     fmt.Sprintf(common.Yellow + "Select deployment type"),
+		Label:     label,
 		Items:     planList,
 		Templates: templates,
 	}
@@ -97,13 +100,14 @@ func promptUserPlanSelection() (Plan, error) {
 		return Plan{}, fmt.Errorf("failed to select deployment type: %w", err)
 	}
 
+	selectedPlan := planList[index]
 	fmt.Printf(
 		common.Cyan+"  Ingestion Speed: %s\n"+
 			common.Cyan+"  Per Day Ingestion: %s\n"+
 			common.Cyan+"  Query Performance: %s\n"+
 			common.Cyan+"  CPU & Memory: %s\n"+
-			common.Reset, planList[index].IngestionSpeed, planList[index].PerDayIngestion,
-		planList[index].QueryPerformance, planList[index].CPUAndMemorySpecs)
+			common.Reset, selectedPlan.IngestionSpeed, selectedPlan.PerDayIngestion,
+		selectedPlan.QueryPerformance, selectedPlan.CPUAndMemorySpecs)
 
-	return planList[index], nil
+	return selectedPlan, nil
 }

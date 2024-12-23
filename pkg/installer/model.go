@@ -78,8 +78,11 @@ type GCS struct {
 
 // Blob contains configuration details for an Azure Blob Storage backend.
 type Blob struct {
-	AccessKey   string // Access key for authentication.
-	AccountName string // Account name for Azure Blob Storage.
-	Container   string // Container name in the Azure Blob store.
-	URL         string // URL of the Azure Blob store.
+	AccessKey          string // Access key for authentication.
+	StorageAccountName string // Account name for Azure Blob Storage.
+	Container          string // Container name in the Azure Blob store.
+	ClientID           string // Client ID to authenticate.
+	ClientSecret       string // Client Secret to authenticate.
+	TenantID           string // TenantID
+	URL                string // URL of the Azure Blob store.
 }

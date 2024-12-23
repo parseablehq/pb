@@ -111,6 +111,10 @@ func waterFall(verbose bool) {
 		Verbose:     verbose,
 	}
 
+	if err := deployRelease(config); err != nil {
+		log.Fatalf("Failed to deploy parseable, err: %v", err)
+	}
+
 	if err := updateInstallerConfigMap(common.InstallerEntry{
 		Name:      pbInfo.Name,
 		Namespace: pbInfo.Namespace,
@@ -119,9 +123,7 @@ func waterFall(verbose bool) {
 	}); err != nil {
 		log.Fatalf("Failed to update parseable installer file, err: %v", err)
 	}
-	if err := deployRelease(config); err != nil {
-		log.Fatalf("Failed to deploy parseable, err: %v", err)
-	}
+
 	printSuccessBanner(*pbInfo, config.Version)
 
 }
@@ -228,6 +230,8 @@ func applyParseableSecret(ps *ParseableInfo, store ObjectStore, objectStoreConfi
 		secretManifest = getParseableSecretGcs(ps, objectStoreConfig)
 	}
 
+	fmt.Println(secretManifest)
+
 	// apply the Kubernetes Secret
 	if err := applyManifest(secretManifest); err != nil {
 		return fmt.Errorf("failed to create and apply secret: %w", err)
@@ -247,7 +251,6 @@ metadata:
   namespace: %s
 type: Opaque
 data:
-- addr
   azr.access_key: %s
   azr.account: %s
   azr.container: %s
@@ -260,7 +263,7 @@ data:
 `,
 		ps.Namespace,
 		base64.StdEncoding.EncodeToString([]byte(objectStore.BlobStore.AccessKey)),
-		base64.StdEncoding.EncodeToString([]byte(objectStore.BlobStore.AccountName)),
+		base64.StdEncoding.EncodeToString([]byte(objectStore.BlobStore.StorageAccountName)),
 		base64.StdEncoding.EncodeToString([]byte(objectStore.BlobStore.Container)),
 		base64.StdEncoding.EncodeToString([]byte(objectStore.BlobStore.URL)),
 		base64.StdEncoding.EncodeToString([]byte(ps.Username)),
@@ -462,12 +465,18 @@ func promptStoreConfigs(store ObjectStore, chartValues []string, plan Plan) (Obj
 	switch store {
 	case S3Store:
 		storeValues.S3Store = S3{
-			URL:       promptForInput(common.Yellow + "  Enter S3 URL: " + common.Reset),
-			AccessKey: promptForInput(common.Yellow + "  Enter S3 Access Key: " + common.Reset),
-			SecretKey: promptForInput(common.Yellow + "  Enter S3 Secret Key: " + common.Reset),
-			Bucket:    promptForInput(common.Yellow + "  Enter S3 Bucket: " + common.Reset),
-			Region:    promptForInput(common.Yellow + "  Enter S3 Region: " + common.Reset),
+			Region:    promptForInputWithDefault(common.Yellow+"  Enter S3 Region (default: us-east-1): "+common.Reset, "us-east-1"),
+			AccessKey: promptForInputWithDefault(common.Yellow+"  Enter S3 Access Key: "+common.Reset, ""),
+			SecretKey: promptForInputWithDefault(common.Yellow+"  Enter S3 Secret Key: "+common.Reset, ""),
+			Bucket:    promptForInputWithDefault(common.Yellow+"  Enter S3 Bucket: "+common.Reset, ""),
 		}
+
+		// Dynamically construct the URL after Region is set
+		storeValues.S3Store.URL = promptForInputWithDefault(
+			common.Yellow+"  Enter S3 URL (default: https://s3."+storeValues.S3Store.Region+".amazonaws.com): "+common.Reset,
+			"https://s3."+storeValues.S3Store.Region+".amazonaws.com",
+		)
+
 		sc, err := promptStorageClass()
 		if err != nil {
 			log.Fatalf("Failed to prompt for storage class: %v", err)
@@ -491,9 +500,21 @@ func promptStoreConfigs(store ObjectStore, chartValues []string, plan Plan) (Obj
 			log.Fatalf("Failed to prompt for storage class: %v", err)
 		}
 		storeValues.BlobStore = Blob{
-			URL:       promptForInput(common.Yellow + "  Enter Blob URL: " + common.Reset),
-			Container: promptForInput(common.Yellow + "  Enter Blob Container: " + common.Reset),
+			StorageAccountName: promptForInputWithDefault(common.Yellow+"  Enter Blob Storage Account Name: "+common.Reset, ""),
+			Container:          promptForInputWithDefault(common.Yellow+"  Enter Blob Container: "+common.Reset, ""),
+			// ClientID:           promptForInputWithDefault(common.Yellow+"  Enter Client ID: "+common.Reset, ""),
+			// ClientSecret:       promptForInputWithDefault(common.Yellow+"  Enter Client Secret: "+common.Reset, ""),
+			// TenantID:           promptForInputWithDefault(common.Yellow+"  Enter Tenant ID: "+common.Reset, ""),
+			AccessKey: promptForInputWithDefault(common.Yellow+"  Enter Access Keys: "+common.Reset, ""),
 		}
+
+		// Dynamically construct the URL after Region is set
+		storeValues.BlobStore.URL = promptForInputWithDefault(
+			common.Yellow+
+				"  Enter Blob URL (default: https://"+storeValues.BlobStore.StorageAccountName+".blob.core.windows.net): "+
+				common.Reset,
+			"https://"+storeValues.BlobStore.StorageAccountName+".blob.core.windows.net")
+
 		storeValues.StorageClass = sc
 		storeValues.ObjectStore = BlobStore
 		chartValues = append(chartValues, "parseable.store="+string(BlobStore))
@@ -512,12 +533,13 @@ func promptStoreConfigs(store ObjectStore, chartValues []string, plan Plan) (Obj
 			log.Fatalf("Failed to prompt for storage class: %v", err)
 		}
 		storeValues.GCSStore = GCS{
-			URL:       promptForInput(common.Yellow + "  Enter GCS URL: " + common.Reset),
-			AccessKey: promptForInput(common.Yellow + "  Enter GCS Access Key: " + common.Reset),
-			SecretKey: promptForInput(common.Yellow + "  Enter GCS Secret Key: " + common.Reset),
-			Bucket:    promptForInput(common.Yellow + "  Enter GCS Bucket: " + common.Reset),
-			Region:    promptForInput(common.Yellow + "  Enter GCS Region: " + common.Reset),
+			Bucket:    promptForInputWithDefault(common.Yellow+"  Enter GCS Bucket: "+common.Reset, ""),
+			Region:    promptForInputWithDefault(common.Yellow+"  Enter GCS Region (default: us-east1): "+common.Reset, "us-east1"),
+			URL:       promptForInputWithDefault(common.Yellow+"  Enter GCS URL (default: https://storage.googleapis.com):", "https://storage.googleapis.com"),
+			AccessKey: promptForInputWithDefault(common.Yellow+"  Enter GCS Access Key: "+common.Reset, ""),
+			SecretKey: promptForInputWithDefault(common.Yellow+"  Enter GCS Secret Key: "+common.Reset, ""),
 		}
+
 		storeValues.StorageClass = sc
 		storeValues.ObjectStore = GcsStore
 		chartValues = append(chartValues, "parseable.store="+string(GcsStore))
@@ -628,12 +650,18 @@ func getGVR(config *rest.Config, obj *unstructured.Unstructured) (schema.GroupVe
 	return mapping.Resource, nil
 }
 
-// Helper function to prompt for individual input values
-func promptForInput(label string) string {
+// Helper function to prompt for input with a default value
+func promptForInputWithDefault(label, defaultValue string) string {
 	fmt.Print(label)
 	reader := bufio.NewReader(os.Stdin)
 	input, _ := reader.ReadString('\n')
-	return strings.TrimSpace(input)
+	input = strings.TrimSpace(input)
+
+	// Use default if input is empty
+	if input == "" {
+		return defaultValue
+	}
+	return input
 }
 
 // printBanner displays a welcome banner
