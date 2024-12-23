@@ -68,6 +68,56 @@ func waterFall(verbose bool) {
 		log.Fatalf("Failed to prompt for kubernetes context: %v", err)
 	}
 
+	if plan.Name == "Playground" {
+		chartValues = append(chartValues, "parseable.store=local-store")
+		chartValues = append(chartValues, "parseable.localModeSecret.enabled=true")
+
+		// Prompt for namespace and credentials
+		pbInfo, err := promptNamespaceAndCredentials()
+		if err != nil {
+			log.Fatalf("Failed to prompt for namespace and credentials: %v", err)
+		}
+
+		// Prompt for agent deployment
+		_, agentValues, err := promptAgentDeployment(chartValues, *pbInfo)
+		if err != nil {
+			log.Fatalf("Failed to prompt for agent deployment: %v", err)
+		}
+
+		if err := applyParseableSecret(pbInfo, LocalStore, ObjectStoreConfig{}); err != nil {
+			log.Fatalf("Failed to apply secret object store configuration: %v", err)
+		}
+
+		// Define the deployment configuration
+		config := HelmDeploymentConfig{
+			ReleaseName: pbInfo.Name,
+			Namespace:   pbInfo.Namespace,
+			RepoName:    "parseable",
+			RepoURL:     "https://charts.parseable.com",
+			ChartName:   "parseable",
+			Version:     "1.6.6",
+			Values:      agentValues,
+			Verbose:     verbose,
+		}
+
+		if err := deployRelease(config); err != nil {
+			log.Fatalf("Failed to deploy parseable, err: %v", err)
+		}
+
+		if err := updateInstallerConfigMap(common.InstallerEntry{
+			Name:      pbInfo.Name,
+			Namespace: pbInfo.Namespace,
+			Version:   config.Version,
+			Status:    "success",
+		}); err != nil {
+			log.Fatalf("Failed to update parseable installer file, err: %v", err)
+		}
+
+		printSuccessBanner(*pbInfo, config.Version, "parseable", "parseable")
+
+		return
+	}
+
 	// pb supports only distributed deployments
 	chartValues = append(chartValues, "parseable.highAvailability.enabled=true")
 
@@ -124,7 +174,9 @@ func waterFall(verbose bool) {
 		log.Fatalf("Failed to update parseable installer file, err: %v", err)
 	}
 
-	printSuccessBanner(*pbInfo, config.Version)
+	ingestorURL, queryURL := getParseableSvcUrls(pbInfo.Name, pbInfo.Namespace)
+
+	printSuccessBanner(*pbInfo, config.Version, ingestorURL, queryURL)
 
 }
 
@@ -229,8 +281,6 @@ func applyParseableSecret(ps *ParseableInfo, store ObjectStore, objectStoreConfi
 	} else if store == GcsStore {
 		secretManifest = getParseableSecretGcs(ps, objectStoreConfig)
 	}
-
-	fmt.Println(secretManifest)
 
 	// apply the Kubernetes Secret
 	if err := applyManifest(secretManifest); err != nil {
@@ -742,9 +792,7 @@ func deployRelease(config HelmDeploymentConfig) error {
 }
 
 // printSuccessBanner remains the same as in the original code
-func printSuccessBanner(pbInfo ParseableInfo, version string) {
-
-	ingestorURL, queryURL := getParseableSvcUrls(pbInfo.Name, pbInfo.Namespace)
+func printSuccessBanner(pbInfo ParseableInfo, version, ingestorURL, queryURL string) {
 
 	// Encode credentials to Base64
 	credentials := map[string]string{

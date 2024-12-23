@@ -35,6 +35,15 @@ type Plan struct {
 
 // Plans define the plans with clear CPU and memory specs for consumption
 var Plans = map[string]Plan{
+	"Playground": {
+		Name:              "Playground",
+		IngestionSpeed:    "100 events/sec",
+		PerDayIngestion:   "~1GB",
+		QueryPerformance:  "Basic performance",
+		CPUAndMemorySpecs: "1 CPUs, 1GB RAM",
+		CPU:               "1",
+		Memory:            "1Gi",
+	},
 	"Small": {
 		Name:              "Small",
 		IngestionSpeed:    "1000 events/sec",
@@ -66,6 +75,7 @@ var Plans = map[string]Plan{
 
 func promptUserPlanSelection() (Plan, error) {
 	planList := []Plan{
+		Plans["Playground"],
 		Plans["Small"],
 		Plans["Medium"],
 		Plans["Large"],
