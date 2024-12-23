@@ -116,7 +116,26 @@ func PromptK8sContext() (clusterName string, err error) {
 		os.Exit(1)
 	}
 
-	// Get current contexts
+	// Check if P_KUBE_CONTEXT is set
+	envContext := os.Getenv("P_KUBE_CONTEXT")
+	if envContext != "" {
+		// Validate if the context exists in kubeconfig
+		if _, exists := config.Contexts[envContext]; !exists {
+			return "", fmt.Errorf("context '%s' not found in kubeconfig", envContext)
+		}
+
+		// Set current context to the value from P_KUBE_CONTEXT
+		config.CurrentContext = envContext
+		err = clientcmd.WriteToFile(*config, kubeconfigPath)
+		if err != nil {
+			return "", err
+		}
+
+		fmt.Printf("\033[32mUsing Kubernetes context from P_KUBE_CONTEXT: %s ✔\033[0m\n", envContext)
+		return envContext, nil
+	}
+
+	// Get available contexts from kubeconfig
 	currentContext := config.Contexts
 	var contexts []string
 	for i := range currentContext {
