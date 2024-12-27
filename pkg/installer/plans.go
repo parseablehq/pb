@@ -29,20 +29,29 @@ type Plan struct {
 	PerDayIngestion   string
 	QueryPerformance  string
 	CPUAndMemorySpecs string
-	CPU               int
-	Memory            int
+	CPU               string
+	Memory            string
 }
 
 // Plans define the plans with clear CPU and memory specs for consumption
 var Plans = map[string]Plan{
+	"Playground": {
+		Name:              "Playground",
+		IngestionSpeed:    "100 events/sec",
+		PerDayIngestion:   "~1GB",
+		QueryPerformance:  "Basic performance",
+		CPUAndMemorySpecs: "1 CPUs, 1GB RAM",
+		CPU:               "1",
+		Memory:            "1Gi",
+	},
 	"Small": {
 		Name:              "Small",
 		IngestionSpeed:    "1000 events/sec",
 		PerDayIngestion:   "~10GB",
 		QueryPerformance:  "Basic performance",
 		CPUAndMemorySpecs: "2 CPUs, 4GB RAM",
-		CPU:               2,
-		Memory:            4,
+		CPU:               "2",
+		Memory:            "4Gi",
 	},
 	"Medium": {
 		Name:              "Medium",
@@ -50,8 +59,8 @@ var Plans = map[string]Plan{
 		PerDayIngestion:   "~100GB",
 		QueryPerformance:  "Moderate performance",
 		CPUAndMemorySpecs: "4 CPUs, 16GB RAM",
-		CPU:               4,
-		Memory:            16,
+		CPU:               "4",
+		Memory:            "16Gi",
 	},
 	"Large": {
 		Name:              "Large",
@@ -59,13 +68,14 @@ var Plans = map[string]Plan{
 		PerDayIngestion:   "~1TB",
 		QueryPerformance:  "High performance",
 		CPUAndMemorySpecs: "8 CPUs, 32GB RAM",
-		CPU:               8,
-		Memory:            32,
+		CPU:               "8",
+		Memory:            "32Gi",
 	},
 }
 
-func PromptUserPlanSelection() (Plan, error) {
+func promptUserPlanSelection() (Plan, error) {
 	planList := []Plan{
+		Plans["Playground"],
 		Plans["Small"],
 		Plans["Medium"],
 		Plans["Large"],
@@ -80,14 +90,17 @@ func PromptUserPlanSelection() (Plan, error) {
 		Details: `
 --------- Plan Details ----------
 {{ "Plan:" | faint }}            	{{ .Name }}
- {{ "Ingestion Speed:" | faint }} 	{{ .IngestionSpeed }}
- {{ "Per Day Ingestion:" | faint }}	{{ .PerDayIngestion }}
- {{ "Query Performance:" | faint }}	{{ .QueryPerformance }}
- {{ "CPU & Memory:" | faint }}    	{{ .CPUAndMemorySpecs }}`,
+{{ "Ingestion Speed:" | faint }} 	{{ .IngestionSpeed }}
+{{ "Per Day Ingestion:" | faint }}	{{ .PerDayIngestion }}
+{{ "Query Performance:" | faint }}	{{ .QueryPerformance }}
+{{ "CPU & Memory:" | faint }}    	{{ .CPUAndMemorySpecs }}`,
 	}
 
+	// Add a note about the default plan in the label
+	label := fmt.Sprintf(common.Yellow + "Select deployment type:")
+
 	prompt := promptui.Select{
-		Label:     fmt.Sprintf(common.Yellow + "Select deployment type"),
+		Label:     label,
 		Items:     planList,
 		Templates: templates,
 	}
@@ -97,5 +110,14 @@ func PromptUserPlanSelection() (Plan, error) {
 		return Plan{}, fmt.Errorf("failed to select deployment type: %w", err)
 	}
 
-	return planList[index], nil
+	selectedPlan := planList[index]
+	fmt.Printf(
+		common.Cyan+"  Ingestion Speed: %s\n"+
+			common.Cyan+"  Per Day Ingestion: %s\n"+
+			common.Cyan+"  Query Performance: %s\n"+
+			common.Cyan+"  CPU & Memory: %s\n"+
+			common.Reset, selectedPlan.IngestionSpeed, selectedPlan.PerDayIngestion,
+		selectedPlan.QueryPerformance, selectedPlan.CPUAndMemorySpecs)
+
+	return selectedPlan, nil
 }

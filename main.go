@@ -186,10 +186,44 @@ var query = &cobra.Command{
 	},
 }
 
-var install = &cobra.Command{
-	Use:               "install",
-	Short:             "Install parseable on kubernetes cluster",
-	Long:              "\ninstall command is used to install parseable oss/enterprise on k8s cluster..",
+var cluster = &cobra.Command{
+	Use:               "cluster",
+	Short:             "Cluster operations for parseable.",
+	Long:              "\nCluster operations for parseable cluster on kubernetes.",
+	PersistentPreRunE: combinedPreRun,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "install", args)
+		}()
+	},
+}
+
+var list = &cobra.Command{
+	Use:               "list",
+	Short:             "List parseable on kubernetes cluster",
+	Long:              "\nlist command is used to list parseable oss installations.",
+	PersistentPreRunE: combinedPreRun,
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			analytics.PostRunAnalytics(cmd, "install", args)
+		}()
+	},
+}
+
+var show = &cobra.Command{
+	Use:               "show",
+	Short:             "Show outputs values defined when installing parseable on kubernetes cluster",
+	Long:              "\nshow command is used to get values in parseable.",
 	PersistentPreRunE: combinedPreRun,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		if os.Getenv("PB_ANALYTICS") == "disable" {
@@ -246,9 +280,16 @@ func main() {
 	schema.AddCommand(pb.GenerateSchemaCmd)
 	schema.AddCommand(pb.CreateSchemaCmd)
 
-	install.AddCommand(pb.InstallOssCmd)
+	cluster.AddCommand(pb.InstallOssCmd)
+	cluster.AddCommand(pb.ListOssCmd)
+	cluster.AddCommand(pb.ShowValuesCmd)
+	cluster.AddCommand(pb.UninstallOssCmd)
 
-	uninstall.AddCommand(pb.UnInstallOssCmd)
+	list.AddCommand(pb.ListOssCmd)
+
+	uninstall.AddCommand(pb.UninstallOssCmd)
+
+	show.AddCommand(pb.ShowValuesCmd)
 
 	cli.AddCommand(profile)
 	cli.AddCommand(query)
@@ -256,11 +297,9 @@ func main() {
 	cli.AddCommand(user)
 	cli.AddCommand(role)
 	cli.AddCommand(pb.TailCmd)
+	cli.AddCommand(cluster)
 
 	cli.AddCommand(pb.AutocompleteCmd)
-	cli.AddCommand(install)
-	cli.AddCommand(uninstall)
-	cli.AddCommand(schema)
 
 	// Set as command
 	pb.VersionCmd.Run = func(_ *cobra.Command, _ []string) {

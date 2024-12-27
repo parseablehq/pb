@@ -15,16 +15,6 @@
 
 package installer
 
-// deploymentType represents the type of deployment for the application.
-type deploymentType string
-
-const (
-	// standalone is a single-node deployment.
-	standalone deploymentType = "standalone"
-	// distributed is a multi-node deployment.
-	distributed deploymentType = "distributed"
-)
-
 // loggingAgent represents the type of logging agent used.
 type loggingAgent string
 
@@ -37,9 +27,10 @@ const (
 	_ loggingAgent = "I have my agent running / I'll set up later"
 )
 
-// ParseableSecret represents the secret used to authenticate with Parseable.
-type ParseableSecret struct {
-	Namespace string // Namespace where the secret is located.
+// ParseableInfo represents the info used to authenticate, metadata with Parseable.
+type ParseableInfo struct {
+	Name      string // Name for parseable
+	Namespace string // Namespace for parseable
 	Username  string // Username for authentication.
 	Password  string // Password for authentication.
 }
@@ -87,16 +78,11 @@ type GCS struct {
 
 // Blob contains configuration details for an Azure Blob Storage backend.
 type Blob struct {
-	AccessKey   string // Access key for authentication.
-	AccountName string // Account name for Azure Blob Storage.
-	Container   string // Container name in the Azure Blob store.
-	URL         string // URL of the Azure Blob store.
-}
-
-// ValuesHolder holds the configuration values required for deployment.
-type ValuesHolder struct {
-	DeploymentType    deploymentType    // Deployment type (standalone or distributed).
-	ObjectStoreConfig ObjectStoreConfig // Configuration for the object storage backend.
-	LoggingAgent      loggingAgent      // Logging agent to be used.
-	ParseableSecret   ParseableSecret   // Secret used to authenticate with Parseable.
+	AccessKey          string // Access key for authentication.
+	StorageAccountName string // Account name for Azure Blob Storage.
+	Container          string // Container name in the Azure Blob store.
+	ClientID           string // Client ID to authenticate.
+	ClientSecret       string // Client Secret to authenticate.
+	TenantID           string // TenantID
+	URL                string // URL of the Azure Blob store.
 }

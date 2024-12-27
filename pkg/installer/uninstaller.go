@@ -21,57 +21,85 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"pb/pkg/common"
+	"pb/pkg/helm"
 	"strings"
 	"time"
 
-	"pb/pkg/common"
-	"pb/pkg/helm"
-
-	"gopkg.in/yaml.v2"
+	"github.com/manifoldco/promptui"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes"
 )
 
+// Uninstaller uninstalls Parseable from the selected cluster
 func Uninstaller(verbose bool) error {
-	// Load configuration from the parseable.yaml file
-	configPath := filepath.Join(os.Getenv("HOME"), ".parseable", "parseable.yaml")
-	config, err := loadParseableConfig(configPath)
+	// Define the installer file path
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf("failed to load configuration: %v", err)
+		return fmt.Errorf("failed to get user home directory: %w", err)
 	}
+	installerFilePath := filepath.Join(homeDir, ".parseable", "pb", "installer.yaml")
 
-	if config == (&ValuesHolder{}) {
-		return fmt.Errorf("no existing configuration found in ~/.parseable/parseable.yaml")
-	}
-
-	// Prompt for Kubernetes context
-	_, err = promptK8sContext()
+	// Read the installer file
+	data, err := os.ReadFile(installerFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to prompt for Kubernetes context: %v", err)
+		return fmt.Errorf("failed to read installer file: %w", err)
 	}
 
-	// Prompt user to confirm namespace
-	namespace := config.ParseableSecret.Namespace
-	confirm, err := promptUserConfirmation(fmt.Sprintf(common.Yellow+"Do you wish to uninstall Parseable from namespace '%s'?", namespace))
+	// Unmarshal the installer file content
+	var entries []common.InstallerEntry
+	if err := yaml.Unmarshal(data, &entries); err != nil {
+		return fmt.Errorf("failed to parse installer file: %w", err)
+	}
+
+	// Prompt the user to select a cluster
+	clusterNames := make([]string, len(entries))
+	for i, entry := range entries {
+		clusterNames[i] = fmt.Sprintf("[Name: %s] [Namespace: %s]", entry.Name, entry.Namespace)
+	}
+
+	promptClusterSelect := promptui.Select{
+		Label: "Select a cluster to delete",
+		Items: clusterNames,
+		Templates: &promptui.SelectTemplates{
+			Label:    "{{ `Select Cluster` | yellow }}",
+			Active:   "▸ {{ . | yellow }}", // Yellow arrow for active selection
+			Inactive: "  {{ . | yellow }}",
+			Selected: "{{ `Selected:` | green }} {{ . | green }}",
+		},
+	}
+
+	index, _, err := promptClusterSelect.Run()
+	if err != nil {
+		return fmt.Errorf("failed to prompt for cluster selection: %v", err)
+	}
+
+	selectedCluster := entries[index]
+
+	// Confirm deletion
+	confirm, err := promptUserConfirmation(fmt.Sprintf(common.Yellow+"Do you still want to proceed with deleting the cluster '%s'?", selectedCluster.Name))
 	if err != nil {
 		return fmt.Errorf("failed to get user confirmation: %v", err)
 	}
 	if !confirm {
-		return fmt.Errorf("Uninstall canceled.")
+		fmt.Println(common.Yellow + "Uninstall canceled." + common.Reset)
+		return nil
 	}
 
 	// Helm application configuration
 	helmApp := helm.Helm{
-		ReleaseName: "parseable",
-		Namespace:   namespace,
+		ReleaseName: selectedCluster.Name,
+		Namespace:   selectedCluster.Namespace,
 		RepoName:    "parseable",
 		RepoURL:     "https://charts.parseable.com",
 		ChartName:   "parseable",
-		Version:     "1.6.5",
+		Version:     selectedCluster.Version,
 	}
 
 	// Create a spinner
-	spinner := createDeploymentSpinner(namespace, "Uninstalling parseable in ")
+	spinner := common.CreateDeploymentSpinner("Uninstalling Parseable in ")
 
 	// Redirect standard output if not in verbose mode
 	var oldStdout *os.File
@@ -96,15 +124,15 @@ func Uninstaller(verbose bool) error {
 		return fmt.Errorf("failed to uninstall Parseable: %v", err)
 	}
 
-	// Namespace cleanup using Kubernetes client
-	fmt.Printf(common.Yellow+"Cleaning up namespace '%s'...\n"+common.Reset, namespace)
-	cleanupErr := cleanupNamespaceWithClient(namespace)
+	// Call to clean up the secret instead of the namespace
+	fmt.Printf(common.Yellow+"Cleaning up 'parseable-env-secret' in namespace '%s'...\n"+common.Reset, selectedCluster.Namespace)
+	cleanupErr := cleanupParseableSecret(selectedCluster.Namespace)
 	if cleanupErr != nil {
-		return fmt.Errorf("failed to clean up namespace '%s': %v", namespace, cleanupErr)
+		return fmt.Errorf("failed to clean up secret in namespace '%s': %v", selectedCluster.Namespace, cleanupErr)
 	}
 
 	// Print success banner
-	fmt.Printf(common.Green+"Successfully uninstalled Parseable from namespace '%s'.\n"+common.Reset, namespace)
+	fmt.Printf(common.Green+"Successfully uninstalled Parseable from namespace '%s'.\n"+common.Reset, selectedCluster.Namespace)
 
 	return nil
 }
@@ -121,21 +149,8 @@ func promptUserConfirmation(message string) (bool, error) {
 	return response == "y" || response == "yes", nil
 }
 
-// loadParseableConfig loads the configuration from the specified file
-func loadParseableConfig(path string) (*ValuesHolder, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var config ValuesHolder
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, err
-	}
-	return &config, nil
-}
-
-// cleanupNamespaceWithClient deletes the specified namespace using Kubernetes client-go
-func cleanupNamespaceWithClient(namespace string) error {
+// cleanupParseableSecret deletes the "parseable-env-secret" in the specified namespace using Kubernetes client-go
+func cleanupParseableSecret(namespace string) error {
 	// Load the kubeconfig
 	config, err := loadKubeConfig()
 	if err != nil {
@@ -148,26 +163,25 @@ func cleanupNamespaceWithClient(namespace string) error {
 		return fmt.Errorf("failed to create Kubernetes client: %v", err)
 	}
 
-	// Create a context with a timeout for namespace deletion
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	// Create a context with a timeout for secret deletion
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Delete the namespace
-	err = clientset.CoreV1().Namespaces().Delete(ctx, namespace, v1.DeleteOptions{})
+	// Define the secret name
+	secretName := "parseable-env-secret"
+
+	// Delete the secret
+	err = clientset.CoreV1().Secrets(namespace).Delete(ctx, secretName, v1.DeleteOptions{})
 	if err != nil {
-		return fmt.Errorf("error deleting namespace: %v", err)
+		if apierrors.IsNotFound(err) {
+			fmt.Printf("Secret '%s' not found in namespace '%s'. Nothing to delete.\n", secretName, namespace)
+			return nil
+		}
+		return fmt.Errorf("error deleting secret '%s' in namespace '%s': %v", secretName, namespace, err)
 	}
 
-	// Wait for the namespace to be fully removed
-	fmt.Printf("Waiting for namespace '%s' to be deleted...\n", namespace)
-	for {
-		_, err := clientset.CoreV1().Namespaces().Get(ctx, namespace, v1.GetOptions{})
-		if err != nil {
-			fmt.Printf("Namespace '%s' successfully deleted.\n", namespace)
-			break
-		}
-		time.Sleep(2 * time.Second)
-	}
+	// Confirm the deletion
+	fmt.Printf("Secret '%s' successfully deleted from namespace '%s'.\n", secretName, namespace)
 
 	return nil
 }
