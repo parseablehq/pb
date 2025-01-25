@@ -31,45 +31,45 @@ type Plan struct {
 	CPUAndMemorySpecs string
 	CPU               string
 	Memory            string
+	Mode              string
+	Description       string
 }
 
 // Plans define the plans with clear CPU and memory specs for consumption
 var Plans = map[string]Plan{
 	"Playground": {
 		Name:              "Playground",
-		IngestionSpeed:    "100 events/sec",
-		PerDayIngestion:   "~1GB",
-		QueryPerformance:  "Basic performance",
-		CPUAndMemorySpecs: "1 CPUs, 1GB RAM",
+		Description:       "Suitable for testing and PoC",
+		IngestionSpeed:    "Up to 5 MiB/sec",
+		CPUAndMemorySpecs: "1 vCPU, 1Gi RAM",
 		CPU:               "1",
 		Memory:            "1Gi",
+		Mode:              "Standalone",
 	},
 	"Small": {
 		Name:              "Small",
-		IngestionSpeed:    "1000 events/sec",
-		PerDayIngestion:   "~10GB",
-		QueryPerformance:  "Basic performance",
-		CPUAndMemorySpecs: "2 CPUs, 4GB RAM",
+		Description:       "Suitable for production grade, small volume workloads",
+		IngestionSpeed:    "Up to 20 MiB/sec",
+		CPUAndMemorySpecs: "2 vCPUs, 4Gi RAM",
 		CPU:               "2",
 		Memory:            "4Gi",
+		Mode:              "Distributed (1 Query pod, 3 Ingest pod)",
 	},
 	"Medium": {
 		Name:              "Medium",
-		IngestionSpeed:    "10,000 events/sec",
-		PerDayIngestion:   "~100GB",
-		QueryPerformance:  "Moderate performance",
-		CPUAndMemorySpecs: "4 CPUs, 16GB RAM",
+		IngestionSpeed:    "Up to 50 MiB/sec",
+		CPUAndMemorySpecs: "4 vCPUs, 16Gi RAM",
 		CPU:               "4",
-		Memory:            "16Gi",
+		Memory:            "18Gi",
+		Mode:              "Distributed (1 Query pod, 3 Ingest pod)",
 	},
 	"Large": {
 		Name:              "Large",
-		IngestionSpeed:    "100,000 events/sec",
-		PerDayIngestion:   "~1TB",
-		QueryPerformance:  "High performance",
-		CPUAndMemorySpecs: "8 CPUs, 32GB RAM",
+		IngestionSpeed:    "Up to 100 MiB/sec",
+		CPUAndMemorySpecs: "8 vCPUs, 32Gi RAM",
 		CPU:               "8",
-		Memory:            "32Gi",
+		Memory:            "16Gi",
+		Mode:              "Distributed (1 Query pod, 3 Ingest pod)",
 	},
 }
 
@@ -84,16 +84,15 @@ func promptUserPlanSelection() (Plan, error) {
 	// Custom template for displaying plans
 	templates := &promptui.SelectTemplates{
 		Label:    "{{ . }}",
-		Active:   "▶ {{ .Name | yellow }} ({{ .IngestionSpeed | cyan }})",
-		Inactive: "  {{ .Name | yellow }} ({{ .IngestionSpeed | cyan }})",
+		Active:   "▶ {{ .Name | yellow }} ",
+		Inactive: "  {{ .Name | yellow }} ",
 		Selected: "{{ `Selected plan:` | green }} '{{ .Name | green }}' ✔ ",
 		Details: `
 --------- Plan Details ----------
 {{ "Plan:" | faint }}            	{{ .Name }}
 {{ "Ingestion Speed:" | faint }} 	{{ .IngestionSpeed }}
-{{ "Per Day Ingestion:" | faint }}	{{ .PerDayIngestion }}
-{{ "Query Performance:" | faint }}	{{ .QueryPerformance }}
-{{ "CPU & Memory:" | faint }}    	{{ .CPUAndMemorySpecs }}`,
+{{ "Infrastructure:" | faint }} 	{{ .Mode }}
+{{ "CPU & Memory:" | faint }}    	{{ .CPUAndMemorySpecs }} per pod`,
 	}
 
 	// Add a note about the default plan in the label

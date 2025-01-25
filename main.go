@@ -20,11 +20,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 
 	pb "pb/cmd"
 	"pb/pkg/analytics"
 	"pb/pkg/config"
-	"sync"
 
 	"github.com/spf13/cobra"
 )
@@ -188,8 +188,8 @@ var query = &cobra.Command{
 
 var cluster = &cobra.Command{
 	Use:               "cluster",
-	Short:             "Cluster operations for parseable.",
-	Long:              "\nCluster operations for parseable cluster on kubernetes.",
+	Short:             "Cluster operations for Parseable.",
+	Long:              "\nCluster operations for Parseable cluster on Kubernetes.",
 	PersistentPreRunE: combinedPreRun,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		if os.Getenv("PB_ANALYTICS") == "disable" {
@@ -206,7 +206,7 @@ var cluster = &cobra.Command{
 var list = &cobra.Command{
 	Use:               "list",
 	Short:             "List parseable on kubernetes cluster",
-	Long:              "\nlist command is used to list parseable oss installations.",
+	Long:              "\nlist command is used to list Parseable oss installations.",
 	PersistentPreRunE: combinedPreRun,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		if os.Getenv("PB_ANALYTICS") == "disable" {
@@ -222,8 +222,8 @@ var list = &cobra.Command{
 
 var show = &cobra.Command{
 	Use:               "show",
-	Short:             "Show outputs values defined when installing parseable on kubernetes cluster",
-	Long:              "\nshow command is used to get values in parseable.",
+	Short:             "Show outputs values defined when installing Parseable on kubernetes cluster",
+	Long:              "\nshow command is used to get values in Parseable.",
 	PersistentPreRunE: combinedPreRun,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		if os.Getenv("PB_ANALYTICS") == "disable" {
@@ -239,8 +239,8 @@ var show = &cobra.Command{
 
 var uninstall = &cobra.Command{
 	Use:               "uninstall",
-	Short:             "Uninstall parseable on kubernetes cluster",
-	Long:              "\nuninstall command is used to uninstall parseable oss/enterprise on k8s cluster..",
+	Short:             "Uninstall Parseable on kubernetes cluster",
+	Long:              "\nuninstall command is used to uninstall Parseable oss/enterprise on k8s cluster.",
 	PersistentPreRunE: combinedPreRun,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		if os.Getenv("PB_ANALYTICS") == "disable" {
