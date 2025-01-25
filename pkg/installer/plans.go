@@ -53,23 +53,23 @@ var Plans = map[string]Plan{
 		CPUAndMemorySpecs: "2 vCPUs, 4Gi RAM",
 		CPU:               "2",
 		Memory:            "4Gi",
-		Mode:              fmt.Sprintf("Distributed (1 Query pod, 3 Ingest pod)"),
+		Mode:              "Distributed (1 Query pod, 3 Ingest pod)",
 	},
 	"Medium": {
 		Name:              "Medium",
 		IngestionSpeed:    "Up to 50 MiB/sec",
 		CPUAndMemorySpecs: "4 vCPUs, 16Gi RAM",
 		CPU:               "4",
-		Memory:            "16Gi",
-		Mode:              fmt.Sprintf("Distributed (1 Query pod, 3 Ingest pod)"),
+		Memory:            "18Gi",
+		Mode:              "Distributed (1 Query pod, 3 Ingest pod)",
 	},
 	"Large": {
 		Name:              "Large",
 		IngestionSpeed:    "Up to 100 MiB/sec",
 		CPUAndMemorySpecs: "8 vCPUs, 32Gi RAM",
 		CPU:               "8",
-		Memory:            "32Gi",
-		Mode:              fmt.Sprintf("Distributed (1 Query pod, 3 Ingest pod)"),
+		Memory:            "16Gi",
+		Mode:              "Distributed (1 Query pod, 3 Ingest pod)",
 	},
 }
 
