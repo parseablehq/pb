@@ -56,21 +56,9 @@ type InstallerEntry struct {
 }
 
 // ReadInstallerConfigMap fetches and parses installer data from a ConfigMap
-func ReadInstallerConfigMap() ([]InstallerEntry, error) {
-
-	// Load kubeconfig and create a Kubernetes client
-	config, err := LoadKubeConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load kubeconfig: %w", err)
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
-	}
-
+func ReadInstallerConfigMap(k8sclient *kubernetes.Clientset) ([]InstallerEntry, error) {
 	// Get the ConfigMap
-	cm, err := clientset.CoreV1().ConfigMaps(namespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
+	cm, err := k8sclient.CoreV1().ConfigMaps(namespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
 	if err != nil {
 		if apiErrors.IsNotFound(err) {
 			fmt.Println(Yellow + "\nNo existing Parseable OSS clusters found.\n" + Reset)
@@ -100,6 +88,20 @@ func ReadInstallerConfigMap() ([]InstallerEntry, error) {
 func LoadKubeConfig() (*rest.Config, error) {
 	kubeconfig := clientcmd.NewDefaultClientConfigLoadingRules().GetDefaultFilename()
 	return clientcmd.BuildConfigFromFlags("", kubeconfig)
+}
+
+func CreateK8sClient() (*kubernetes.Clientset, error) {
+	// Load kubeconfig and create a Kubernetes client
+	config, err := LoadKubeConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load kubeconfig: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+	return clientset, nil
 }
 
 // PromptK8sContext retrieves Kubernetes contexts from kubeconfig.
@@ -220,20 +222,9 @@ func CreateDeploymentSpinner(infoMsg string) *spinner.Spinner {
 
 	return s
 }
-func RemoveInstallerEntry(name string) error {
-	// Load kubeconfig and create a Kubernetes client
-	config, err := LoadKubeConfig()
-	if err != nil {
-		return fmt.Errorf("failed to load kubeconfig: %w", err)
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return fmt.Errorf("failed to create Kubernetes client: %w", err)
-	}
-
+func RemoveInstallerEntry(name string, k8sclient *kubernetes.Clientset) error {
 	// Fetch the ConfigMap
-	configMap, err := clientset.CoreV1().ConfigMaps(namespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
+	configMap, err := k8sclient.CoreV1().ConfigMaps(namespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to fetch ConfigMap: %v", err)
 	}
@@ -271,7 +262,7 @@ func RemoveInstallerEntry(name string) error {
 	configMap.Data["installer-data"] = string(updatedData)
 
 	// Update the ConfigMap in Kubernetes
-	_, err = clientset.CoreV1().ConfigMaps(namespace).Update(context.TODO(), configMap, metav1.UpdateOptions{})
+	_, err = k8sclient.CoreV1().ConfigMaps(namespace).Update(context.TODO(), configMap, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to update ConfigMap: %v", err)
 	}

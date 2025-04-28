@@ -55,8 +55,13 @@ var ListOssCmd = &cobra.Command{
 			log.Fatalf("Failed to prompt for kubernetes context: %v", err)
 		}
 
+		k8sClient, err := common.CreateK8sClient()
+		if err != nil {
+			log.Fatalf("Error creating k8s client %v", err)
+		}
+
 		// Read the installer data from the ConfigMap
-		entries, err := common.ReadInstallerConfigMap()
+		entries, err := common.ReadInstallerConfigMap(k8sClient)
 		if err != nil {
 			log.Fatalf("Failed to list servers: %v", err)
 		}
@@ -90,8 +95,13 @@ var ShowValuesCmd = &cobra.Command{
 			log.Fatalf("Failed to prompt for Kubernetes context: %v", err)
 		}
 
+		k8sClient, err := common.CreateK8sClient()
+		if err != nil {
+			log.Fatalf("Error creating k8s client %v", err)
+		}
+
 		// Read the installer data from the ConfigMap
-		entries, err := common.ReadInstallerConfigMap()
+		entries, err := common.ReadInstallerConfigMap(k8sClient)
 		if err != nil {
 			log.Fatalf("Failed to list OSS servers: %v", err)
 		}
@@ -139,8 +149,13 @@ var UninstallOssCmd = &cobra.Command{
 			log.Fatalf("Failed to prompt for Kubernetes context: %v", err)
 		}
 
+		k8sClient, err := common.CreateK8sClient()
+		if err != nil {
+			log.Fatalf("Error creating k8s client %v", err)
+		}
+
 		// Read the installer data from the ConfigMap
-		entries, err := common.ReadInstallerConfigMap()
+		entries, err := common.ReadInstallerConfigMap(k8sClient)
 		if err != nil {
 			log.Fatalf("Failed to fetch OSS servers: %v", err)
 		}
@@ -176,12 +191,12 @@ var UninstallOssCmd = &cobra.Command{
 		}
 
 		// Remove entry from ConfigMap
-		if err := common.RemoveInstallerEntry(selectedCluster.Name); err != nil {
+		if err := common.RemoveInstallerEntry(selectedCluster.Name, k8sClient); err != nil {
 			log.Fatalf("Failed to remove entry from ConfigMap: %v", err)
 		}
 
 		// Delete secret
-		if err := deleteSecret(selectedCluster.Namespace, "parseable-env-secret"); err != nil {
+		if err := deleteSecret(selectedCluster.Namespace, "parseable-env-secret", k8sClient); err != nil {
 			log.Printf("Warning: Failed to delete secret 'parseable-env-secret': %v", err)
 		} else {
 			fmt.Println(common.Green + "Secret 'parseable-env-secret' deleted successfully." + common.Reset)
@@ -217,18 +232,9 @@ func uninstallCluster(entry common.InstallerEntry) error {
 	return nil
 }
 
-func deleteSecret(namespace, secretName string) error {
-	config, err := common.LoadKubeConfig()
-	if err != nil {
-		return fmt.Errorf("failed to create Kubernetes client: %v", err)
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return fmt.Errorf("failed to create Kubernetes client: %w", err)
-	}
-
-	err = clientset.CoreV1().Secrets(namespace).Delete(context.TODO(), "parseable-env-secret", metav1.DeleteOptions{})
+func deleteSecret(namespace, secretName string, k8sClient *kubernetes.Clientset) error {
+	// Delete the secrets
+	err := k8sClient.CoreV1().Secrets(namespace).Delete(context.TODO(), "parseable-env-secret", metav1.DeleteOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to delete secret '%s': %v", secretName, err)
 	}
