@@ -58,8 +58,8 @@ var cli = &cobra.Command{
 	PersistentPreRunE: analytics.CheckAndCreateULID,
 	RunE: func(command *cobra.Command, _ []string) error {
 		if p, _ := command.Flags().GetBool(versionFlag); p {
-			pb.PrintVersion(Version, Commit)
-			return nil
+			err := pb.PrintVersion(Version, Commit)
+			return err
 		}
 		return errors.New("no command or flag supplied")
 	},
@@ -303,7 +303,12 @@ func main() {
 
 	// Set as command
 	pb.VersionCmd.Run = func(_ *cobra.Command, _ []string) {
-		pb.PrintVersion(Version, Commit)
+
+		err := pb.PrintVersion(Version, Commit)
+		if err != nil {
+			fmt.Printf("failed to write to file %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	cli.AddCommand(pb.VersionCmd)

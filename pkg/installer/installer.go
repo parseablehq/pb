@@ -272,13 +272,14 @@ func promptNamespaceAndCredentials() (*ParseableInfo, error) {
 // applyParseableSecret creates and applies the Kubernetes secret
 func applyParseableSecret(ps *ParseableInfo, store ObjectStore, objectStoreConfig ObjectStoreConfig) error {
 	var secretManifest string
-	if store == LocalStore {
+	switch store {
+	case LocalStore:
 		secretManifest = getParseableSecretLocal(ps)
-	} else if store == S3Store {
+	case S3Store:
 		secretManifest = getParseableSecretS3(ps, objectStoreConfig)
-	} else if store == BlobStore {
+	case BlobStore:
 		secretManifest = getParseableSecretBlob(ps, objectStoreConfig)
-	} else if store == GcsStore {
+	case GcsStore:
 		secretManifest = getParseableSecretGcs(ps, objectStoreConfig)
 	}
 
@@ -867,7 +868,10 @@ func startPortForward(namespace, serviceName, remotePort, localPort string, verb
 	for i := 0; i < retries; i++ {
 		conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%s", localPort))
 		if err == nil {
-			conn.Close() // Connection successful, break out of the loop
+			err := conn.Close() // Connection successful, break out of the loop
+			if err != nil {
+				return err
+			}
 			fmt.Println(common.Green + "Port-forwarding successfully established!")
 			time.Sleep(5 * time.Second) // some delay
 			return nil
@@ -876,7 +880,10 @@ func startPortForward(namespace, serviceName, remotePort, localPort string, verb
 	}
 
 	// If we reach here, port-forwarding failed
-	cmd.Process.Kill() // Stop the kubectl process
+	err := cmd.Process.Kill() // Stop the kubectl process
+	if err != nil {
+		return err
+	}
 	return fmt.Errorf(common.Red+"failed to establish port-forward connection to localhost:%s", localPort)
 }
 
@@ -893,7 +900,10 @@ func openBrowser(url string) {
 		fmt.Printf("Please open the following URL manually: %s\n", url)
 		return
 	}
-	cmd.Start()
+	err := cmd.Start()
+	if err != nil {
+		log.Fatalf("could not be be able to start the command %v", err)
+	}
 }
 
 func updateInstallerConfigMap(entry common.InstallerEntry) error {

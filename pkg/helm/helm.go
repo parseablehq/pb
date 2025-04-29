@@ -94,12 +94,14 @@ func Apply(h Helm, verbose bool) error {
 	settings.SetNamespace(h.Namespace)
 	settings.EnvVars()
 	// Add repository
-	repoAdd(h)
-
+	err := repoAdd(h)
+	if err != nil {
+		return err
+	}
 	// RepoUpdate()
 
 	// Locate chart path
-	cp, err := client.ChartPathOptions.LocateChart(fmt.Sprintf("%s/%s", h.RepoName, h.ChartName), settings)
+	cp, err := client.LocateChart(fmt.Sprintf("%s/%s", h.RepoName, h.ChartName), settings)
 	if err != nil {
 		return err
 	}
@@ -159,7 +161,11 @@ func repoAdd(h Helm) error {
 	locked, err := fileLock.TryLockContext(lockCtx, time.Second)
 
 	if err == nil && locked {
-		defer fileLock.Unlock()
+		defer func() {
+			if err := fileLock.Unlock(); err != nil {
+				fmt.Printf("Error while unlocking file %v", err)
+			}
+		}()
 	}
 
 	if err != nil {
@@ -313,12 +319,15 @@ func Upgrade(h Helm) error {
 	settings.SetNamespace(h.Namespace)
 	settings.EnvVars()
 	// Add repository
-	repoAdd(h)
+	err := repoAdd(h)
+	if err != nil {
+		return err
+	}
 
 	// RepoUpdate()
 
 	// Locate chart path
-	cp, err := client.ChartPathOptions.LocateChart(fmt.Sprintf("%s/%s", h.RepoName, h.ChartName), settings)
+	cp, err := client.LocateChart(fmt.Sprintf("%s/%s", h.RepoName, h.ChartName), settings)
 	if err != nil {
 		return err
 	}

@@ -552,7 +552,11 @@ func fetchData(client *http.Client, profile *config.Profile, query string, start
 	}
 
 	err = json.NewDecoder(resp.Body).Decode(&data)
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("failed to close the response body %v\n", err)
+		}
+	}()
 	if err != nil {
 		return
 	}

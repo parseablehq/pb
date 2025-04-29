@@ -1,20 +1,29 @@
+version: 2
+
 linters:
   disable-all: true
+  settings:
+    errcheck:
+      exclude-functions:
+        - io/ioutil.ReadFile
+        - io.Copy(*bytes.Buffer)
+        - io.Copy(os.Stdout)
+        - (io.Closer).Close
   enable:
-    - typecheck
-    - goimports
     - misspell
     - govet
-    - revive
+    # - revive
     - ineffassign
     - gomodguard
-    - gofmt
     - unused
+    - nilnesserr 
 
 linters-settings:
   golint:
     min-confidence: 0
-
+  govet:
+    enable:
+      - typecheck
   misspell:
     locale: US
 

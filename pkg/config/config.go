@@ -54,6 +54,7 @@ type Profile struct {
 	Password string `json:"password,omitempty"`
 }
 
+// GrpcAddr gives the grpc address of the parseable server
 func (p *Profile) GrpcAddr(port string) string {
 	urlv, _ := url.Parse(p.URL)
 	return net.JoinHostPort(urlv.Hostname(), port)
@@ -77,7 +78,12 @@ func WriteConfigToFile(config *Config) error {
 		fmt.Println("Error creating the file:", err)
 		return err
 	}
-	defer file.Close()
+
+	defer func() {
+		if err := file.Close(); err != nil {
+			fmt.Printf("Error while closing file: %v \n", err)
+		}
+	}()
 	// Write the data into the file
 	_, err = file.Write(tomlData)
 	if err != nil {
@@ -107,6 +113,7 @@ func ReadConfigFromFile() (config *Config, err error) {
 	return config, nil
 }
 
+// GetProfile retrurns the parseable profile by reading the config
 func GetProfile() (Profile, error) {
 	conf, err := ReadConfigFromFile()
 	if os.IsNotExist(err) {

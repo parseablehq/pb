@@ -79,7 +79,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		render = focusedOuterStyle.Render(render)
 	}
 
-	fmt.Fprint(w, render)
+	_, _ = fmt.Fprint(w, render)
 }
 
 // Model for profile selection command

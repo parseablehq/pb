@@ -80,7 +80,7 @@ func (d timeDurationItemDelegate) Render(w io.Writer, m list.Model, index int, l
 		}
 	}
 
-	fmt.Fprint(w, fn(i.repr))
+	_, _ = fmt.Fprint(w, fn(i.repr))
 }
 
 // NewTimeRangeModel creates new range model
