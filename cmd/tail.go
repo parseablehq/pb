@@ -86,8 +86,13 @@ func tail(profile config.Profile, stream string) error {
 		if err != nil {
 			return err
 		}
+
 		var buf bytes.Buffer
-		array.RecordToJSON(record, &buf)
+		err = array.RecordToJSON(record, &buf)
+		if err != nil {
+			return err
+		}
+
 		fmt.Println(buf.String())
 	}
 }

@@ -24,11 +24,13 @@ import (
 	"time"
 )
 
+// HTTPClient can be used to make HTTP requests in an idiomatic way
 type HTTPClient struct {
 	Client  http.Client
 	Profile *config.Profile
 }
 
+// DefaultClient creates a HTTPClient with default parameters
 func DefaultClient(profile *config.Profile) HTTPClient {
 	return HTTPClient{
 		Client: http.Client{

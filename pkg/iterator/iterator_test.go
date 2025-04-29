@@ -89,7 +89,7 @@ func TestIteratorConstruct(t *testing.T) {
 	iter := NewQueryIterator(scenario.StartTime(), scenario.EndTime(), true, scenario.QueryRunnerFunc(), scenario.HasDataFunc())
 
 	currentWindow := iter.windows[0]
-	if !(currentWindow.time == scenario.StartTime()) {
+	if currentWindow.time != scenario.StartTime() {
 		t.Fatalf("window time does not match start, expected %s, actual %s", scenario.StartTime().String(), currentWindow.time.String())
 	}
 }
@@ -98,7 +98,10 @@ func TestIteratorAscending(t *testing.T) {
 	scenario := DefaultTestScenario()
 	iter := NewQueryIterator(scenario.StartTime(), scenario.EndTime(), true, scenario.QueryRunnerFunc(), scenario.HasDataFunc())
 
-	iter.Next()
+	_, err := iter.Next()
+	if err != nil {
+		t.Fatalf("error while iterating %v", err)
+	}
 	// busy loop waiting for iter to be ready
 	for !iter.Ready() {
 		continue
@@ -115,7 +118,10 @@ func TestIteratorAscending(t *testing.T) {
 		t.Fatalf("Iter is not ready when it should be")
 	}
 
-	iter.Next()
+	_, err = iter.Next()
+	if err != nil {
+		t.Fatalf("error while iterating %v", err)
+	}
 	// busy loop waiting for iter to be ready
 	for !iter.Ready() {
 		continue
@@ -124,7 +130,10 @@ func TestIteratorAscending(t *testing.T) {
 	currentWindow = iter.windows[iter.index]
 	checkCurrentWindowIndex("02 Jan 06 15:07 +0000", currentWindow, t)
 
-	iter.Next()
+	_, err = iter.Next()
+	if err != nil {
+		t.Fatalf("error while iterating %v", err)
+	}
 	// busy loop waiting for iter to be ready
 	for !iter.Ready() {
 		continue
@@ -133,7 +142,10 @@ func TestIteratorAscending(t *testing.T) {
 	currentWindow = iter.windows[iter.index]
 	checkCurrentWindowIndex("02 Jan 06 15:09 +0000", currentWindow, t)
 
-	iter.Next()
+	_, err = iter.Next()
+	if err != nil {
+		t.Fatalf("error while iterating %v", err)
+	}
 	// busy loop waiting for iter to be ready
 	for !iter.Ready() {
 		continue
@@ -151,7 +163,10 @@ func TestIteratorDescending(t *testing.T) {
 	scenario := DefaultTestScenario()
 	iter := NewQueryIterator(scenario.StartTime(), scenario.EndTime(), false, scenario.QueryRunnerFunc(), scenario.HasDataFunc())
 
-	iter.Next()
+	_, err := iter.Next()
+	if err != nil {
+		t.Fatalf("error while iterating %v", err)
+	}
 	// busy loop waiting for iter to be ready
 	for !iter.Ready() {
 		continue
@@ -168,7 +183,10 @@ func TestIteratorDescending(t *testing.T) {
 		t.Fatalf("Iter is not ready when it should be")
 	}
 
-	iter.Next()
+	_, err = iter.Next()
+	if err != nil {
+		t.Fatalf("error while iterating %v", err)
+	}
 	// busy loop waiting for iter to be ready
 	for !iter.Ready() {
 		continue
@@ -177,7 +195,10 @@ func TestIteratorDescending(t *testing.T) {
 	currentWindow = iter.windows[iter.index]
 	checkCurrentWindowIndex("02 Jan 06 15:09 +0000", currentWindow, t)
 
-	iter.Next()
+	_, err = iter.Next()
+	if err != nil {
+		t.Fatalf("error while iterating %v", err)
+	}
 	// busy loop waiting for iter to be ready
 	for !iter.Ready() {
 		continue
@@ -186,7 +207,10 @@ func TestIteratorDescending(t *testing.T) {
 	currentWindow = iter.windows[iter.index]
 	checkCurrentWindowIndex("02 Jan 06 15:07 +0000", currentWindow, t)
 
-	iter.Next()
+	_, err = iter.Next()
+	if err != nil {
+		t.Fatalf("error while iterating %v", err)
+	}
 	// busy loop waiting for iter to be ready
 	for !iter.Ready() {
 		continue
@@ -202,7 +226,7 @@ func TestIteratorDescending(t *testing.T) {
 
 func checkCurrentWindowIndex(expectedValue string, currentWindow MinuteCheckPoint, t *testing.T) {
 	expectedTime, _ := time.Parse(time.RFC822Z, expectedValue)
-	if !(currentWindow.time == expectedTime) {
+	if currentWindow.time != expectedTime {
 		t.Fatalf("window time does not match start, expected %s, actual %s", expectedTime.String(), currentWindow.time.String())
 	}
 }

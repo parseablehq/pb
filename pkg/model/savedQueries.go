@@ -122,7 +122,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		}
 	}
 
-	fmt.Fprint(w, fn(tr(i.title)+"\n"+qr(i.desc)+"\n"+str))
+	_, _ = fmt.Fprint(w, fn(tr(i.title)+"\n"+qr(i.desc)+"\n"+str))
 }
 
 // Implement itemDelegate ShortHelp to show only relevant bindings.
@@ -321,7 +321,11 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 		fmt.Println("Error making request:", err)
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("failed to close the response body %v\n", err)
+		}
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -389,7 +393,11 @@ func RunQuery(client *http.Client, profile *config.Profile, query string, startT
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("failed to close the response body %v\n", err)
+		}
+	}()
 
 	if resp.StatusCode == http.StatusOK {
 		var jsonResponse []map[string]interface{}

@@ -143,10 +143,11 @@ func fetchData(client *internalHTTP.HTTPClient, query string, startTime, endTime
 		}
 		encodedResponse, _ := json.MarshalIndent(jsonResponse, "", "  ")
 		fmt.Println(string(encodedResponse))
-	} else {
-		io.Copy(os.Stdout, resp.Body)
+
+		return nil
 	}
-	return nil
+	_, err = io.Copy(os.Stdout, resp.Body)
+	return err
 }
 
 // Returns start and end time for query in RFC3339 format
