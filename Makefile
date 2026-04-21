@@ -1,12 +1,14 @@
 PWD := $(shell pwd)
 GOPATH := $(shell go env GOPATH)
-VERSION ?= $(shell git describe --tags)
+# This is just for development purposes. The version is determined at build time using git tags.
+VERSION ?= $(shell git describe --tags 2>/dev/null || echo "dev")
 TAG ?= "parseablehq/pb:$(VERSION)"
 LDFLAGS := $(shell go run buildscripts/gen-ldflags.go $(VERSION))
 
 GOARCH := $(shell go env GOARCH)
 GOOS := $(shell go env GOOS)
-GO111MODULE=on
+
+GOLANGCI_LINT_VERSION := v2.11.4
 
 all: build
 
@@ -15,11 +17,9 @@ checks:
 	@(env bash $(PWD)/buildscripts/checkdeps.sh)
 
 getdeps:
-	@GO111MODULE=on
 	@mkdir -p ${GOPATH}/bin
-	@echo "Installing golangci-lint" && curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOPATH)/bin
-	@echo "Installing stringer" && go install -v golang.org/x/tools/cmd/stringer@latest
-	@echo "Installing staticheck" && go install honnef.co/go/tools/cmd/staticcheck@latest
+	@echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)"
+	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOPATH)/bin $(GOLANGCI_LINT_VERSION)
 
 crosscompile:
 	@(env bash $(PWD)/buildscripts/cross-compile.sh)
@@ -31,17 +31,16 @@ docker: build
 
 vet:
 	@echo "Running $@"
-	@GO111MODULE=on go vet $(PWD)/...
+	@go vet $(PWD)/...
 
 lint:
 	@echo "Running $@ check"
-	@GO111MODULE=on ${GOPATH}/bin/golangci-lint run --timeout=5m --config ./.golangci.yml
-	@GO111MODULE=on ${GOPATH}/bin/staticcheck -tests=false -checks="all,-ST1000,-ST1003,-ST1016,-ST1020,-ST1021,-ST1022,-ST1023,-ST1005" ./...
+	@${GOPATH}/bin/golangci-lint run --timeout=5m --config ./.golangci.yml
 
 # Builds pb locally.
 build: checks
 	@echo "Building pb binary to './pb'"
-	@GO111MODULE=on CGO_ENABLED=0 go build -trimpath -tags kqueue --ldflags "$(LDFLAGS)" -o $(PWD)/pb
+	@CGO_ENABLED=0 go build -trimpath -tags kqueue --ldflags "$(LDFLAGS)" -o $(PWD)/pb
 
 # Build pb for all supported platforms.
 build-release: verifiers crosscompile
