@@ -99,7 +99,7 @@ func Apply(h Helm, verbose bool) error {
 	// RepoUpdate()
 
 	// Locate chart path
-	cp, err := client.ChartPathOptions.LocateChart(fmt.Sprintf("%s/%s", h.RepoName, h.ChartName), settings)
+	cp, err := client.LocateChart(fmt.Sprintf("%s/%s", h.RepoName, h.ChartName), settings)
 	if err != nil {
 		return err
 	}
@@ -318,7 +318,7 @@ func Upgrade(h Helm) error {
 	// RepoUpdate()
 
 	// Locate chart path
-	cp, err := client.ChartPathOptions.LocateChart(fmt.Sprintf("%s/%s", h.RepoName, h.ChartName), settings)
+	cp, err := client.LocateChart(fmt.Sprintf("%s/%s", h.RepoName, h.ChartName), settings)
 	if err != nil {
 		return err
 	}

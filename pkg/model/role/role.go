@@ -65,7 +65,7 @@ func (m *Model) Valid() bool {
 	case "admin", "editor", "none":
 		return true
 	case "writer", "reader", "ingestor":
-		return !(strings.Contains(m.Stream.Value(), " ") || m.Stream.Value() == "")
+		return !strings.Contains(m.Stream.Value(), " ") && m.Stream.Value() != ""
 	}
 	return true
 }

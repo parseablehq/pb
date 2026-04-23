@@ -272,13 +272,14 @@ func promptNamespaceAndCredentials() (*ParseableInfo, error) {
 // applyParseableSecret creates and applies the Kubernetes secret
 func applyParseableSecret(ps *ParseableInfo, store ObjectStore, objectStoreConfig ObjectStoreConfig) error {
 	var secretManifest string
-	if store == LocalStore {
+	switch store {
+	case LocalStore:
 		secretManifest = getParseableSecretLocal(ps)
-	} else if store == S3Store {
+	case S3Store:
 		secretManifest = getParseableSecretS3(ps, objectStoreConfig)
-	} else if store == BlobStore {
+	case BlobStore:
 		secretManifest = getParseableSecretBlob(ps, objectStoreConfig)
-	} else if store == GcsStore {
+	case GcsStore:
 		secretManifest = getParseableSecretGcs(ps, objectStoreConfig)
 	}
 
