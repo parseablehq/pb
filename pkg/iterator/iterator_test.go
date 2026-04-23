@@ -89,7 +89,7 @@ func TestIteratorConstruct(t *testing.T) {
 	iter := NewQueryIterator(scenario.StartTime(), scenario.EndTime(), true, scenario.QueryRunnerFunc(), scenario.HasDataFunc())
 
 	currentWindow := iter.windows[0]
-	if !(currentWindow.time == scenario.StartTime()) {
+	if currentWindow.time != scenario.StartTime() {
 		t.Fatalf("window time does not match start, expected %s, actual %s", scenario.StartTime().String(), currentWindow.time.String())
 	}
 }
@@ -202,7 +202,7 @@ func TestIteratorDescending(t *testing.T) {
 
 func checkCurrentWindowIndex(expectedValue string, currentWindow MinuteCheckPoint, t *testing.T) {
 	expectedTime, _ := time.Parse(time.RFC822Z, expectedValue)
-	if !(currentWindow.time == expectedTime) {
+	if currentWindow.time != expectedTime {
 		t.Fatalf("window time does not match start, expected %s, actual %s", expectedTime.String(), currentWindow.time.String())
 	}
 }

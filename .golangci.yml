@@ -1,28 +1,49 @@
+version: "2"
+
 linters:
-  disable-all: true
+  default: none
   enable:
-    - typecheck
-    - goimports
     - misspell
     - govet
     - revive
     - ineffassign
     - gomodguard
-    - gofmt
     - unused
-
-linters-settings:
-  golint:
-    min-confidence: 0
-
-  misspell:
-    locale: US
-
-issues:
-  exclude-use-default: false
-  exclude:
-    - instead of using struct literal
-    - should have a package comment
-    - should have comment or be unexported
-    - time-naming
-    - error strings should not be capitalized or end with punctuation or a newline
+    - staticcheck
+  settings:
+    staticcheck:
+      checks:
+        - "all"
+        - "-ST1000"
+        - "-ST1003"
+        - "-ST1005"
+        - "-ST1016"
+        - "-ST1020"
+        - "-ST1021"
+        - "-ST1022"
+        - "-ST1023"
+    misspell:
+      locale: US
+  exclusions:
+    presets: []
+    rules:
+      - text: "instead of using struct literal"
+        linters:
+        - revive
+      - text: "should have a package comment"
+        linters:
+          - revive
+      - text: "should have comment or be unexported"
+        linters:
+          - revive
+      - text: "time-naming"
+        linters:
+        - revive
+      - text: "error strings should not be capitalized or end with punctuation or a newline"
+        linters:
+          - revive
+          
+formatters:
+  enable:
+    - gofmt
+    - goimports
