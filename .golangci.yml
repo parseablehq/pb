@@ -29,7 +29,7 @@ linters:
     rules:
       - text: "instead of using struct literal"
         linters:
-        - revive
+          - revive
       - text: "should have a package comment"
         linters:
           - revive
@@ -38,7 +38,7 @@ linters:
           - revive
       - text: "time-naming"
         linters:
-        - revive
+          - revive
       - text: "error strings should not be capitalized or end with punctuation or a newline"
         linters:
           - revive
