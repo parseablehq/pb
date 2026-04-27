@@ -48,8 +48,8 @@ var (
 var query = &cobra.Command{
 	Use:     "run [query] [flags]",
 	Example: "  pb query run \"select * from frontend\" --from=10m --to=now",
-	Short:   "Run SQL query on a log stream",
-	Long:    "\nRun SQL query on a log stream. Default output format is text. Use --output flag to set output format to json.",
+	Short:   "Run SQL query on a dataset",
+	Long:    "\nRun SQL query on a dataset. Default output format is text. Use --output flag to set output format to json.",
 	Args:    cobra.MaximumNArgs(1),
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(command *cobra.Command, args []string) error {

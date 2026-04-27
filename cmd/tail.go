@@ -35,9 +35,9 @@ import (
 )
 
 var TailCmd = &cobra.Command{
-	Use:     "tail stream-name",
+	Use:     "tail dataset-name",
 	Example: " pb tail backend_logs",
-	Short:   "Stream live events from a log stream",
+	Short:   "Stream live events from a dataset",
 	Args:    cobra.ExactArgs(1),
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(_ *cobra.Command, args []string) error {

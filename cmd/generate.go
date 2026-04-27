@@ -98,17 +98,17 @@ var GenerateSchemaCmd = &cobra.Command{
 
 var CreateSchemaCmd = &cobra.Command{
 	Use:     "create",
-	Short:   "Create Schema for a Parseable stream",
-	Example: "pb schema create --stream=my_stream --file=schema.json",
+	Short:   "Create Schema for a Parseable dataset",
+	Example: "pb schema create --dataset=my_dataset --file=schema.json",
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		// Get the stream name from the `--stream` flag
-		streamName, err := cmd.Flags().GetString("stream")
+		// Get the dataset name from the `--dataset` flag
+		streamName, err := cmd.Flags().GetString("dataset")
 		if err != nil {
-			return fmt.Errorf(common.Red+"failed to read stream flag: %w"+common.Reset, err)
+			return fmt.Errorf(common.Red+"failed to read dataset flag: %w"+common.Reset, err)
 		}
 
 		if streamName == "" {
-			return fmt.Errorf(common.Red + "stream flag is required" + common.Reset)
+			return fmt.Errorf(common.Red + "dataset flag is required" + common.Reset)
 		}
 
 		// Get the file path from the `--file` flag
@@ -171,6 +171,6 @@ var CreateSchemaCmd = &cobra.Command{
 func init() {
 	// Add the `--file` flag to the command
 	GenerateSchemaCmd.Flags().StringP("file", "f", "", "Path to the JSON file to generate schema")
-	CreateSchemaCmd.Flags().StringP("stream", "s", "", "Name of the stream to associate with the schema")
+	CreateSchemaCmd.Flags().StringP("dataset", "s", "", "Name of the dataset to associate with the schema")
 	CreateSchemaCmd.Flags().StringP("file", "f", "", "Path to the JSON file to create schema")
 }

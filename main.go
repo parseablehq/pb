@@ -85,16 +85,16 @@ var profile = &cobra.Command{
 
 var schema = &cobra.Command{
 	Use:   "schema",
-	Short: "Generate or create schemas for JSON data or Parseable streams",
+	Short: "Generate or create schemas for JSON data or Parseable datasets",
 	Long: `The "schema" command allows you to either:
   - Generate a schema automatically from a JSON file for analysis or integration.
-  - Create a custom schema for Parseable streams (PB streams) to structure and process your data.
+  - Create a custom schema for Parseable datasets to structure and process your data.
 
 Examples:
   - To generate a schema from a JSON file:
       pb schema generate --file=data.json
-  - To create a schema for a PB stream:
-      pb schema create --stream-name=my_stream --config=data.json
+  - To create a schema for a dataset:
+      pb schema create --dataset=my_dataset --config=data.json
 `,
 	PersistentPreRunE: combinedPreRun,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
@@ -143,10 +143,10 @@ var role = &cobra.Command{
 	},
 }
 
-var stream = &cobra.Command{
-	Use:               "stream",
-	Short:             "Manage streams",
-	Long:              "\nstream command is used to manage streams.",
+var dataset = &cobra.Command{
+	Use:               "dataset",
+	Short:             "Manage datasets",
+	Long:              "\ndataset command is used to manage datasets.",
 	PersistentPreRunE: combinedPreRun,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		if os.Getenv("PB_ANALYTICS") == "disable" {
@@ -155,15 +155,15 @@ var stream = &cobra.Command{
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, "stream", args)
+			analytics.PostRunAnalytics(cmd, "dataset", args)
 		}()
 	},
 }
 
 var query = &cobra.Command{
 	Use:               "query",
-	Short:             "Run SQL query on a log stream",
-	Long:              "\nRun SQL query on a log stream. Default output format is json. Use -i flag to open interactive table view.",
+	Short:             "Run SQL query on a dataset",
+	Long:              "\nRun SQL query on a dataset. Default output format is json. Use -i flag to open interactive table view.",
 	PersistentPreRunE: combinedPreRun,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		if os.Getenv("PB_ANALYTICS") == "disable" {
@@ -260,10 +260,10 @@ func main() {
 	role.AddCommand(pb.RemoveRoleCmd)
 	role.AddCommand(pb.ListRoleCmd)
 
-	stream.AddCommand(pb.AddStreamCmd)
-	stream.AddCommand(pb.RemoveStreamCmd)
-	stream.AddCommand(pb.ListStreamCmd)
-	stream.AddCommand(pb.StatStreamCmd)
+	dataset.AddCommand(pb.AddDatasetCmd)
+	dataset.AddCommand(pb.RemoveDatasetCmd)
+	dataset.AddCommand(pb.ListDatasetCmd)
+	dataset.AddCommand(pb.StatDatasetCmd)
 
 	query.AddCommand(pb.QueryCmd)
 	query.AddCommand(pb.SavedQueryList)
@@ -284,7 +284,7 @@ func main() {
 
 	cli.AddCommand(profile)
 	cli.AddCommand(query)
-	cli.AddCommand(stream)
+	cli.AddCommand(dataset)
 	cli.AddCommand(user)
 	cli.AddCommand(role)
 	cli.AddCommand(pb.TailCmd)

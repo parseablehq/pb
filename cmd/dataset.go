@@ -30,8 +30,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// StreamStatsData is the data structure for stream stats
-type StreamStatsData struct {
+// DatasetStatsData is the data structure for dataset stats
+type DatasetStatsData struct {
 	Ingestion struct {
 		Count  int    `json:"count"`
 		Format string `json:"format"`
@@ -45,17 +45,17 @@ type StreamStatsData struct {
 	Time   time.Time `json:"time"`
 }
 
-type StreamListItem struct {
+type DatasetListItem struct {
 	Name string
 }
 
-func (item *StreamListItem) Render() string {
+func (item *DatasetListItem) Render() string {
 	render := StandardStyle.Render(item.Name)
 	return ItemOuter.Render(render)
 }
 
-// StreamRetentionData is the data structure for stream retention
-type StreamRetentionData []struct {
+// DatasetRetentionData is the data structure for dataset retention
+type DatasetRetentionData []struct {
 	Description string `json:"description"`
 	Action      string `json:"action"`
 	Duration    string `json:"duration"`
@@ -105,11 +105,11 @@ type RuleConfig struct {
 	Repeats    int         `json:"repeats"`
 }
 
-// AddStreamCmd is the parent command for stream
-var AddStreamCmd = &cobra.Command{
-	Use:     "add stream-name",
-	Example: "  pb stream add backend_logs",
-	Short:   "Create a new stream",
+// AddDatasetCmd is the parent command for dataset
+var AddDatasetCmd = &cobra.Command{
+	Use:     "add dataset-name",
+	Example: "  pb dataset add backend_logs",
+	Short:   "Create a new dataset",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Capture start time
@@ -139,7 +139,7 @@ var AddStreamCmd = &cobra.Command{
 		cmd.Annotations["executionTime"] = time.Since(startTime).String()
 
 		if resp.StatusCode == 200 {
-			fmt.Printf("Created stream %s\n", StyleBold.Render(name))
+			fmt.Printf("Created dataset %s\n", StyleBold.Render(name))
 		} else {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -155,11 +155,11 @@ var AddStreamCmd = &cobra.Command{
 	},
 }
 
-// StatStreamCmd is the stat command for stream
-var StatStreamCmd = &cobra.Command{
-	Use:     "info stream-name",
-	Example: "  pb stream info backend_logs",
-	Short:   "Get statistics for a stream",
+// StatDatasetCmd is the stat command for dataset
+var StatDatasetCmd = &cobra.Command{
+	Use:     "info dataset-name",
+	Example: "  pb dataset info backend_logs",
+	Short:   "Get statistics for a dataset",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Capture start time
@@ -201,8 +201,8 @@ var StatStreamCmd = &cobra.Command{
 			return err
 		}
 
-		// Fetch stream type
-		streamType, err := fetchInfo(&client, name)
+		// Fetch dataset type
+		datasetType, err := fetchInfo(&client, name)
 		if err != nil {
 			// Capture error
 			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
@@ -220,9 +220,9 @@ var StatStreamCmd = &cobra.Command{
 					"storage_size":      humanize.Bytes(uint64(storageSize)),
 					"compression_ratio": fmt.Sprintf("%.2f%%", compressionRatio),
 				},
-				"retention":   retention,
-				"alerts":      alertsData.Alerts,
-				"stream_type": streamType,
+				"retention":    retention,
+				"alerts":       alertsData.Alerts,
+				"dataset_type": datasetType,
 			}
 
 			jsonData, err := json.MarshalIndent(data, "", "  ")
@@ -243,7 +243,7 @@ var StatStreamCmd = &cobra.Command{
 			fmt.Printf("  %-18s %s\n", "Ingestion Size:", humanize.Bytes(uint64(ingestionSize)))
 			fmt.Printf("  %-18s %s\n", "Storage Size:", humanize.Bytes(uint64(storageSize)))
 			fmt.Printf("  %-18s %.2f%s\n", "Compression Ratio:", compressionRatio, "%")
-			fmt.Printf("  %-18s %s\n", "Stream Type:", streamType)
+			fmt.Printf("  %-18s %s\n", "Dataset Type:", datasetType)
 			fmt.Println()
 
 			if isRetentionSet {
@@ -254,7 +254,7 @@ var StatStreamCmd = &cobra.Command{
 					fmt.Println()
 				}
 			} else {
-				fmt.Println(StyleBold.Render("No retention period set on stream\n"))
+				fmt.Println(StyleBold.Render("No retention period set on dataset\n"))
 			}
 
 			if isAlertsSet {
@@ -276,7 +276,7 @@ var StatStreamCmd = &cobra.Command{
 					fmt.Print("\n\n")
 				}
 			} else {
-				fmt.Println(StyleBold.Render("No alerts set on stream\n"))
+				fmt.Println(StyleBold.Render("No alerts set on dataset\n"))
 			}
 		}
 
@@ -285,14 +285,14 @@ var StatStreamCmd = &cobra.Command{
 }
 
 func init() {
-	StatStreamCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+	StatDatasetCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
 }
 
-var RemoveStreamCmd = &cobra.Command{
-	Use:     "remove stream-name",
+var RemoveDatasetCmd = &cobra.Command{
+	Use:     "remove dataset-name",
 	Aliases: []string{"rm"},
-	Example: " pb stream remove backend_logs",
-	Short:   "Delete a stream",
+	Example: " pb dataset remove backend_logs",
+	Short:   "Delete a dataset",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Capture start time
@@ -322,7 +322,7 @@ var RemoveStreamCmd = &cobra.Command{
 		cmd.Annotations["executionTime"] = time.Since(startTime).String()
 
 		if resp.StatusCode == 200 {
-			fmt.Printf("Successfully deleted stream %s\n", StyleBold.Render(name))
+			fmt.Printf("Successfully deleted dataset %s\n", StyleBold.Render(name))
 		} else {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -338,11 +338,11 @@ var RemoveStreamCmd = &cobra.Command{
 	},
 }
 
-// ListStreamCmd is the list command for streams
-var ListStreamCmd = &cobra.Command{
+// ListDatasetCmd is the list command for datasets
+var ListDatasetCmd = &cobra.Command{
 	Use:     "list",
-	Example: "  pb stream list",
-	Short:   "List all streams",
+	Example: "  pb dataset list",
+	Short:   "List all datasets",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		// Capture start time
 		startTime := time.Now()
@@ -366,23 +366,23 @@ var ListStreamCmd = &cobra.Command{
 			return err
 		}
 
-		var streams []StreamListItem
+		var datasets []DatasetListItem
 		if resp.StatusCode == 200 {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {
 				cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 				return err
 			}
-			if err := json.Unmarshal(bytes, &streams); err != nil {
+			if err := json.Unmarshal(bytes, &datasets); err != nil {
 				cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 				return err
 			}
 
-			for _, stream := range streams {
-				fmt.Println(stream.Render())
+			for _, dataset := range datasets {
+				fmt.Println(dataset.Render())
 			}
 		} else {
-			fmt.Printf("Failed to fetch streams. Status Code: %s\n", resp.Status)
+			fmt.Printf("Failed to fetch datasets. Status Code: %s\n", resp.Status)
 		}
 
 		return nil
@@ -391,10 +391,10 @@ var ListStreamCmd = &cobra.Command{
 
 func init() {
 	// Add the --output flag with default value "text"
-	ListStreamCmd.Flags().StringP("output", "o", "text", "Output format: 'text' or 'json'")
+	ListDatasetCmd.Flags().StringP("output", "o", "text", "Output format: 'text' or 'json'")
 }
 
-func fetchStats(client *internalHTTP.HTTPClient, name string) (data StreamStatsData, err error) {
+func fetchStats(client *internalHTTP.HTTPClient, name string) (data DatasetStatsData, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("logstream/%s/stats", name), nil)
 	if err != nil {
 		return
@@ -421,7 +421,7 @@ func fetchStats(client *internalHTTP.HTTPClient, name string) (data StreamStatsD
 	return
 }
 
-func fetchRetention(client *internalHTTP.HTTPClient, name string) (data StreamRetentionData, err error) {
+func fetchRetention(client *internalHTTP.HTTPClient, name string) (data DatasetRetentionData, err error) {
 	req, err := client.NewRequest(http.MethodGet, fmt.Sprintf("logstream/%s/retention", name), nil)
 	if err != nil {
 		return
@@ -475,7 +475,7 @@ func fetchAlerts(client *internalHTTP.HTTPClient, name string) (data AlertConfig
 	return
 }
 
-func fetchInfo(client *internalHTTP.HTTPClient, name string) (streamType string, err error) {
+func fetchInfo(client *internalHTTP.HTTPClient, name string) (datasetType string, err error) {
 	// Create a new HTTP GET request
 	req, err := client.NewRequest(http.MethodGet, fmt.Sprintf("logstream/%s/info", name), nil)
 	if err != nil {
