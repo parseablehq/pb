@@ -49,9 +49,10 @@ type Config struct {
 
 // Profile is the struct that holds the profile configuration
 type Profile struct {
-	URL      string `json:"url"`
-	Username string `json:"username"`
-	Password string `json:"password,omitempty"`
+	URL      string `toml:"url" json:"url"`
+	Username string `toml:"username,omitempty" json:"username,omitempty"`
+	Password string `toml:"password,omitempty" json:"password,omitempty"`
+	Token    string `toml:"token,omitempty" json:"token,omitempty"`
 }
 
 func (p *Profile) GrpcAddr(port string) string {

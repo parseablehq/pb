@@ -24,7 +24,6 @@ import (
 
 	pb "pb/cmd"
 	"pb/pkg/analytics"
-	"pb/pkg/config"
 
 	"github.com/spf13/cobra"
 )
@@ -41,14 +40,6 @@ var (
 	versionFlag      = "version"
 	versionFlagShort = "v"
 )
-
-func defaultInitialProfile() config.Profile {
-	return config.Profile{
-		URL:      "https://demo.parseable.com",
-		Username: "admin",
-		Password: "admin",
-	}
-}
 
 // Root command
 var cli = &cobra.Command{
@@ -300,6 +291,9 @@ func main() {
 	cli.AddCommand(cluster)
 
 	cli.AddCommand(pb.AutocompleteCmd)
+	cli.AddCommand(pb.LoginCmd)
+	cli.AddCommand(pb.LogoutCmd)
+	cli.AddCommand(pb.StatusCmd)
 
 	// Set as command
 	pb.VersionCmd.Run = func(_ *cobra.Command, _ []string) {
@@ -311,40 +305,6 @@ func main() {
 	cli.Flags().BoolP(versionFlag, versionFlagShort, false, "Print version")
 
 	cli.CompletionOptions.HiddenDefaultCmd = true
-
-	// create a default profile if file does not exist
-	if previousConfig, err := config.ReadConfigFromFile(); os.IsNotExist(err) {
-		conf := config.Config{
-			Profiles:       map[string]config.Profile{"demo": defaultInitialProfile()},
-			DefaultProfile: "demo",
-		}
-		err = config.WriteConfigToFile(&conf)
-		if err != nil {
-			fmt.Printf("failed to write to file %v\n", err)
-			os.Exit(1)
-		}
-	} else {
-		// Only update the "demo" profile without overwriting other profiles
-		demoProfile, exists := previousConfig.Profiles["demo"]
-		if exists {
-			// Update fields in the demo profile only
-			demoProfile.URL = "http://demo.parseable.com"
-			demoProfile.Username = "admin"
-			demoProfile.Password = "admin"
-			previousConfig.Profiles["demo"] = demoProfile
-		} else {
-			// Add the "demo" profile if it doesn't exist
-			previousConfig.Profiles["demo"] = defaultInitialProfile()
-			previousConfig.DefaultProfile = "demo" // Optional: set as default if needed
-		}
-
-		// Write the updated configuration back to file
-		err = config.WriteConfigToFile(previousConfig)
-		if err != nil {
-			fmt.Printf("failed to write to existing file %v\n", err)
-			os.Exit(1)
-		}
-	}
 
 	err := cli.Execute()
 	if err != nil {

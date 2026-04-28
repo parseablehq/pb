@@ -35,13 +35,13 @@ func PreRunDefaultProfile(_ *cobra.Command, _ []string) error {
 func PreRun() error {
 	conf, err := config.ReadConfigFromFile()
 	if os.IsNotExist(err) {
-		return errors.New("no config found to run this command. add a profile using pb profile command")
+		return errors.New("no profile configured. run: pb login")
 	} else if err != nil {
 		return err
 	}
 
 	if conf.Profiles == nil || conf.DefaultProfile == "" {
-		return errors.New("no profile is configured to run this command. please create one using profile command")
+		return errors.New("no profile configured. run: pb login")
 	}
 
 	DefaultProfile = conf.Profiles[conf.DefaultProfile]

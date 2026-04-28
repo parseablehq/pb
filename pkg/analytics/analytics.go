@@ -53,23 +53,23 @@ type Event struct {
 
 // About struct
 type About struct {
-	Version         string    `json:"version"`
-	UIVersion       string    `json:"uiVersion"`
-	Commit          string    `json:"commit"`
-	DeploymentID    string    `json:"deploymentId"`
-	UpdateAvailable bool      `json:"updateAvailable"`
-	LatestVersion   string    `json:"latestVersion"`
-	LLMActive       bool      `json:"llmActive"`
-	LLMProvider     string    `json:"llmProvider"`
-	OIDCActive      bool      `json:"oidcActive"`
-	License         string    `json:"license"`
-	Mode            string    `json:"mode"`
-	Staging         string    `json:"staging"`
-	HotTier         string    `json:"hotTier"`
-	GRPCPort        int       `json:"grpcPort"`
-	Store           Store     `json:"store"`
-	Analytics       Analytics `json:"analytics"`
-	QueryEngine     string    `json:"queryEngine"`
+	Version         string          `json:"version"`
+	UIVersion       string          `json:"uiVersion"`
+	Commit          string          `json:"commit"`
+	DeploymentID    string          `json:"deploymentId"`
+	UpdateAvailable bool            `json:"updateAvailable"`
+	LatestVersion   string          `json:"latestVersion"`
+	LLMActive       bool            `json:"llmActive"`
+	LLMProvider     string          `json:"llmProvider"`
+	OIDCActive      bool            `json:"oidcActive"`
+	License         json.RawMessage `json:"license"`
+	Mode            string          `json:"mode"`
+	Staging         string          `json:"staging"`
+	HotTier         string          `json:"hotTier"`
+	GRPCPort        int             `json:"grpcPort"`
+	Store           Store           `json:"store"`
+	Analytics       Analytics       `json:"analytics"`
+	QueryEngine     string          `json:"queryEngine"`
 }
 
 // Store struct

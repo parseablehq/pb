@@ -19,6 +19,7 @@ checks:
 getdeps:
 	@mkdir -p ${GOPATH}/bin
 	@echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)"
+# Will need to make it more error prone in future!
 	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOPATH)/bin $(GOLANGCI_LINT_VERSION)
 
 crosscompile:

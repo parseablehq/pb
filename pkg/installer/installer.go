@@ -281,6 +281,8 @@ func applyParseableSecret(ps *ParseableInfo, store ObjectStore, objectStoreConfi
 		secretManifest = getParseableSecretBlob(ps, objectStoreConfig)
 	case GcsStore:
 		secretManifest = getParseableSecretGcs(ps, objectStoreConfig)
+	default:
+		return fmt.Errorf("unsupported object store type: %s", store)
 	}
 
 	// apply the Kubernetes Secret

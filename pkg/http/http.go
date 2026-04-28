@@ -48,7 +48,11 @@ func (client *HTTPClient) NewRequest(method string, path string, body io.Reader)
 	if err != nil {
 		return
 	}
-	req.SetBasicAuth(client.Profile.Username, client.Profile.Password)
+	if client.Profile.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+client.Profile.Token)
+	} else {
+		req.SetBasicAuth(client.Profile.Username, client.Profile.Password)
+	}
 	req.Header.Add("Content-Type", "application/json")
 	return
 }
