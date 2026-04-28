@@ -12,6 +12,9 @@ pb is available as a single, self contained binary for Mac, Linux, and Windows. 
 
 To install pb, download the binary for your platform, un-tar the binary and place it in your `$PATH`.
 
+> [NOTE]
+> If you receive a warning on macOS about the binary being from an unidentified developer, ignore the warning, then open _System Preferences_ > _Security & Privacy_, and click the new  _Open Anyway_ message that shows for pb. Then the second time you launch pb, macOS shows a dialog asking if you want to open the application. Click _Open_.
+
 ## Usage
 
 pb is configured with `demo` profile as the default. This means you can directly start using pb against the [demo Parseable Server](https://demo.parseable.com).
