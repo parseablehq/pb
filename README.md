@@ -51,7 +51,7 @@ You can use tools like `jq` and `grep` to further process and filter the output.
 ```bash
 pb query run "select * from backend" --from=1m --to=now | jq .
 pb query run "select host, id, method, status from backend where status = 500" --from=1m --to=now | jq . > 500.json
-pb query run "select host, id, method, status from backend where status = 500" | jq '. | select(.method == "PATCH")'
+pb query run "select host, id, method, status from backend where status = 500" | jq '. | map(select(.method == "PATCH"))'
 pb query run "select host, id, method, status from backend where status = 500" --from=1m --to=now | grep "POST" | jq . | less
 ```
 
