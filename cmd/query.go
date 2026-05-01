@@ -48,8 +48,8 @@ var (
 var query = &cobra.Command{
 	Use:     "run [query] [flags]",
 	Example: "  pb query run \"select * from frontend\" --from=10m --to=now",
-	Short:   "Run SQL query on a log stream",
-	Long:    "\nRun SQL query on a log stream. Default output format is text. Use --output flag to set output format to json.",
+	Short:   "Run SQL query on a dataset",
+	Long:    "\nRun SQL query on a dataset. Default output format is text. Use --output flag to set output format to json.",
 	Args:    cobra.MaximumNArgs(1),
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(command *cobra.Command, args []string) error {
@@ -112,14 +112,16 @@ func init() {
 var QueryCmd = query
 
 func fetchData(client *internalHTTP.HTTPClient, query string, startTime, endTime, outputFormat string) error {
-	queryTemplate := `{
-		"query": "%s",
-		"startTime": "%s",
-		"endTime": "%s"
-	}`
-	finalQuery := fmt.Sprintf(queryTemplate, query, startTime, endTime)
+	body, err := json.Marshal(struct {
+		Query     string `json:"query"`
+		StartTime string `json:"startTime"`
+		EndTime   string `json:"endTime"`
+	}{Query: query, StartTime: startTime, EndTime: endTime})
+	if err != nil {
+		return fmt.Errorf("failed to build request body: %w", err)
+	}
 
-	req, err := client.NewRequest("POST", "query", bytes.NewBuffer([]byte(finalQuery)))
+	req, err := client.NewRequest("POST", "query", bytes.NewBuffer(body))
 	if err != nil {
 		return fmt.Errorf("failed to create new request: %w", err)
 	}

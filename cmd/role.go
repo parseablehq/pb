@@ -34,7 +34,6 @@ import (
 
 type RoleResource struct {
 	Stream string `json:"stream,omitempty"`
-	Tag    string `json:"tag,omitempty"`
 }
 
 type RoleData struct {
@@ -51,11 +50,6 @@ func (user *RoleData) Render() string {
 		if user.Resource.Stream != "" {
 			s.WriteString(StandardStyle.Render("Stream:    "))
 			s.WriteString(StandardStyleAlt.Render(user.Resource.Stream))
-			s.WriteString("\n")
-		}
-		if user.Resource.Tag != "" {
-			s.WriteString(StandardStyle.Render("Tag:       "))
-			s.WriteString(StandardStyleAlt.Render(user.Resource.Tag))
 			s.WriteString("\n")
 		}
 	}
@@ -98,7 +92,6 @@ var AddRoleCmd = &cobra.Command{
 		m := _m.(role.Model)
 		privilege := m.Selection.Value()
 		stream := m.Stream.Value()
-		tag := m.Tag.Value()
 
 		if !m.Success {
 			fmt.Println("aborted by user")
@@ -112,7 +105,7 @@ var AddRoleCmd = &cobra.Command{
 			case "writer", "ingestor":
 				roleData.Resource = &RoleResource{Stream: stream}
 			case "reader":
-				roleData.Resource = &RoleResource{Stream: stream, Tag: tag}
+				roleData.Resource = &RoleResource{Stream: stream}
 			}
 			roleDataJSON, _ := json.Marshal([]RoleData{roleData})
 			putBody = bytes.NewBuffer(roleDataJSON)
@@ -287,9 +280,12 @@ func fetchRoles(client *internalHTTP.HTTPClient, data *[]string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 200 {
-		err = json.Unmarshal(bytes, data)
-		if err != nil {
+		var roleMap map[string]json.RawMessage
+		if err = json.Unmarshal(bytes, &roleMap); err != nil {
 			return err
+		}
+		for name := range roleMap {
+			*data = append(*data, name)
 		}
 	} else {
 		body := string(bytes)
@@ -317,10 +313,13 @@ func fetchSpecificRole(client *internalHTTP.HTTPClient, role string) (res []Role
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 200 {
-		err = json.Unmarshal(bytes, &res)
-		if err != nil {
+		var wrapper struct {
+			Actions []RoleData `json:"actions"`
+		}
+		if err = json.Unmarshal(bytes, &wrapper); err != nil {
 			return
 		}
+		res = wrapper.Actions
 	} else {
 		body := string(bytes)
 		err = fmt.Errorf("request failed\nstatus code: %s\nresponse: %s", resp.Status, body)

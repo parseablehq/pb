@@ -35,7 +35,22 @@ type UserData struct {
 	Method string `json:"method"`
 }
 
-type UserRoleData map[string][]RoleData
+// UserRoleAction is a single privilege entry within a named role
+type UserRoleAction struct {
+	Privilege string        `json:"privilege"`
+	Resource  *RoleResource `json:"resource,omitempty"`
+}
+
+// UserServerRole is a named role definition returned by the server
+type UserServerRole struct {
+	Actions []UserRoleAction `json:"actions"`
+}
+
+// UserRolesResponse is the response from GET /user/{name}/role
+type UserRolesResponse struct {
+	DirectRoles map[string]UserServerRole            `json:"roles"`
+	GroupRoles  map[string]map[string]UserServerRole `json:"group_roles"`
+}
 
 var (
 	roleFlag      = "role"
@@ -289,11 +304,16 @@ var ListUserCmd = &cobra.Command{
 			userID := user.ID
 			client := &client
 			go func() {
-				var userRolesData UserRoleData
-				userRolesData, out.err = fetchUserRoles(client, userID)
+				var rolesResp UserRolesResponse
+				rolesResp, out.err = fetchUserRoles(client, userID)
 				if out.err == nil {
-					for role := range userRolesData {
-						out.data = append(out.data, role)
+					for roleName := range rolesResp.DirectRoles {
+						out.data = append(out.data, roleName)
+					}
+					for _, groupRoles := range rolesResp.GroupRoles {
+						for roleName := range groupRoles {
+							out.data = append(out.data, roleName)
+						}
 					}
 				}
 				wsg.Done()
@@ -393,7 +413,7 @@ func fetchUsers(client *internalHTTP.HTTPClient) (res []UserData, err error) {
 	return
 }
 
-func fetchUserRoles(client *internalHTTP.HTTPClient, user string) (res UserRoleData, err error) {
+func fetchUserRoles(client *internalHTTP.HTTPClient, user string) (res UserRolesResponse, err error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("user/%s/role", user), nil)
 	if err != nil {
 		return

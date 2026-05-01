@@ -27,7 +27,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const defaultCloudURL = "https://staging.parseable.com:8000"
+const cloudURL = "https://app.parseable.com"
 
 var (
 	loginToken       string
@@ -115,7 +115,7 @@ func cloudLogin() error {
 	token := loginToken
 
 	if token == "" {
-		loginPageURL := defaultCloudURL + "/login"
+		loginPageURL := cloudURL + "/login"
 		fmt.Printf("Opening login page: %s\n\n", loginPageURL)
 
 		if err := openBrowser(loginPageURL); err != nil {
@@ -137,7 +137,7 @@ func cloudLogin() error {
 	}
 
 	profile := config.Profile{
-		URL:   defaultCloudURL,
+		URL:   cloudURL,
 		Token: token,
 	}
 	if err := writeProfile(profile, loginProfileName); err != nil {
@@ -145,7 +145,7 @@ func cloudLogin() error {
 	}
 
 	fmt.Printf("✓ Logged in. Profile '%s' saved.\n", loginProfileName)
-	fmt.Printf("  URL: %s\n", defaultCloudURL)
+	fmt.Printf("  URL: %s\n", cloudURL)
 	return nil
 }
 
