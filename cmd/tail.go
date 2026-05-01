@@ -22,16 +22,20 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"pb/pkg/analytics"
 	"pb/pkg/config"
 	internalHTTP "pb/pkg/http"
+	"time"
 
 	"github.com/apache/arrow/go/v13/arrow/array"
 	"github.com/apache/arrow/go/v13/arrow/flight"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 var TailCmd = &cobra.Command{
@@ -62,34 +66,59 @@ func tail(profile config.Profile, stream string) error {
 	}
 	url := profile.GrpcAddr(fmt.Sprint(about.GRPCPort))
 
-	client, err := flight.NewClientWithMiddleware(url, nil, nil, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	flightClient, err := flight.NewClientWithMiddleware(url, nil, nil, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
 	}
 
 	authHeader := basicAuth(profile.Username, profile.Password)
-	resp, err := client.DoGet(metadata.NewOutgoingContext(context.Background(), metadata.New(map[string]string{"Authorization": "Basic " + authHeader})), &flight.Ticket{
-		Ticket: payload,
-	})
-	if err != nil {
-		return err
-	}
-
-	records, err := flight.NewRecordReader(resp)
-	if err != nil {
-		return err
-	}
-	defer records.Release()
 
 	for {
-		record, err := records.Read()
+		resp, err := flightClient.DoGet(
+			metadata.NewOutgoingContext(context.Background(), metadata.New(map[string]string{
+				"Authorization": "Basic " + authHeader,
+			})),
+			&flight.Ticket{Ticket: payload},
+		)
 		if err != nil {
 			return err
 		}
-		var buf bytes.Buffer
-		array.RecordToJSON(record, &buf)
-		fmt.Println(buf.String())
+
+		records, err := flight.NewRecordReader(resp)
+		if err != nil {
+			return err
+		}
+
+		for {
+			record, err := records.Read()
+			if err != nil {
+				records.Release()
+				if isStreamEnd(err) {
+					break
+				}
+				return err
+			}
+			var buf bytes.Buffer
+			array.RecordToJSON(record, &buf)
+			fmt.Println(buf.String())
+		}
+
+		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+// isStreamEnd returns true for normal stream termination codes that warrant a reconnect.
+func isStreamEnd(err error) bool {
+	if err == io.EOF {
+		return true
+	}
+	if s, ok := status.FromError(err); ok {
+		switch s.Code() {
+		case codes.Canceled, codes.Unavailable, codes.OK:
+			return true
+		}
+	}
+	return false
 }
 
 func basicAuth(username, password string) string {

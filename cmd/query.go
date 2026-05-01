@@ -112,14 +112,16 @@ func init() {
 var QueryCmd = query
 
 func fetchData(client *internalHTTP.HTTPClient, query string, startTime, endTime, outputFormat string) error {
-	queryTemplate := `{
-		"query": "%s",
-		"startTime": "%s",
-		"endTime": "%s"
-	}`
-	finalQuery := fmt.Sprintf(queryTemplate, query, startTime, endTime)
+	body, err := json.Marshal(struct {
+		Query     string `json:"query"`
+		StartTime string `json:"startTime"`
+		EndTime   string `json:"endTime"`
+	}{Query: query, StartTime: startTime, EndTime: endTime})
+	if err != nil {
+		return fmt.Errorf("failed to build request body: %w", err)
+	}
 
-	req, err := client.NewRequest("POST", "query", bytes.NewBuffer([]byte(finalQuery)))
+	req, err := client.NewRequest("POST", "query", bytes.NewBuffer(body))
 	if err != nil {
 		return fmt.Errorf("failed to create new request: %w", err)
 	}

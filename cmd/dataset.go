@@ -17,13 +17,10 @@ package cmd
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	internalHTTP "pb/pkg/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -35,11 +32,11 @@ type DatasetStatsData struct {
 	Ingestion struct {
 		Count  int    `json:"count"`
 		Format string `json:"format"`
-		Size   string `json:"size"`
+		Size   uint64 `json:"size"`
 	} `json:"ingestion"`
 	Storage struct {
 		Format string `json:"format"`
-		Size   string `json:"size"`
+		Size   uint64 `json:"size"`
 	} `json:"storage"`
 	Stream string    `json:"stream"`
 	Time   time.Time `json:"time"`
@@ -181,9 +178,12 @@ var StatDatasetCmd = &cobra.Command{
 		}
 
 		ingestionCount := stats.Ingestion.Count
-		ingestionSize, _ := strconv.Atoi(strings.TrimRight(stats.Ingestion.Size, " Bytes"))
-		storageSize, _ := strconv.Atoi(strings.TrimRight(stats.Storage.Size, " Bytes"))
-		compressionRatio := 100 - (float64(storageSize) / float64(ingestionSize) * 100)
+		ingestionSize := stats.Ingestion.Size
+		storageSize := stats.Storage.Size
+		var compressionRatio float64
+		if ingestionSize > 0 {
+			compressionRatio = 100 - (float64(storageSize) / float64(ingestionSize) * 100)
+		}
 
 		// Fetch retention data
 		retention, err := fetchRetention(&client, name)
@@ -411,12 +411,13 @@ func fetchStats(client *internalHTTP.HTTPClient, name string) (data DatasetStats
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == 200 {
+	switch resp.StatusCode {
+	case http.StatusOK:
 		err = json.Unmarshal(bytes, &data)
-	} else {
-		body := string(bytes)
-		body = fmt.Sprintf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
-		err = errors.New(body)
+	case http.StatusNotFound:
+		// stream exists but has no stats yet (empty stream)
+	default:
+		err = fmt.Errorf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, string(bytes))
 	}
 	return
 }
@@ -438,12 +439,13 @@ func fetchRetention(client *internalHTTP.HTTPClient, name string) (data DatasetR
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == 200 {
+	switch resp.StatusCode {
+	case http.StatusOK:
 		err = json.Unmarshal(bytes, &data)
-	} else {
-		body := string(bytes)
-		body = fmt.Sprintf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
-		err = errors.New(body)
+	case http.StatusNotFound:
+		// no retention configured
+	default:
+		err = fmt.Errorf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, string(bytes))
 	}
 	return
 }
@@ -465,12 +467,13 @@ func fetchAlerts(client *internalHTTP.HTTPClient, name string) (data AlertConfig
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == 200 {
+	switch resp.StatusCode {
+	case http.StatusOK:
 		err = json.Unmarshal(bytes, &data)
-	} else {
-		body := string(bytes)
-		body = fmt.Sprintf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, body)
-		err = errors.New(body)
+	case http.StatusNotFound:
+		// no alerts configured
+	default:
+		err = fmt.Errorf("Request Failed\nStatus Code: %s\nResponse: %s\n", resp.Status, string(bytes))
 	}
 	return
 }
@@ -496,7 +499,8 @@ func fetchInfo(client *internalHTTP.HTTPClient, name string) (datasetType string
 	}
 
 	// Check for successful status code
-	if resp.StatusCode == http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
 		// Define a struct to parse the response
 		var response struct {
 			StreamType string `json:"stream_type"`
@@ -509,10 +513,11 @@ func fetchInfo(client *internalHTTP.HTTPClient, name string) (datasetType string
 
 		// Return the extracted stream_type
 		return response.StreamType, nil
+	case http.StatusNotFound:
+		// endpoint not available on this server version or stream has no type info
+		return "unknown", nil
+	default:
+		// Handle non-200 responses
+		return "", fmt.Errorf("Request Failed\nStatus Code: %d\nResponse: %s\n", resp.StatusCode, string(bytes))
 	}
-
-	// Handle non-200 responses
-	body := string(bytes)
-	errMsg := fmt.Sprintf("Request failed\nStatus Code: %d\nResponse: %s\n", resp.StatusCode, body)
-	return "", errors.New(errMsg)
 }

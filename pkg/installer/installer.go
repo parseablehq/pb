@@ -26,6 +26,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -71,6 +72,7 @@ func waterFall(verbose bool) {
 	if plan.Name == "Playground" {
 		chartValues = append(chartValues, "parseable.store=local-store")
 		chartValues = append(chartValues, "parseable.localModeSecret.enabled=true")
+		chartValues = append(chartValues, "parseable.auditLogging.enabled=false")
 
 		// Prompt for namespace and credentials
 		pbInfo, err := promptNamespaceAndCredentials()
@@ -95,7 +97,7 @@ func waterFall(verbose bool) {
 			RepoName:    "parseable",
 			RepoURL:     "https://charts.parseable.com",
 			ChartName:   "parseable",
-			Version:     "1.6.6",
+			Version:     "2.6.6",
 			Values:      agentValues,
 			Verbose:     verbose,
 		}
@@ -120,6 +122,7 @@ func waterFall(verbose bool) {
 
 	// pb supports only distributed deployments
 	chartValues = append(chartValues, "parseable.highAvailability.enabled=true")
+	chartValues = append(chartValues, "parseable.auditLogging.enabled=false")
 
 	// Prompt for namespace and credentials
 	pbInfo, err := promptNamespaceAndCredentials()
@@ -156,7 +159,7 @@ func waterFall(verbose bool) {
 		RepoName:    "parseable",
 		RepoURL:     "https://charts.parseable.com",
 		ChartName:   "parseable",
-		Version:     "1.6.6",
+		Version:     "2.6.6",
 		Values:      storeConfigs,
 		Verbose:     verbose,
 	}
@@ -227,6 +230,12 @@ func promptStorageClass() (string, error) {
 }
 
 // promptNamespaceAndCredentials prompts the user for namespace and credentials
+var helmReleaseNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$`)
+
+func isValidReleaseName(name string) bool {
+	return len(name) <= 53 && helmReleaseNameRe.MatchString(name)
+}
+
 func promptNamespaceAndCredentials() (*ParseableInfo, error) {
 	// Prompt user for release name
 	fmt.Print(common.Yellow + "Enter the Name for deployment: " + common.Reset)
@@ -236,6 +245,9 @@ func promptNamespaceAndCredentials() (*ParseableInfo, error) {
 		return nil, fmt.Errorf("failed to read namespace: %w", err)
 	}
 	name = strings.TrimSpace(name)
+	if !isValidReleaseName(name) {
+		return nil, fmt.Errorf("invalid deployment name %q: must be lowercase alphanumeric and hyphens only, max 53 chars (e.g. parseable-test)", name)
+	}
 
 	// Prompt user for namespace
 	fmt.Print(common.Yellow + "Enter the Kubernetes namespace for deployment: " + common.Reset)
@@ -667,10 +679,23 @@ func applyManifest(manifest string) error {
 		return fmt.Errorf("failed to get GVR: %w", err)
 	}
 
-	// Apply the manifest using the dynamic client
-	_, err = dynamicClient.Resource(gvr).Namespace(namespace).Create(context.TODO(), &obj, metav1.CreateOptions{})
+	// Apply the manifest: create if new, update if it already exists
+	resourceClient := dynamicClient.Resource(gvr).Namespace(namespace)
+	existing, err := resourceClient.Get(context.TODO(), obj.GetName(), metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to apply manifest: %w", err)
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to check existing resource: %w", err)
+		}
+		_, err = resourceClient.Create(context.TODO(), &obj, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to apply manifest: %w", err)
+		}
+	} else {
+		obj.SetResourceVersion(existing.GetResourceVersion())
+		_, err = resourceClient.Update(context.TODO(), &obj, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to update manifest: %w", err)
+		}
 	}
 	return nil
 }
