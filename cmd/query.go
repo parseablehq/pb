@@ -21,13 +21,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
-	// "pb/pkg/model"
+	"pb/pkg/model"
 
-	//! This dependency is required by the interactive flag Do not remove
-	// tea "github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea"
 	internalHTTP "pb/pkg/http"
 
 	"github.com/spf13/cobra"
@@ -47,9 +48,9 @@ var (
 
 var query = &cobra.Command{
 	Use:     "run [query] [flags]",
-	Example: "  pb query run \"select * from frontend\" --from=10m --to=now",
+	Example: "  pb query run \"select * from frontend\" --from=10m --to=now\n  pb query run \"select * from frontend\" -i",
 	Short:   "Run SQL query on a dataset",
-	Long:    "\nRun SQL query on a dataset. Default output format is text. Use --output flag to set output format to json.",
+	Long:    "\nRun SQL query on a dataset. Default output format is text.\nUse --output json for JSON output, or -i for interactive table view.",
 	Args:    cobra.MaximumNArgs(1),
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(command *cobra.Command, args []string) error {
@@ -69,7 +70,7 @@ var query = &cobra.Command{
 			return nil
 		}
 
-		query := args[0]
+		sqlQuery := args[0]
 		start, err := command.Flags().GetString(startFlag)
 		if err != nil {
 			command.Annotations["error"] = err.Error()
@@ -88,14 +89,40 @@ var query = &cobra.Command{
 			end = defaultEnd
 		}
 
-		outputFormat, err := command.Flags().GetString("output")
+		interactive, err := command.Flags().GetBool("interactive")
+		if err != nil {
+			command.Annotations["error"] = err.Error()
+			return err
+		}
+
+		sqlQuery = quoteStreamNames(sqlQuery)
+
+		if interactive {
+			startT, err := parseTimeStr(start)
+			if err != nil {
+				return fmt.Errorf("invalid --from value: %w", err)
+			}
+			endT, err := parseTimeStr(end)
+			if err != nil {
+				return fmt.Errorf("invalid --to value: %w", err)
+			}
+			m := model.NewQueryModel(DefaultProfile, sqlQuery, startT, endT)
+			p := tea.NewProgram(m, tea.WithAltScreen())
+			_, err = p.Run()
+			if err != nil {
+				command.Annotations["error"] = err.Error()
+			}
+			return err
+		}
+
+		outputFmt, err := command.Flags().GetString("output")
 		if err != nil {
 			command.Annotations["error"] = err.Error()
 			return fmt.Errorf("failed to get 'output' flag: %w", err)
 		}
 
 		client := internalHTTP.DefaultClient(&DefaultProfile)
-		err = fetchData(&client, query, start, end, outputFormat)
+		err = fetchData(&client, sqlQuery, start, end, outputFmt)
 		if err != nil {
 			command.Annotations["error"] = err.Error()
 		}
@@ -107,6 +134,44 @@ func init() {
 	query.Flags().StringP(startFlag, startFlagShort, defaultStart, "Start time for query.")
 	query.Flags().StringP(endFlag, endFlagShort, defaultEnd, "End time for query.")
 	query.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+	query.Flags().BoolP("interactive", "i", false, "Open interactive table view")
+}
+
+// parseTimeStr converts a CLI time string to time.Time.
+// Accepts: "now", RFC3339 ("2024-01-01T00:00:00Z"), Go durations ("10m", "2h"), or day suffix ("1d", "7d").
+func parseTimeStr(s string) (time.Time, error) {
+	if s == "now" {
+		return time.Now(), nil
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	if strings.HasSuffix(s, "d") {
+		n, err := strconv.Atoi(strings.TrimSuffix(s, "d"))
+		if err == nil {
+			return time.Now().Add(-time.Duration(n) * 24 * time.Hour), nil
+		}
+	}
+	if d, err := time.ParseDuration(s); err == nil {
+		return time.Now().Add(-d), nil
+	}
+	return time.Time{}, fmt.Errorf("unrecognized time format %q (use: now, 10m, 2h, 1d, or RFC3339)", s)
+}
+
+// fromClauseRe matches an unquoted identifier after FROM or JOIN.
+var fromClauseRe = regexp.MustCompile(`(?i)(\b(?:from|join)\s+)([a-zA-Z_][a-zA-Z0-9_-]*)`)
+
+// quoteStreamNames wraps stream names containing hyphens in double quotes so
+// DataFusion does not treat them as subtraction (nginx-logs → "nginx-logs").
+// Already-quoted identifiers are left untouched.
+func quoteStreamNames(query string) string {
+	return fromClauseRe.ReplaceAllStringFunc(query, func(match string) string {
+		m := fromClauseRe.FindStringSubmatch(match)
+		if len(m) < 3 || !strings.Contains(m[2], "-") {
+			return match
+		}
+		return m[1] + `"` + m[2] + `"`
+	})
 }
 
 var QueryCmd = query

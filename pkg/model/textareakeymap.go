@@ -34,11 +34,24 @@ func (k TextAreaHelpKeys) ShortHelp() []key.Binding {
 func (k TextAreaHelpKeys) FullHelp() [][]key.Binding {
 	t := textAreaKeyMap
 	return [][]key.Binding{
-		{t.CharacterForward, t.CharacterBackward, t.WordForward, t.WordBackward}, // first column
-		{t.DeleteWordForward, t.DeleteWordBackward, t.DeleteCharacterForward, t.DeleteCharacterBackward},
-		{t.LineStart, t.LineEnd, t.InputBegin, t.InputEnd}, // second column
+		{t.CharacterForward, t.CharacterBackward}, // first column
+		{t.WordForward, t.WordBackward},
+		{t.DeleteWordForward, t.DeleteWordBackward},
+		{t.DeleteCharacterForward, t.DeleteCharacterBackward},
+		{t.LineStart, t.LineEnd}, // second column
+		{runQueryKey, exit},
 	}
 }
+
+var runQueryKey = key.NewBinding(
+	key.WithKeys("ctrl+r"),
+	key.WithHelp("ctrl+r", "run query"),
+)
+
+var exit = key.NewBinding(
+	key.WithKeys("ctrl+c"),
+	key.WithHelp("ctrl+c", "exit"),
+)
 
 var textAreaKeyMap = textarea.KeyMap{
 	CharacterForward: key.NewBinding(
@@ -47,7 +60,7 @@ var textAreaKeyMap = textarea.KeyMap{
 	),
 	CharacterBackward: key.NewBinding(
 		key.WithKeys("left", "ctrl+b"),
-		key.WithHelp("←", "right"),
+		key.WithHelp("←", "left"),
 	),
 	WordForward: key.NewBinding(
 		key.WithKeys("ctrl+right", "alt+f"),
@@ -63,10 +76,10 @@ var textAreaKeyMap = textarea.KeyMap{
 		key.WithHelp("↑", "up")),
 	DeleteWordBackward: key.NewBinding(
 		key.WithKeys("ctrl+backspace", "ctrl+w"),
-		key.WithHelp("ctrl bkspc", "delete word behind")),
+		key.WithHelp("ctrl bkspc", "del word behind")),
 	DeleteWordForward: key.NewBinding(
 		key.WithKeys("ctrl+delete", "alt+d"),
-		key.WithHelp("ctrl del", "delete word forward")),
+		key.WithHelp("ctrl del", "del word forward")),
 	DeleteAfterCursor: key.NewBinding(
 		key.WithKeys("ctrl+k"),
 	),
@@ -78,7 +91,7 @@ var textAreaKeyMap = textarea.KeyMap{
 	),
 	DeleteCharacterBackward: key.NewBinding(
 		key.WithKeys("backspace", "ctrl+h"),
-		key.WithHelp("bkspc", "delete backward"),
+		key.WithHelp("bkspc", "del backward"),
 	),
 	DeleteCharacterForward: key.NewBinding(
 		key.WithKeys("delete", "ctrl+d"),
@@ -93,9 +106,9 @@ var textAreaKeyMap = textarea.KeyMap{
 	Paste: key.NewBinding(
 		key.WithKeys("ctrl+v"),
 		key.WithHelp("ctrl v", "paste")),
-	InputBegin: key.NewBinding(
-		key.WithKeys("ctrl+home"),
-		key.WithHelp("ctrl home", "home")),
+	// InputBegin: key.NewBinding(
+	// 	key.WithKeys("ctrl+home"),
+	// 	key.WithHelp("ctrl home", "home")),
 	InputEnd: key.NewBinding(
 		key.WithKeys("ctrl+end"),
 		key.WithHelp("ctrl end", "end")),
