@@ -28,8 +28,9 @@ import (
 
 	"pb/pkg/model"
 
-	tea "github.com/charmbracelet/bubbletea"
 	internalHTTP "pb/pkg/http"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/spf13/cobra"
 )

@@ -25,7 +25,6 @@ import (
 	"os"
 	"pb/pkg/config"
 	"pb/pkg/iterator"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -92,11 +91,6 @@ var (
 
 	additionalKeyBinds = []key.Binding{runQueryKey}
 
-	paginatorKeyBinds = []key.Binding{
-		key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl r", "Fetch Next Minute")),
-		key.NewBinding(key.WithKeys("ctrl+b"), key.WithHelp("ctrl b", "Fetch Prev Minute")),
-	}
-
 	QueryNavigationMap = []string{"query", "time", "table"}
 )
 
@@ -150,45 +144,6 @@ func (m *QueryModel) focusSelected() {
 
 func (m *QueryModel) currentFocus() string {
 	return QueryNavigationMap[m.focused]
-}
-
-func (m *QueryModel) initIterator() {
-	iter := createIteratorFromModel(m)
-	m.queryIterator = iter
-}
-
-func createIteratorFromModel(m *QueryModel) *iterator.QueryIterator[QueryData, FetchResult] {
-	startTime := m.timeRange.start.Time()
-	endTime := m.timeRange.end.Time()
-
-	startTime = startTime.Truncate(time.Minute)
-	endTime = endTime.Truncate(time.Minute).Add(time.Minute)
-
-	table := streamNameFromQuery(m.query.Value())
-	if table != "" {
-		iter := iterator.NewQueryIterator(
-			startTime, endTime,
-			false,
-			func(t1, t2 time.Time) (QueryData, FetchResult) {
-				client := &http.Client{
-					Timeout: time.Second * 50,
-				}
-				return fetchData(client, &m.profile, m.query.Value(), t1.UTC().Format(time.RFC3339), t2.UTC().Format(time.RFC3339))
-			},
-			func(_, _ time.Time) bool {
-				client := &http.Client{
-					Timeout: time.Second * 50,
-				}
-				res, err := fetchData(client, &m.profile, "select count(*) as count from "+table, m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
-				if err == fetchErr || len(res.Records) == 0 {
-					return false
-				}
-				count, ok := res.Records[0]["count"].(float64)
-				return ok && count > 0
-			})
-		return &iter
-	}
-	return nil
 }
 
 func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime time.Time) QueryModel {
@@ -449,7 +404,7 @@ func NewFetchTask(profile config.Profile, query string, startTime string, endTim
 		}
 		defer func() {
 			if r := recover(); r != nil {
-				msg = res 
+				msg = res
 			}
 		}()
 
@@ -697,16 +652,4 @@ func countDigits(num int) int {
 	// Using logarithm base 10 to calculate the number of digits
 	numDigits := int(math.Log10(math.Abs(float64(num)))) + 1
 	return numDigits
-}
-
-func streamNameFromQuery(query string) string {
-	stream := ""
-	tokens := strings.Split(query, " ")
-	for i, token := range tokens {
-		if token == "from" {
-			stream = tokens[i+1]
-			break
-		}
-	}
-	return stream
 }

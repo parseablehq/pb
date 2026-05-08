@@ -24,7 +24,7 @@ type TableKeyMap struct {
 	RowUp       key.Binding
 	RowDown     key.Binding
 	PageUp      key.Binding
-	PageDown    key.Binding	
+	PageDown    key.Binding
 	PageFirst   key.Binding
 	PageLast    key.Binding
 	ScrollRight key.Binding
@@ -44,11 +44,11 @@ func (k TableKeyMap) ShortHelp() []key.Binding {
 // key.Map interface.
 func (k TableKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.RowUp, k.RowDown}, // first column
+		{k.RowUp, k.RowDown},          // first column
 		{k.ScrollLeft, k.ScrollRight}, // second column
-		{ k.PageUp, k.PageDown}, // third column
-		{k.PageFirst, k.PageLast}, // fourth column
-		{k.FilterClear, k.Filter}, // fifth column
+		{k.PageUp, k.PageDown},        // third column
+		{k.PageFirst, k.PageLast},     // fourth column
+		{k.FilterClear, k.Filter},     // fifth column
 	}
 }
 

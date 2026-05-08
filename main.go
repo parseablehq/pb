@@ -266,6 +266,7 @@ func main() {
 	dataset.AddCommand(pb.StatDatasetCmd)
 
 	query.AddCommand(pb.QueryCmd)
+	query.AddCommand(pb.PromqlCmd)
 	query.AddCommand(pb.SavedQueryList)
 
 	schema.AddCommand(pb.GenerateSchemaCmd)
