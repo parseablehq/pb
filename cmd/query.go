@@ -123,7 +123,9 @@ var query = &cobra.Command{
 		}
 
 		client := internalHTTP.DefaultClient(&DefaultProfile)
+		stopSpinner := startSpinner()
 		err = fetchData(&client, sqlQuery, start, end, outputFmt)
+		stopSpinner()
 		if err != nil {
 			command.Annotations["error"] = err.Error()
 		}
@@ -157,6 +159,28 @@ func parseTimeStr(s string) (time.Time, error) {
 		return time.Now().Add(-d), nil
 	}
 	return time.Time{}, fmt.Errorf("unrecognized time format %q (use: now, 10m, 2h, 1d, or RFC3339)", s)
+}
+
+// startSpinner prints an animated spinner to stderr while a fetch is in progress.
+// Call the returned function to stop it and clear the line.
+func startSpinner() func() {
+	frames := []string{"|", "/", "-", "\\"}
+	done := make(chan struct{})
+	go func() {
+		i := 0
+		for {
+			select {
+			case <-done:
+				fmt.Fprint(os.Stderr, "\r\033[K") // clear the line
+				return
+			default:
+				fmt.Fprintf(os.Stderr, "\r%s fetching...", frames[i%len(frames)])
+				i++
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}()
+	return func() { close(done) }
 }
 
 // fromClauseRe matches an unquoted identifier after FROM or JOIN.

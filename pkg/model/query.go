@@ -22,13 +22,16 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"pb/pkg/config"
 	"pb/pkg/iterator"
 	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -124,6 +127,8 @@ type QueryModel struct {
 	profile       config.Profile
 	help          help.Model
 	status        StatusBar
+	spinner       spinner.Model
+	loading       bool
 	queryIterator *iterator.QueryIterator[QueryData, FetchResult]
 	overlay       uint
 	focused       int
@@ -191,7 +196,10 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 	help.Styles.FullDesc = lipgloss.NewStyle().Foreground(FocusSecondary)
 
 	status := NewStatusBar(profile.URL, w)
-	status.Info = "fetching..."
+
+	sp := spinner.New()
+	sp.Spinner = spinner.Line
+	sp.Style = lipgloss.NewStyle().Foreground(FocusPrimary)
 
 	model := QueryModel{
 		width:         w,
@@ -202,6 +210,8 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 		overlay:       overlayNone,
 		profile:       profile,
 		help:          help,
+		spinner:       sp,
+		loading:       true,
 		queryIterator: nil,
 		status:        status,
 	}
@@ -209,7 +219,10 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 }
 
 func (m QueryModel) Init() tea.Cmd {
-	return NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
+	return tea.Batch(
+		m.spinner.Tick,
+		NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()),
+	)
 }
 
 func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -217,6 +230,13 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+
+	case spinner.TickMsg:
+		if m.loading {
+			m.spinner, cmd = m.spinner.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -228,6 +248,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case FetchData:
+		m.loading = false
 		m.status.Info = ""
 		if msg.status == fetchOk {
 			m.UpdateTable(msg)
@@ -263,8 +284,9 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.overlay = overlayNone
 				m.focusSelected()
 				m.status.Error = ""
-				m.status.Info = "fetching..."
-				return m, NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
+				m.status.Info = ""
+				m.loading = true
+				return m, tea.Batch(m.spinner.Tick, NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()))
 			}
 		}
 
@@ -272,8 +294,9 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Type == tea.KeyCtrlR {
 			m.overlay = overlayNone
 			m.status.Error = ""
-			m.status.Info = "fetching..."
-			return m, NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
+			m.status.Info = ""
+			m.loading = true
+			return m, tea.Batch(m.spinner.Tick, NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()))
 		}
 
 		if msg.Type == tea.KeyCtrlB {
@@ -337,6 +360,10 @@ func (m QueryModel) View() string {
 	)
 	headerHeight := lipgloss.Height(header)
 
+	if m.loading {
+		m.status.Info = m.spinner.View() + " fetching..."
+		m.status.Error = ""
+	}
 	statusView := m.status.View()
 	statusHeight := lipgloss.Height(statusView)
 
@@ -384,6 +411,14 @@ func (m QueryModel) View() string {
 		mainView = lipgloss.JoinVertical(lipgloss.Left, header, tableOuter.Render(m.table.View()))
 	case overlayInputs:
 		mainView = m.timeRange.View()
+	}
+
+	// Pin help+status to the bottom by padding the main view to fill remaining height.
+	mainHeight := lipgloss.Height(mainView)
+	bottomHeight := helpHeight + statusHeight
+	padLines := m.height - mainHeight - bottomHeight
+	if padLines > 0 {
+		mainView = mainView + strings.Repeat("\n", padLines)
 	}
 
 	render := lipgloss.JoinVertical(lipgloss.Left, mainView, helpView, statusView)
@@ -477,7 +512,8 @@ func fetchData(client *http.Client, profile *config.Profile, query string, start
 		return
 	}
 
-	endpoint := fmt.Sprintf("%s/%s", profile.URL, "api/v1/query?fields=true")
+	endpoint, _ := url.JoinPath(profile.URL, "api/v1/query")
+	endpoint += "?fields=true"
 	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(body))
 	if err != nil {
 		return

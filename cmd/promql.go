@@ -140,7 +140,9 @@ func promqlGet(path string, params url.Values) ([]byte, error) {
 	} else {
 		req.SetBasicAuth(DefaultProfile.Username, DefaultProfile.Password)
 	}
+	stopSpinner := startSpinner()
 	resp, err := client.Client.Do(req)
+	stopSpinner()
 	if err != nil {
 		if strings.Contains(err.Error(), "connection reset") {
 			return nil, fmt.Errorf("server reset the connection — query timed out")
