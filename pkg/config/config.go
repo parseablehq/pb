@@ -22,8 +22,8 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"runtime"
 	path "path/filepath"
+	"runtime"
 
 	toml "github.com/pelletier/go-toml/v2"
 )

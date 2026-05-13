@@ -37,7 +37,7 @@ func (k TextAreaHelpKeys) FullHelp() [][]key.Binding {
 		{t.CharacterForward, t.CharacterBackward},
 		{t.WordForward, t.WordBackward},
 		{nextPanel, prevPanel},
-//		{t.DeleteCharacterForward, t.DeleteCharacterBackward},
+		//		{t.DeleteCharacterForward, t.DeleteCharacterBackward},
 		{t.LineStart, t.LineEnd},
 		{runQueryKey, exit},
 	}
