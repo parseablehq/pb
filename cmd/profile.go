@@ -180,9 +180,32 @@ var RemoveProfileCmd = &cobra.Command{
 			return nil
 		}
 
+		wasDefault := fileConfig.DefaultProfile == name
 		delete(fileConfig.Profiles, name)
-		if len(fileConfig.Profiles) == 0 {
-			fileConfig.DefaultProfile = ""
+
+		if wasDefault {
+			switch len(fileConfig.Profiles) {
+			case 0:
+				fileConfig.DefaultProfile = ""
+			case 1:
+				for k := range fileConfig.Profiles {
+					fileConfig.DefaultProfile = k
+					fmt.Printf("'%s' is now set as the default profile\n", k)
+				}
+			default:
+				fmt.Println("Select a new default profile:")
+				_m, err := tea.NewProgram(defaultprofile.New(fileConfig.Profiles)).Run()
+				if err != nil {
+					return fmt.Errorf("error selecting new default profile: %w", err)
+				}
+				m := _m.(defaultprofile.Model)
+				if m.Success {
+					fileConfig.DefaultProfile = m.Choice
+					fmt.Printf("'%s' is now set as the default profile\n", m.Choice)
+				} else {
+					fileConfig.DefaultProfile = ""
+				}
+			}
 		}
 
 		commandError := config.WriteConfigToFile(fileConfig)
@@ -253,6 +276,53 @@ var DefaultProfileCmd = &cobra.Command{
 			return outputResult(fmt.Sprintf("%s is now set as default profile", name))
 		}
 		fmt.Printf("%s is now set as default profile\n", name)
+		return nil
+	},
+}
+
+var UpdateProfileCmd = &cobra.Command{
+	Use:     "update profile-name new-url",
+	Aliases: []string{"set-url"},
+	Example: "  pb profile update local http://localhost:9000",
+	Short:   "Update the URL of an existing profile",
+	Args:    cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if cmd.Annotations == nil {
+			cmd.Annotations = make(map[string]string)
+		}
+		startTime := time.Now()
+
+		name := args[0]
+		rawURL := args[1]
+
+		if _, err := url.Parse(rawURL); err != nil {
+			return fmt.Errorf("invalid URL: %w", err)
+		}
+
+		fileConfig, err := config.ReadConfigFromFile()
+		if err != nil {
+			return fmt.Errorf("error reading config: %w", err)
+		}
+
+		profile, exists := fileConfig.Profiles[name]
+		if !exists {
+			return fmt.Errorf("no profile found with the name: %s", name)
+		}
+
+		profile.URL = rawURL
+		fileConfig.Profiles[name] = profile
+
+		commandError := config.WriteConfigToFile(fileConfig)
+		cmd.Annotations["executionTime"] = time.Since(startTime).String()
+		if commandError != nil {
+			cmd.Annotations["error"] = commandError.Error()
+			return commandError
+		}
+
+		if outputFormat == "json" {
+			return outputResult(profile)
+		}
+		fmt.Printf("Profile '%s' URL updated to %s\n", name, rawURL)
 		return nil
 	},
 }

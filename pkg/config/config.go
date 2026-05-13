@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"runtime"
 	path "path/filepath"
 
 	toml "github.com/pelletier/go-toml/v2"
@@ -29,14 +30,30 @@ import (
 
 var (
 	configFilename = "config.toml"
-	configAppName  = "parseable"
+	configAppName  = "pb"
 )
 
-// Path returns user directory that can be used for the config file
+// Path returns the config file path.
+// On Windows: %AppData%\pb\config.toml
+// On macOS/Linux: ~/.config/pb/config.toml (XDG style)
 func Path() (string, error) {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
+	var dir string
+	if runtime.GOOS == "windows" {
+		appData, err := os.UserConfigDir()
+		if err != nil {
+			return "", err
+		}
+		dir = appData
+	} else {
+		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+			dir = xdg
+		} else {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return "", err
+			}
+			dir = path.Join(home, ".config")
+		}
 	}
 	return path.Join(dir, configAppName, configFilename), nil
 }

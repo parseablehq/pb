@@ -1,140 +1,294 @@
 # pb
 
-Dashboard fatigue is one of key reasons for poor adoption of logging tools among developers. With pb, we intend to bring the familiar command line interface for querying and analyzing log data at scale.
+[![Build](https://github.com/parseablehq/pb/actions/workflows/build.yaml/badge.svg)](https://github.com/parseablehq/pb/actions/workflows/build.yaml)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/parseablehq/pb)](https://github.com/parseablehq/pb/releases/latest)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/parseablehq/pb)](go.mod)
 
-pb is the command line interface for [Parseable Server](https://github.com/parseablehq/parseable). pb allows you to manage Streams, Users, and Data on Parseable Server. You can use pb to manage multiple Parseable Server instances using Profiles.
-
-![pb](https://github.com/parseablehq/.github/blob/main/images/pb/pb.gif?raw=true)
+`pb` is the command line interface for [Parseable](https://github.com/parseablehq/parseable) — a fast, lightweight log and metrics storage server. Use `pb` to run SQL and PromQL queries, tail live data, manage datasets, users, and profiles, all from your terminal.
 
 ## Installation
 
-pb is available as a single, self contained binary for Mac, Linux, and Windows. You can download the latest version from the [releases page](https://github.com/parseablehq/pb/releases/latest).
+Download the latest binary for your platform from the [releases page](https://github.com/parseablehq/pb/releases/latest).
 
-To install pb, download the binary for your platform, un-tar the binary and place it in your `$PATH`.
+**macOS / Linux**
 
-## Usage
+```bash
+tar -xzf pb_<version>_<os>_<arch>.tar.gz
+mv pb /usr/local/bin/pb
+pb --version
+```
 
-pb is configured with `demo` profile as the default. This means you can directly start using pb against the [demo Parseable Server](https://demo.parseable.com).
+**Windows**
+
+1. Download `pb_<version>_windows_amd64.tar.gz` from the releases page
+2. Open PowerShell and extract:
+
+```powershell
+tar -xzf pb_<version>_windows_amd64.tar.gz
+```
+
+3. Move `pb.exe` to a folder in your `PATH` (e.g. `C:\Users\<you>\bin\`) and verify:
+
+```powershell
+pb --version
+```
+
+**Install with Go (all platforms)**
+
+```bash
+go install github.com/parseablehq/pb@latest
+```
+
+## Quick Start
+
+### Step 1 — Connect to a server
+
+Run `pb login` to launch the interactive setup wizard:
+
+```bash
+pb login
+```
+
+The wizard walks you through:
+- **Choose type** — Self-hosted or Parseable Cloud
+- **Enter server URL** — e.g. `http://localhost:8000`
+- **Choose auth** — Username & Password, or Token
+- **Enter credentials**
+- **Name the profile** — e.g. `local`, `staging`, `prod`
+
+Use `↑ ↓` to navigate lists, `Enter` to confirm, `Esc` to go back one step. If a profile name already exists, the wizard asks whether to replace it or pick a new name.
+
+> **Prefer a one-liner?** Use `pb profile add` instead — see [Profiles](#profiles).
+
+### Step 2 — Run your first query
+
+```bash
+pb query run "SELECT * FROM backend" --from=10m --to=now
+```
+
+That's it. See the sections below for every available command.
+
+---
+
+## Commands
 
 ### Profiles
 
-To start using pb against your Parseable server, create a profile (a profile is a set of credentials for a Parseable Server instance). You can create a profile using the `pb profile add` command. For example:
+Manage multiple Parseable server connections. All commands use the active default profile automatically.
+
+Profiles are stored in `~/.config/pb/config.toml` (macOS/Linux) or `%AppData%\pb\config.toml` (Windows).
 
 ```bash
-pb profile add local http://localhost:8000 admin admin
+pb login                                                            # interactive setup wizard (recommended for new users)
+pb profile add staging https://staging.example.com admin secret    # add a profile non-interactively
+pb profile list                                                     # list all profiles
+pb profile default staging                                          # switch default profile
+pb profile update staging https://new-host.example.com:8000        # update URL for a profile
+pb profile remove staging                                           # remove a profile
+pb logout                                                           # remove the active profile
 ```
 
-This will create a profile named `local` that points to the Parseable Server at `http://localhost:8000` and uses the username `admin` and password `admin`.
+When you remove the default profile:
+- 1 profile remaining → it becomes the new default automatically
+- 2+ remaining → an interactive picker lets you choose the new default
+- 0 remaining → default is cleared
 
-You can create as many profiles as you like. To avoid having to specify the profile name every time you run a command, pb allows setting a default profile. To set the default profile, use the `pb profile default` command. For example:
+### SQL Query
+
+Query a dataset and print results to stdout.
 
 ```bash
-pb profile default local
+pb query run "SELECT * FROM backend" --from=10m --to=now
 ```
 
-### Query
-
-By default `pb` sends json data to stdout.
+**Time range** — supports relative durations, day shorthand, and RFC3339:
 
 ```bash
-pb query run "select * from backend" --from=1m --to=now
+pb query run "SELECT * FROM backend" --from=1h                           # last 1 hour
+pb query run "SELECT * FROM backend" --from=7d                           # last 7 days
+pb query run "SELECT * FROM backend" \
+  --from=2024-01-01T00:00:00Z --to=2024-01-01T01:00:00Z                  # exact window
 ```
 
-or specifying time range in rfc3999
+**JSON output:**
 
 ```bash
-pb query run "select * from backend" --from=2024-01-00T01:40:00.000Z --to=2024-01-00T01:55:00.000Z
+pb query run "SELECT * FROM backend" --from=1h --output json | jq .
 ```
 
-You can use tools like `jq` and `grep` to further process and filter the output. Some examples:
+**Interactive table view** — navigate, filter, and paginate results in the terminal:
 
 ```bash
-pb query run "select * from backend" --from=1m --to=now | jq .
-pb query run "select host, id, method, status from backend where status = 500" --from=1m --to=now | jq . > 500.json
-pb query run "select host, id, method, status from backend where status = 500" | jq '. | select(.method == "PATCH")'
-pb query run "select host, id, method, status from backend where status = 500" --from=1m --to=now | grep "POST" | jq . | less
+pb query run "SELECT * FROM backend" --from=1h -i
 ```
 
-#### Save Filter
-
-To save a query as a filter use the `--save-as` flag followed by a name for the filter. For example:
+**Save a query for later:**
 
 ```bash
-pb query run "select * from backend" --from=1m --to=now --save-as=FilterName
+pb query run "SELECT * FROM backend WHERE status = 500" --from=1h --save-as=server-errors
+pb query list    # list and apply saved queries
 ```
 
-### List Filter
+> **Note on field names with dots** — OTel fields like `service.name`, `http.status_code`, and `code.file.path` can be used directly in queries without manual quoting. `pb` handles the quoting transparently:
+> ```bash
+> pb query run "SELECT * FROM otel-logs WHERE service.name = 'frontend'" --from=1h
+> ```
 
-To list all filter for the active user run:
+#### Interactive Mode Keys
+
+| Key | Action |
+|-----|--------|
+| `Tab` | Next panel (Query → Time → Table) |
+| `Shift+Tab` | Previous panel |
+| `Enter` (Time panel) | Open time range picker |
+| `Ctrl+R` | Run query |
+| `Ctrl+B` | Fetch previous page |
+| `Ctrl+C` | Exit |
+
+**Table panel keys:**
+
+| Key | Action |
+|-----|--------|
+| `↑` / `w` | Scroll up |
+| `↓` / `s` | Scroll down |
+| `Shift+↑` / `PgUp` | Previous page |
+| `Shift+↓` / `PgDn` | Next page |
+| `←` / `a` | Scroll columns left |
+| `→` / `d` | Scroll columns right |
+| `/` | Filter rows |
+| `Esc` | Clear filter |
+
+### PromQL Query
+
+Query metrics datasets using PromQL expressions.
 
 ```bash
-pb query list
+# Range query — returns a time series over the given window
+pb query promql run "rate(http_requests_total[5m])" \
+  --dataset otel_metrics --from=1h --step=1m
+
+# Instant query — evaluate at a single point in time
+pb query promql run "up" --dataset otel_metrics --instant
+
+# JSON output
+pb query promql run "http_requests_total" --dataset otel_metrics -o json
+```
+
+**Explore metrics:**
+
+```bash
+pb query promql labels --dataset otel_metrics                                           # all label names
+pb query promql label-values job --dataset otel_metrics                                 # values for a label
+pb query promql series --match 'http_requests_total{job="api"}' --dataset otel_metrics  # matching series
+```
+
+**Cardinality analysis** — find high-cardinality labels before they cause memory issues:
+
+```bash
+pb query promql cardinality label-names --dataset otel_metrics           # labels by distinct value count
+pb query promql cardinality label-values --label service.name \
+  --dataset otel_metrics                                                  # series count per label value
+pb query promql cardinality active-series --dataset otel_metrics         # total active series
+```
+
+**TSDB statistics:**
+
+```bash
+pb query promql tsdb --dataset otel_metrics
+```
+
+**Currently running queries:**
+
+```bash
+pb query promql active-queries
 ```
 
 ### Live Tail
 
-`pb` can be used to tail live data from Parseable Server. To tail live data, use the `pb tail` command. For example:
+Stream live log events from a dataset as they arrive:
 
 ```bash
 pb tail backend
 ```
 
-You can also use the terminal tools like `jq` and `grep` to filter and process the tail output. Some examples:
+Filter in real time with standard tools:
 
 ```bash
-pb tail backend | jq '. | select(.method == "PATCH")'
+pb tail backend | jq '.[] | select(.method == "PATCH")'
 pb tail backend | grep "POST" | jq .
 ```
 
-To stop tailing, press `Ctrl+C`.
+Press `Ctrl+C` to stop.
 
-### Stream Management
-
-Once a profile is configured, you can use pb to query and manage _that_ Parseable Server instance. For example, to list all the streams on the server, run:
+### Dataset Management
 
 ```bash
-pb stream list
+pb dataset list                  # list all datasets on the server
+pb dataset info my_logs          # show stats (size, event count) for a dataset
+pb dataset add my_logs           # create a new dataset
+pb dataset remove my_logs        # delete a dataset
 ```
 
-### Users
-
-To list all the users with their privileges, run:
+### Users and Roles
 
 ```bash
-pb user list
+pb user list                              # list all users
+pb user add alice                         # create a user (prompts for password)
+pb user set-role alice admin,editor       # assign roles
+pb user remove alice                      # delete a user
+
+pb role list                              # list available roles
+pb role add ingestors                     # create a role (interactive privilege picker)
+pb role remove ingestors                  # delete a role
 ```
 
-You can also use the `pb users` command to manage users.
+### Status
+
+Check connectivity and version info for the active server:
+
+```bash
+pb status
+```
 
 ### Version
 
-Version command prints the version of pb and the Parseable Server it is configured to use.
-
 ```bash
 pb version
+pb --version
 ```
 
-### Add Autocomplete
+### Autocomplete
 
-To enable autocomplete for pb, run the following command according to your shell:
+Enable shell completion for `pb` commands and flags.
 
-For bash:
+**Bash:**
 
 ```bash
 pb autocomplete bash > /etc/bash_completion.d/pb
 source /etc/bash_completion.d/pb
 ```
 
-For zsh:
+**Zsh:**
 
 ```zsh
 pb autocomplete zsh > /usr/local/share/zsh/site-functions/_pb
 autoload -U compinit && compinit
 ```
 
-For powershell
+**PowerShell:**
 
 ```powershell
 pb autocomplete powershell > $env:USERPROFILE\Documents\PowerShell\pb_complete.ps1
 . $PROFILE
 ```
+
+---
+
+## Contributing
+
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up your dev environment, branch naming conventions, and the PR checklist. All contributors must sign the CLA — the bot will prompt you automatically on your first PR.
+
+## License
+
+`pb` is released under the [GNU Affero General Public License v3.0](LICENSE).

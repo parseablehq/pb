@@ -34,11 +34,11 @@ func (k TextAreaHelpKeys) ShortHelp() []key.Binding {
 func (k TextAreaHelpKeys) FullHelp() [][]key.Binding {
 	t := textAreaKeyMap
 	return [][]key.Binding{
-		{t.CharacterForward, t.CharacterBackward}, // first column
+		{t.CharacterForward, t.CharacterBackward},
 		{t.WordForward, t.WordBackward},
-		{t.DeleteWordForward, t.DeleteWordBackward},
-		{t.DeleteCharacterForward, t.DeleteCharacterBackward},
-		{t.LineStart, t.LineEnd}, // second column
+		{nextPanel, prevPanel},
+//		{t.DeleteCharacterForward, t.DeleteCharacterBackward},
+		{t.LineStart, t.LineEnd},
 		{runQueryKey, exit},
 	}
 }
@@ -51,6 +51,16 @@ var runQueryKey = key.NewBinding(
 var exit = key.NewBinding(
 	key.WithKeys("ctrl+c"),
 	key.WithHelp("ctrl+c", "exit"),
+)
+
+var nextPanel = key.NewBinding(
+	key.WithKeys("tab"),
+	key.WithHelp("tab", "next panel"),
+)
+
+var prevPanel = key.NewBinding(
+	key.WithKeys("shift+tab"),
+	key.WithHelp("shift+tab", "prev panel"),
 )
 
 var textAreaKeyMap = textarea.KeyMap{

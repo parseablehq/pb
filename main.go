@@ -248,6 +248,7 @@ var uninstall = &cobra.Command{
 func main() {
 	profile.AddCommand(pb.AddProfileCmd)
 	profile.AddCommand(pb.RemoveProfileCmd)
+	profile.AddCommand(pb.UpdateProfileCmd)
 	profile.AddCommand(pb.ListProfileCmd)
 	profile.AddCommand(pb.DefaultProfileCmd)
 

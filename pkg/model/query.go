@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -106,6 +107,7 @@ type FetchData struct {
 	status FetchResult
 	schema []string
 	data   []map[string]interface{}
+	errMsg string
 }
 
 const (
@@ -133,6 +135,7 @@ type QueryModel struct {
 	overlay       uint
 	focused       int
 	dataRows      []table.Row // actual data rows (without padding)
+	fetchErrMsg   string      // last fetch error, shown in the result area
 }
 
 func (m *QueryModel) focusSelected() {
@@ -251,10 +254,17 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.status.Info = ""
 		if msg.status == fetchOk {
+			m.fetchErrMsg = ""
 			m.UpdateTable(msg)
 			m.status.Error = ""
 			m.status.Info = fmt.Sprintf("%d rows", len(m.dataRows))
 		} else {
+			m.dataRows = []table.Row{}
+			m.table = m.table.WithRows([]table.Row{})
+			m.fetchErrMsg = msg.errMsg
+			if m.fetchErrMsg == "" {
+				m.fetchErrMsg = "query failed"
+			}
 			m.status.Error = "query failed"
 		}
 		return m, nil
@@ -272,6 +282,15 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focused++
 				if m.focused > len(QueryNavigationMap)-1 {
 					m.focused = 0
+				}
+				m.focusSelected()
+				return m, nil
+			}
+
+			if msg.Type == tea.KeyShiftTab {
+				m.focused--
+				if m.focused < 0 {
+					m.focused = len(QueryNavigationMap) - 1
 				}
 				m.focusSelected()
 				return m, nil
@@ -405,10 +424,32 @@ func (m QueryModel) View() string {
 	m.table = m.table.WithPageSize(pageSize).WithRows(displayRows)
 
 	// Step 4: compose main view.
+	var resultPane string
+	if m.fetchErrMsg != "" && !m.loading {
+		// Render with width constraint so the long error string wraps,
+		// then clip to tableAvail lines so the header stays in place.
+		errStyle := lipgloss.NewStyle().
+			Padding(1, 2).
+			Foreground(lipgloss.AdaptiveColor{Light: "#9B2226", Dark: "#FF6B6B"}).
+			Width(m.width - 6)
+		rendered := errStyle.Render(m.fetchErrMsg)
+		lines := strings.Split(rendered, "\n")
+		maxLines := tableAvail - 2
+		if maxLines < 1 {
+			maxLines = 1
+		}
+		if len(lines) > maxLines {
+			lines = lines[:maxLines]
+		}
+		resultPane = tableOuter.Render(strings.Join(lines, "\n"))
+	} else {
+		resultPane = tableOuter.Render(m.table.View())
+	}
+
 	var mainView string
 	switch m.overlay {
 	case overlayNone:
-		mainView = lipgloss.JoinVertical(lipgloss.Left, header, tableOuter.Render(m.table.View()))
+		mainView = lipgloss.JoinVertical(lipgloss.Left, header, resultPane)
 	case overlayInputs:
 		mainView = m.timeRange.View()
 	}
@@ -447,12 +488,14 @@ func NewFetchTask(profile config.Profile, query string, startTime string, endTim
 			Timeout: time.Second * 50,
 		}
 
-		data, status := fetchData(client, &profile, query, startTime, endTime)
+		data, status, errMsg := fetchData(client, &profile, query, startTime, endTime)
 
 		if status == fetchOk {
 			res.data = data.Records
 			res.schema = data.Fields
 			res.status = fetchOk
+		} else {
+			res.errMsg = errMsg
 		}
 
 		return res
@@ -499,7 +542,7 @@ func IteratorPrev(iter *iterator.QueryIterator[QueryData, FetchResult]) tea.Cmd 
 	}
 }
 
-func fetchData(client *http.Client, profile *config.Profile, query string, startTime string, endTime string) (data QueryData, res FetchResult) {
+func fetchData(client *http.Client, profile *config.Profile, query string, startTime string, endTime string) (data QueryData, res FetchResult, errMsg string) {
 	data = QueryData{}
 	res = fetchErr
 
@@ -509,6 +552,7 @@ func fetchData(client *http.Client, profile *config.Profile, query string, start
 		"endTime":   endTime,
 	})
 	if err != nil {
+		errMsg = err.Error()
 		return
 	}
 
@@ -516,6 +560,7 @@ func fetchData(client *http.Client, profile *config.Profile, query string, start
 	endpoint += "?fields=true"
 	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(body))
 	if err != nil {
+		errMsg = err.Error()
 		return
 	}
 	if profile.Token != "" {
@@ -526,16 +571,23 @@ func fetchData(client *http.Client, profile *config.Profile, query string, start
 	req.Header.Add("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
+		errMsg = err.Error()
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		errMsg = strings.TrimSpace(string(b))
+		if errMsg == "" {
+			errMsg = resp.Status
+		}
 		return
 	}
 
 	err = json.NewDecoder(resp.Body).Decode(&data)
 	if err != nil {
+		errMsg = err.Error()
 		return
 	}
 
