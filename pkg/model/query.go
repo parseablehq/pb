@@ -464,7 +464,7 @@ func (m QueryModel) View() string {
 		placed := lipgloss.Place(availW, availH, lipgloss.Center, lipgloss.Center, content)
 		resultPane = tableOuter.Render(placed)
 	} else if m.loading {
-		// Query dispatched — show spinner centred in the result area.
+		// Query dispatched — show spinner centered in the result area.
 		spinStyle := lipgloss.NewStyle().
 			Foreground(FocusPrimary)
 		content := spinStyle.Render(m.spinner.View() + " fetching...")
