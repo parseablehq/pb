@@ -59,10 +59,23 @@ var endHelpBinds = endTimeKeyBind{
 }
 
 type TimeInputModel struct {
-	start datetime.Model
-	end   datetime.Model
-	list  list.Model
-	focus int
+	start   datetime.Model
+	end     datetime.Model
+	list    list.Model
+	focus   int
+	instant bool // when true: hides start, presets move end backwards from now
+}
+
+// SetInstant switches between range (start+end) and instant (end only) mode.
+func (m *TimeInputModel) SetInstant(v bool) {
+	m.instant = v
+	// stay on list so arrow keys immediately work on presets
+	m.focus = 0
+	m.focusSelected()
+	if v {
+		// pre-select "1 Hour" in the list to match the default end=now-1h
+		m.list.Select(1)
+	}
 }
 
 func (m *TimeInputModel) StartValueUtc() string {
@@ -81,6 +94,12 @@ func (m *TimeInputModel) SetEnd(t time.Time) {
 	m.end.SetTime(t)
 }
 
+// FocusEnd jumps directly to the end-time field — used by instant mode.
+func (m *TimeInputModel) FocusEnd() {
+	m.focus = 2 // index of "end" in rangeNavigationMap
+	m.focusSelected()
+}
+
 func (m *TimeInputModel) focusSelected() {
 	m.start.Blur()
 	m.end.Blur()
@@ -94,17 +113,32 @@ func (m *TimeInputModel) focusSelected() {
 }
 
 func (m *TimeInputModel) Navigate(key tea.KeyMsg) {
+	n := len(rangeNavigationMap)
 	switch key.String() {
 	case "shift+tab":
 		if m.focus == 0 {
-			m.focus = len(rangeNavigationMap)
+			m.focus = n
 		}
 		m.focus--
+		// instant mode: skip "start"
+		if m.instant && m.currentFocus() == "start" {
+			if m.focus == 0 {
+				m.focus = n
+			}
+			m.focus--
+		}
 	case "tab":
-		if m.focus == len(rangeNavigationMap)-1 {
+		if m.focus == n-1 {
 			m.focus = -1
 		}
 		m.focus++
+		// instant mode: skip "start"
+		if m.instant && m.currentFocus() == "start" {
+			if m.focus == n-1 {
+				m.focus = -1
+			}
+			m.focus++
+		}
 	default:
 		return
 	}
@@ -160,7 +194,12 @@ func (m TimeInputModel) Update(msg tea.Msg) (TimeInputModel, tea.Cmd) {
 		case "list":
 			m.list, cmd = m.list.Update(key)
 			duration := m.list.SelectedItem().(timeDurationItem).duration
-			m.SetStart(m.end.Time().Add(duration))
+			if m.instant {
+				// preset moves end backwards from now
+				m.SetEnd(time.Now().Add(duration))
+			} else {
+				m.SetStart(m.end.Time().Add(duration))
+			}
 		case "start":
 			m.start, cmd = m.start.Update(key)
 		case "end":
@@ -177,7 +216,6 @@ func (m TimeInputModel) View() string {
 	endStyle := &borderedStyle
 
 	switch m.currentFocus() {
-
 	case "list":
 		listStyle = &borderedFocusStyle
 	case "start":
@@ -187,16 +225,22 @@ func (m TimeInputModel) View() string {
 	}
 
 	list := lipgloss.NewStyle().PaddingLeft(1).Render(m.list.View())
-
 	left := listStyle.Render(lipgloss.PlaceHorizontal(27, lipgloss.Left, list))
-	right := fmt.Sprintf("%s\n\n%s",
-		startStyle.Render(m.start.View()),
-		endStyle.Render(m.end.View()),
-	)
 	center := baseStyle.Render("│\n│\n│\n│")
 	center = lipgloss.PlaceHorizontal(5, lipgloss.Center, center)
 
-	page := lipgloss.JoinHorizontal(lipgloss.Center, left, center, right)
+	var right string
+	if m.instant {
+		// instant mode: only show end time, no start
+		label := lipgloss.NewStyle().Inherit(baseStyle).Bold(true).
+			Foreground(FocusSecondary).Render(" evaluation time ")
+		right = fmt.Sprintf("%s\n%s", label, endStyle.Render(m.end.View()))
+	} else {
+		right = fmt.Sprintf("%s\n\n%s",
+			startStyle.Render(m.start.View()),
+			endStyle.Render(m.end.View()),
+		)
+	}
 
-	return page
+	return lipgloss.JoinHorizontal(lipgloss.Center, left, center, right)
 }

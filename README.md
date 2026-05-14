@@ -53,7 +53,7 @@ pb login
 The wizard walks you through:
 - **Choose type** — Self-hosted or Parseable Cloud
 - **Enter server URL** — e.g. `http://localhost:8000`
-- **Choose auth** — Username & Password, or Token
+- **Choose auth** — Username & Password, or API key
 - **Enter credentials**
 - **Name the profile** — e.g. `local`, `staging`, `prod`
 
@@ -81,7 +81,7 @@ Profiles are stored in `~/.config/pb/config.toml` (macOS/Linux) or `%AppData%\pb
 
 ```bash
 pb login                                                            # interactive setup wizard (recommended for new users)
-pb profile add staging https://staging.example.com admin secret    # add a profile non-interactively
+pb profile add staging https://staging.example.com admin password    # add a profile non-interactively
 pb profile list                                                     # list all profiles
 pb profile default staging                                          # switch default profile
 pb profile update staging https://new-host.example.com:8000        # update URL for a profile
@@ -93,6 +93,69 @@ When you remove the default profile:
 - 1 profile remaining → it becomes the new default automatically
 - 2+ remaining → an interactive picker lets you choose the new default
 - 0 remaining → default is cleared
+
+## Interactive Mode
+
+`pb` ships two full-screen terminal UIs — one for SQL, one for PromQL. Both open with `-i`.
+
+### SQL Interactive (`pb query run -i`)
+
+```bash
+pb query run -i                                         # open blank — write query inside
+pb query run "SELECT * FROM backend" --from=1h -i       # open with query pre-filled
+```
+
+Navigate panels with `Tab` / `Shift+Tab`:
+
+```
+[ Query ] → [ Time ] → [ Table ]
+```
+
+| Key | Action |
+|-----|--------|
+| `Tab` / `Shift+Tab` | Move between panels |
+| `Enter` (Time panel) | Open time range picker |
+| `Ctrl+R` | Run query |
+| `Ctrl+B` | Fetch previous page |
+| `Ctrl+C` | Exit |
+
+**Table panel:**
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` | Scroll rows |
+| `Shift+↑` / `Shift+↓` | Previous / next page |
+| `←` / `→` | Scroll columns |
+| `/` | Filter rows |
+| `Esc` | Clear filter |
+
+---
+
+### PromQL Interactive (`pb query promql run -i`)
+
+```bash
+pb query promql run -i                                                          # open blank — write expression inside
+pb query promql run "http_requests_total" --dataset otel_metrics --from=1h -i  # open with expression pre-filled
+```
+
+Navigate panels with `Tab` / `Shift+Tab`:
+
+```
+[ Dataset ] → [ Query ] → [ Time ] → [ Step ] → [ Table ]
+```
+
+| Key | Action |
+|-----|--------|
+| `Tab` / `Shift+Tab` | Move between panels |
+| `Enter` (Dataset panel) | Open dataset picker |
+| `Enter` (Time panel) | Open time range / evaluation time picker |
+| `Space` (Step panel) | Toggle range / instant mode |
+| `Ctrl+R` | Run query |
+| `Ctrl+C` | Exit |
+
+**Table panel** — same keys as SQL interactive (↑ ↓ rows, ← → columns, `/` filter).
+
+---
 
 ### SQL Query
 
@@ -117,12 +180,6 @@ pb query run "SELECT * FROM backend" \
 pb query run "SELECT * FROM backend" --from=1h --output json | jq .
 ```
 
-**Interactive table view** — navigate, filter, and paginate results in the terminal:
-
-```bash
-pb query run "SELECT * FROM backend" --from=1h -i
-```
-
 **Save a query for later:**
 
 ```bash
@@ -134,30 +191,6 @@ pb query list    # list and apply saved queries
 > ```bash
 > pb query run "SELECT * FROM otel-logs WHERE service.name = 'frontend'" --from=1h
 > ```
-
-#### Interactive Mode Keys
-
-| Key | Action |
-|-----|--------|
-| `Tab` | Next panel (Query → Time → Table) |
-| `Shift+Tab` | Previous panel |
-| `Enter` (Time panel) | Open time range picker |
-| `Ctrl+R` | Run query |
-| `Ctrl+B` | Fetch previous page |
-| `Ctrl+C` | Exit |
-
-**Table panel keys:**
-
-| Key | Action |
-|-----|--------|
-| `↑` / `w` | Scroll up |
-| `↓` / `s` | Scroll down |
-| `Shift+↑` / `PgUp` | Previous page |
-| `Shift+↓` / `PgDn` | Next page |
-| `←` / `a` | Scroll columns left |
-| `→` / `d` | Scroll columns right |
-| `/` | Filter rows |
-| `Esc` | Clear filter |
 
 ### PromQL Query
 

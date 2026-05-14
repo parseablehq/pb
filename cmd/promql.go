@@ -26,7 +26,9 @@ import (
 	"time"
 
 	internalHTTP "pb/pkg/http"
+	"pb/pkg/model"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
 
@@ -65,6 +67,7 @@ func init() {
 	promqlRunCmd.Flags().String("step", "1m", "Resolution step for range queries (e.g. 15s, 1m, 1h)")
 	promqlRunCmd.Flags().StringP("output", "o", "text", "Output format: text or json")
 	promqlRunCmd.Flags().Bool("instant", false, "Instant query — evaluate at --to time only")
+	promqlRunCmd.Flags().BoolP("interactive", "i", false, "Open interactive TUI")
 
 	// flags: labels
 	promqlLabelsCmd.Flags().StringP("dataset", "d", defaultMetricsStream, "Metrics dataset")
@@ -185,7 +188,7 @@ var promqlRunCmd = &cobra.Command{
 	Example: "  pb query promql run \"http_requests_total\" --dataset otel_metrics --from 1h\n" +
 		"  pb query promql run \"rate(http_requests_total[5m])\" --dataset otel_metrics --from 1h --step 1m\n" +
 		"  pb query promql run \"up\" --dataset otel_metrics --instant -o json",
-	Args:    cobra.ExactArgs(1),
+	Args:    cobra.MaximumNArgs(1),
 	PreRunE: PreRunDefaultProfile,
 	RunE:    runPromqlQuery,
 }
@@ -209,17 +212,38 @@ type promqlSeries struct {
 }
 
 func runPromqlQuery(cmd *cobra.Command, args []string) error {
-	expr := args[0]
+	var expr string
+	if len(args) > 0 {
+		expr = args[0]
+	}
 	stream, _ := cmd.Flags().GetString("dataset")
 	fromStr, _ := cmd.Flags().GetString("from")
 	toStr, _ := cmd.Flags().GetString("to")
 	step, _ := cmd.Flags().GetString("step")
 	outputFmt, _ := cmd.Flags().GetString("output")
 	instant, _ := cmd.Flags().GetBool("instant")
+	interactive, _ := cmd.Flags().GetBool("interactive")
 
 	toTime, err := parseTimeStr(toStr)
 	if err != nil {
 		return fmt.Errorf("invalid --to: %w", err)
+	}
+
+	if interactive {
+		startTime, err := parseTimeStr(fromStr)
+		if err != nil {
+			return fmt.Errorf("invalid --from: %w", err)
+		}
+		m := model.NewPromqlModel(DefaultProfile, expr, startTime, toTime, step, stream, instant)
+		p := tea.NewProgram(m, tea.WithAltScreen())
+		_, err = p.Run()
+		return err
+	}
+
+	if strings.TrimSpace(expr) == "" {
+		fmt.Println("Please enter a PromQL expression")
+		fmt.Printf("Example:\n  pb query promql run \"http_requests_total\" --dataset otel_metrics\n  pb query promql run -i\n")
+		return nil
 	}
 
 	params := url.Values{}
