@@ -66,13 +66,23 @@ var query = &cobra.Command{
 			command.Annotations["executionTime"] = duration.String()
 		}()
 
-		if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
+		interactive, err := command.Flags().GetBool("interactive")
+		if err != nil {
+			command.Annotations["error"] = err.Error()
+			return err
+		}
+
+		if (len(args) == 0 || strings.TrimSpace(args[0]) == "") && !interactive {
 			fmt.Println("Please enter your query")
 			fmt.Printf("Example:\n  pb query run \"select * from frontend\" --from=10m --to=now\n")
 			return nil
 		}
 
-		sqlQuery := args[0]
+		var sqlQuery string
+		if len(args) > 0 {
+			sqlQuery = args[0]
+		}
+
 		start, err := command.Flags().GetString(startFlag)
 		if err != nil {
 			command.Annotations["error"] = err.Error()
@@ -89,12 +99,6 @@ var query = &cobra.Command{
 		}
 		if end == "" {
 			end = defaultEnd
-		}
-
-		interactive, err := command.Flags().GetBool("interactive")
-		if err != nil {
-			command.Annotations["error"] = err.Error()
-			return err
 		}
 
 		sqlQuery = quoteStreamNames(sqlQuery)

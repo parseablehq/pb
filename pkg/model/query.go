@@ -131,6 +131,7 @@ type QueryModel struct {
 	status        StatusBar
 	spinner       spinner.Model
 	loading       bool
+	hasQueried    bool // true once the first query has been dispatched
 	queryIterator *iterator.QueryIterator[QueryData, FetchResult]
 	overlay       uint
 	focused       int
@@ -192,6 +193,7 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 	query.SetWidth(70)
 	query.ShowLineNumbers = true
 	query.SetValue(queryStr)
+	query.Placeholder = "write your SQL query here..."
 	query.KeyMap = textAreaKeyMap
 	query.Focus()
 
@@ -204,6 +206,7 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 	sp.Spinner = spinner.Line
 	sp.Style = lipgloss.NewStyle().Foreground(FocusPrimary)
 
+	hasQuery := strings.TrimSpace(queryStr) != ""
 	model := QueryModel{
 		width:         w,
 		height:        h,
@@ -214,7 +217,8 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 		profile:       profile,
 		help:          help,
 		spinner:       sp,
-		loading:       true,
+		loading:       hasQuery,
+		hasQueried:    hasQuery,
 		queryIterator: nil,
 		status:        status,
 	}
@@ -222,6 +226,9 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 }
 
 func (m QueryModel) Init() tea.Cmd {
+	if strings.TrimSpace(m.query.Value()) == "" {
+		return m.spinner.Tick
+	}
 	return tea.Batch(
 		m.spinner.Tick,
 		NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()),
@@ -305,6 +312,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status.Error = ""
 				m.status.Info = ""
 				m.loading = true
+				m.hasQueried = true
 				return m, tea.Batch(m.spinner.Tick, NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()))
 			}
 		}
@@ -315,6 +323,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status.Error = ""
 			m.status.Info = ""
 			m.loading = true
+			m.hasQueried = true
 			return m, tea.Batch(m.spinner.Tick, NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()))
 		}
 
@@ -380,7 +389,7 @@ func (m QueryModel) View() string {
 	headerHeight := lipgloss.Height(header)
 
 	if m.loading {
-		m.status.Info = m.spinner.View() + " fetching..."
+		m.status.Info = ""
 		m.status.Error = ""
 	}
 	statusView := m.status.View()
@@ -424,8 +433,44 @@ func (m QueryModel) View() string {
 	m.table = m.table.WithPageSize(pageSize).WithRows(displayRows)
 
 	// Step 4: compose main view.
+	availW := m.width - 6
+	if availW < 0 {
+		availW = 0
+	}
+	availH := tableAvail - 2
+	if availH < 0 {
+		availH = 0
+	}
+
 	var resultPane string
-	if m.fetchErrMsg != "" && !m.loading {
+	if !m.hasQueried {
+		// Welcome / empty state — no query has been run yet.
+		logoStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(FocusPrimary).
+			Border(lipgloss.DoubleBorder()).
+			BorderForeground(FocusSecondary).
+			Padding(0, 2)
+		hintStyle := lipgloss.NewStyle().
+			Foreground(StandardSecondary).
+			MarginTop(1)
+		keyStyle := lipgloss.NewStyle().
+			Foreground(FocusPrimary).
+			Bold(true)
+
+		logo := logoStyle.Render("P A R S E A B L E")
+		hint := hintStyle.Render("write your SQL query above and press " + keyStyle.Render("ctrl+r") + " to run")
+		content := lipgloss.JoinVertical(lipgloss.Center, logo, hint)
+		placed := lipgloss.Place(availW, availH, lipgloss.Center, lipgloss.Center, content)
+		resultPane = tableOuter.Render(placed)
+	} else if m.loading {
+		// Query dispatched — show spinner centred in the result area.
+		spinStyle := lipgloss.NewStyle().
+			Foreground(FocusPrimary)
+		content := spinStyle.Render(m.spinner.View() + " fetching...")
+		placed := lipgloss.Place(availW, availH, lipgloss.Center, lipgloss.Center, content)
+		resultPane = tableOuter.Render(placed)
+	} else if m.fetchErrMsg != "" {
 		// Render with width constraint so the long error string wraps,
 		// then clip to tableAvail lines so the header stays in place.
 		errStyle := lipgloss.NewStyle().
