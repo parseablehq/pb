@@ -20,17 +20,19 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"pb/pkg/config"
 	"pb/pkg/iterator"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -91,14 +93,7 @@ var (
 		InnerDivider: "║",
 	}
 
-	additionalKeyBinds = []key.Binding{
-		key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl r", "(re) run query")),
-	}
-
-	paginatorKeyBinds = []key.Binding{
-		key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl r", "Fetch Next Minute")),
-		key.NewBinding(key.WithKeys("ctrl+b"), key.WithHelp("ctrl b", "Fetch Prev Minute")),
-	}
+	additionalKeyBinds = []key.Binding{runQueryKey}
 
 	QueryNavigationMap = []string{"query", "time", "table"}
 )
@@ -112,6 +107,7 @@ type FetchData struct {
 	status FetchResult
 	schema []string
 	data   []map[string]interface{}
+	errMsg string
 }
 
 const (
@@ -133,9 +129,14 @@ type QueryModel struct {
 	profile       config.Profile
 	help          help.Model
 	status        StatusBar
+	spinner       spinner.Model
+	loading       bool
+	hasQueried    bool // true once the first query has been dispatched
 	queryIterator *iterator.QueryIterator[QueryData, FetchResult]
 	overlay       uint
 	focused       int
+	dataRows      []table.Row // actual data rows (without padding)
+	fetchErrMsg   string      // last fetch error, shown in the result area
 }
 
 func (m *QueryModel) focusSelected() {
@@ -154,45 +155,6 @@ func (m *QueryModel) currentFocus() string {
 	return QueryNavigationMap[m.focused]
 }
 
-func (m *QueryModel) initIterator() {
-	iter := createIteratorFromModel(m)
-	m.queryIterator = iter
-}
-
-func createIteratorFromModel(m *QueryModel) *iterator.QueryIterator[QueryData, FetchResult] {
-	startTime := m.timeRange.start.Time()
-	endTime := m.timeRange.end.Time()
-
-	startTime = startTime.Truncate(time.Minute)
-	endTime = endTime.Truncate(time.Minute).Add(time.Minute)
-
-	table := streamNameFromQuery(m.query.Value())
-	if table != "" {
-		iter := iterator.NewQueryIterator(
-			startTime, endTime,
-			false,
-			func(t1, t2 time.Time) (QueryData, FetchResult) {
-				client := &http.Client{
-					Timeout: time.Second * 50,
-				}
-				return fetchData(client, &m.profile, m.query.Value(), t1.UTC().Format(time.RFC3339), t2.UTC().Format(time.RFC3339))
-			},
-			func(_, _ time.Time) bool {
-				client := &http.Client{
-					Timeout: time.Second * 50,
-				}
-				res, err := fetchData(client, &m.profile, "select count(*) as count from "+table, m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
-				if err == fetchErr {
-					return false
-				}
-				count := res.Records[0]["count"].(float64)
-				return count > 0
-			})
-		return &iter
-	}
-	return nil
-}
-
 func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime time.Time) QueryModel {
 	w, h, _ := term.GetSize(int(os.Stdout.Fd()))
 
@@ -204,6 +166,11 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 
 	rows := make([]table.Row, 0)
 
+	pageSize := h - 14 // header(4) + help(4) + status(1) + table-overhead(6) = 15; -1 buffer
+	if pageSize < 5 {
+		pageSize = 5
+	}
+
 	table := table.New(columns).
 		WithRows(rows).
 		Filtered(true).
@@ -212,7 +179,7 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 		Border(customBorder).
 		Focused(true).
 		WithKeyMap(tableKeyBinds).
-		WithPageSize(30).
+		WithPageSize(pageSize).
 		WithBaseStyle(tableStyle).
 		WithMissingDataIndicatorStyled(table.StyledCell{
 			Style: lipgloss.NewStyle().Foreground(StandardSecondary),
@@ -226,12 +193,20 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 	query.SetWidth(70)
 	query.ShowLineNumbers = true
 	query.SetValue(queryStr)
+	query.Placeholder = "write your SQL query here..."
 	query.KeyMap = textAreaKeyMap
 	query.Focus()
 
 	help := help.New()
 	help.Styles.FullDesc = lipgloss.NewStyle().Foreground(FocusSecondary)
 
+	status := NewStatusBar(profile.URL, w)
+
+	sp := spinner.New()
+	sp.Spinner = spinner.Line
+	sp.Style = lipgloss.NewStyle().Foreground(FocusPrimary)
+
+	hasQuery := strings.TrimSpace(queryStr) != ""
 	model := QueryModel{
 		width:         w,
 		height:        h,
@@ -241,31 +216,23 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 		overlay:       overlayNone,
 		profile:       profile,
 		help:          help,
+		spinner:       sp,
+		loading:       hasQuery,
+		hasQueried:    hasQuery,
 		queryIterator: nil,
-		status:        NewStatusBar(profile.URL, w),
+		status:        status,
 	}
-	model.queryIterator = createIteratorFromModel(&model)
 	return model
 }
 
 func (m QueryModel) Init() tea.Cmd {
-	return func() tea.Msg {
-		var ready sync.WaitGroup
-		ready.Add(1)
-		go func() {
-			m.initIterator()
-			for !m.queryIterator.Ready() {
-				time.Sleep(time.Millisecond * 100)
-			}
-			ready.Done()
-		}()
-		ready.Wait()
-		if m.queryIterator.Finished() {
-			return nil
-		}
-
-		return IteratorNext(m.queryIterator)()
+	if strings.TrimSpace(m.query.Value()) == "" {
+		return m.spinner.Tick
 	}
+	return tea.Batch(
+		m.spinner.Tick,
+		NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()),
+	)
 }
 
 func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -274,20 +241,38 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 
+	case spinner.TickMsg:
+		if m.loading {
+			m.spinner, cmd = m.spinner.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
+
 	case tea.WindowSizeMsg:
-		m.width, m.height, _ = term.GetSize(int(os.Stdout.Fd()))
+		m.width = msg.Width
+		m.height = msg.Height
 		m.help.Width = m.width
 		m.status.width = m.width
 		m.table = m.table.WithMaxTotalWidth(m.width)
-		// width adjustment for time widget
 		m.query.SetWidth(int(m.width - 41))
 		return m, nil
 
 	case FetchData:
+		m.loading = false
+		m.status.Info = ""
 		if msg.status == fetchOk {
+			m.fetchErrMsg = ""
 			m.UpdateTable(msg)
+			m.status.Error = ""
+			m.status.Info = fmt.Sprintf("%d rows", len(m.dataRows))
 		} else {
-			m.status.Error = "failed to query"
+			m.dataRows = []table.Row{}
+			m.table = m.table.WithRows([]table.Row{})
+			m.fetchErrMsg = msg.errMsg
+			if m.fetchErrMsg == "" {
+				m.fetchErrMsg = "query failed"
+			}
+			m.status.Error = "query failed"
 		}
 		return m, nil
 
@@ -308,6 +293,15 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusSelected()
 				return m, nil
 			}
+
+			if msg.Type == tea.KeyShiftTab {
+				m.focused--
+				if m.focused < 0 {
+					m.focused = len(QueryNavigationMap) - 1
+				}
+				m.focusSelected()
+				return m, nil
+			}
 		}
 
 		// special behavior on time input page
@@ -315,25 +309,27 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Type == tea.KeyEnter {
 				m.overlay = overlayNone
 				m.focusSelected()
-				return m, nil
+				m.status.Error = ""
+				m.status.Info = ""
+				m.loading = true
+				m.hasQueried = true
+				return m, tea.Batch(m.spinner.Tick, NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()))
 			}
 		}
 
 		// common keybind
 		if msg.Type == tea.KeyCtrlR {
 			m.overlay = overlayNone
-			if m.queryIterator == nil {
-				return m, NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
-			}
-			if m.queryIterator.Ready() && !m.queryIterator.Finished() {
-				return m, IteratorNext(m.queryIterator)
-			}
-			return m, nil
+			m.status.Error = ""
+			m.status.Info = ""
+			m.loading = true
+			m.hasQueried = true
+			return m, tea.Batch(m.spinner.Tick, NewFetchTask(m.profile, m.query.Value(), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()))
 		}
 
 		if msg.Type == tea.KeyCtrlB {
 			m.overlay = overlayNone
-			if m.queryIterator.CanFetchPrev() {
+			if m.queryIterator != nil && m.queryIterator.CanFetchPrev() {
 				return m, IteratorPrev(m.queryIterator)
 			}
 			return m, nil
@@ -349,14 +345,12 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch m.currentFocus() {
 				case "query":
 					m.query, cmd = m.query.Update(msg)
-					m.initIterator()
 				case "table":
 					m.table, cmd = m.table.Update(msg)
 				}
 				cmds = append(cmds, cmd)
 			case overlayInputs:
 				m.timeRange, cmd = m.timeRange.Update(msg)
-				m.initIterator()
 				cmds = append(cmds, cmd)
 			}
 		}
@@ -365,19 +359,12 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m QueryModel) View() string {
-	outer := lipgloss.NewStyle().Inherit(baseStyle).
-		UnsetMaxHeight().Width(m.width).Height(m.height)
+	if m.width == 0 || m.height == 0 {
+		return ""
+	}
 
-	m.table = m.table.WithMaxTotalWidth(m.width - 2)
-
-	var mainView string
-	var helpKeys [][]key.Binding
-	var helpView string
-
-	statusView := lipgloss.PlaceVertical(2, lipgloss.Bottom, m.status.View())
-	statusHeight := lipgloss.Height(statusView)
-
-	time := lipgloss.JoinVertical(
+	// Step 1: build the fixed-height components and measure them.
+	timePane := lipgloss.JoinVertical(
 		lipgloss.Left,
 		fmt.Sprintf("%s %s ", baseBoldUnderlinedStyle.Render(" start "), m.timeRange.start.Value()),
 		fmt.Sprintf("%s %s ", baseBoldUnderlinedStyle.Render("  end  "), m.timeRange.end.Value()),
@@ -385,7 +372,6 @@ func (m QueryModel) View() string {
 
 	queryOuter, timeOuter := &borderedStyle, &borderedStyle
 	tableOuter := lipgloss.NewStyle()
-
 	switch m.currentFocus() {
 	case "query":
 		queryOuter = &borderedFocusStyle
@@ -396,33 +382,23 @@ func (m QueryModel) View() string {
 			BorderForeground(FocusPrimary)
 	}
 
-	mainViewRenderElements := []string{lipgloss.JoinHorizontal(lipgloss.Top, queryOuter.Render(m.query.View()), timeOuter.Render(time)), tableOuter.Render(m.table.View())}
+	header := lipgloss.JoinHorizontal(lipgloss.Top,
+		queryOuter.Render(m.query.View()),
+		timeOuter.Render(timePane),
+	)
+	headerHeight := lipgloss.Height(header)
 
-	if m.queryIterator != nil {
-		inactiveStyle := lipgloss.NewStyle().Foreground(StandardPrimary)
-		activeStyle := lipgloss.NewStyle().Foreground(FocusPrimary)
-		var line strings.Builder
-
-		if m.queryIterator.CanFetchPrev() {
-			line.WriteString(activeStyle.Render("<<"))
-		} else {
-			line.WriteString(inactiveStyle.Render("<<"))
-		}
-
-		fmt.Fprintf(&line, " %d of many ", m.table.TotalRows())
-
-		if m.queryIterator.Ready() && !m.queryIterator.Finished() {
-			line.WriteString(activeStyle.Render(">>"))
-		} else {
-			line.WriteString(inactiveStyle.Render(">>"))
-		}
-
-		mainViewRenderElements = append(mainViewRenderElements, line.String())
+	if m.loading {
+		m.status.Info = ""
+		m.status.Error = ""
 	}
+	statusView := m.status.View()
+	statusHeight := lipgloss.Height(statusView)
 
+	// Step 2: build help view and measure it.
+	var helpKeys [][]key.Binding
 	switch m.overlay {
 	case overlayNone:
-		mainView = lipgloss.JoinVertical(lipgloss.Left, mainViewRenderElements...)
 		switch m.currentFocus() {
 		case "query":
 			helpKeys = TextAreaHelpKeys{}.FullHelp()
@@ -430,31 +406,109 @@ func (m QueryModel) View() string {
 			helpKeys = [][]key.Binding{
 				{key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select timeRange"))},
 			}
+			helpKeys = append(helpKeys, additionalKeyBinds)
 		case "table":
 			helpKeys = tableHelpBinds.FullHelp()
+			helpKeys = append(helpKeys, additionalKeyBinds)
 		}
 	case overlayInputs:
-		mainView = m.timeRange.View()
 		helpKeys = m.timeRange.FullHelp()
-	}
-
-	if m.queryIterator != nil {
-		helpKeys = append(helpKeys, paginatorKeyBinds)
-	} else {
 		helpKeys = append(helpKeys, additionalKeyBinds)
 	}
-
-	helpView = m.help.FullHelpView(helpKeys)
-
+	helpView := m.help.FullHelpView(helpKeys)
 	helpHeight := lipgloss.Height(helpView)
-	tableBoxHeight := m.height - statusHeight - helpHeight
-	render := fmt.Sprintf(
-		"%s\n%s\n%s",
-		lipgloss.PlaceVertical(tableBoxHeight, lipgloss.Top, mainView),
-		helpView,
-		statusView)
 
-	return outer.Render(render)
+	// Step 3: calculate exact table page size so everything fits.
+	tableAvail := m.height - headerHeight - helpHeight - statusHeight
+	pageSize := tableAvail - 6
+	if pageSize < 1 {
+		pageSize = 1
+	}
+
+	// Pad rows to pageSize so the table always fills its allocated height.
+	// Empty rows render as blank lines inside the table border.
+	displayRows := make([]table.Row, pageSize)
+	copy(displayRows, m.dataRows)
+
+	m.table = m.table.WithPageSize(pageSize).WithRows(displayRows)
+
+	// Step 4: compose main view.
+	availW := m.width - 6
+	if availW < 0 {
+		availW = 0
+	}
+	availH := tableAvail - 2
+	if availH < 0 {
+		availH = 0
+	}
+
+	var resultPane string
+	if !m.hasQueried {
+		// Welcome / empty state — no query has been run yet.
+		logoStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(FocusPrimary).
+			Border(lipgloss.DoubleBorder()).
+			BorderForeground(FocusSecondary).
+			Padding(0, 2)
+		hintStyle := lipgloss.NewStyle().
+			Foreground(StandardSecondary).
+			MarginTop(1)
+		keyStyle := lipgloss.NewStyle().
+			Foreground(FocusPrimary).
+			Bold(true)
+
+		logo := logoStyle.Render("P A R S E A B L E")
+		hint := hintStyle.Render("write your SQL query above and press " + keyStyle.Render("ctrl+r") + " to run")
+		content := lipgloss.JoinVertical(lipgloss.Center, logo, hint)
+		placed := lipgloss.Place(availW, availH, lipgloss.Center, lipgloss.Center, content)
+		resultPane = tableOuter.Render(placed)
+	} else if m.loading {
+		// Query dispatched — show spinner centered in the result area.
+		spinStyle := lipgloss.NewStyle().
+			Foreground(FocusPrimary)
+		content := spinStyle.Render(m.spinner.View() + " fetching...")
+		placed := lipgloss.Place(availW, availH, lipgloss.Center, lipgloss.Center, content)
+		resultPane = tableOuter.Render(placed)
+	} else if m.fetchErrMsg != "" {
+		// Render with width constraint so the long error string wraps,
+		// then clip to tableAvail lines so the header stays in place.
+		errStyle := lipgloss.NewStyle().
+			Padding(1, 2).
+			Foreground(lipgloss.AdaptiveColor{Light: "#9B2226", Dark: "#FF6B6B"}).
+			Width(m.width - 6)
+		rendered := errStyle.Render(m.fetchErrMsg)
+		lines := strings.Split(rendered, "\n")
+		maxLines := tableAvail - 2
+		if maxLines < 1 {
+			maxLines = 1
+		}
+		if len(lines) > maxLines {
+			lines = lines[:maxLines]
+		}
+		resultPane = tableOuter.Render(strings.Join(lines, "\n"))
+	} else {
+		resultPane = tableOuter.Render(m.table.View())
+	}
+
+	var mainView string
+	switch m.overlay {
+	case overlayNone:
+		mainView = lipgloss.JoinVertical(lipgloss.Left, header, resultPane)
+	case overlayInputs:
+		mainView = m.timeRange.View()
+	}
+
+	// Pin help+status to the bottom by padding the main view to fill remaining height.
+	mainHeight := lipgloss.Height(mainView)
+	bottomHeight := helpHeight + statusHeight
+	padLines := m.height - mainHeight - bottomHeight
+	if padLines > 0 {
+		mainView = mainView + strings.Repeat("\n", padLines)
+	}
+
+	render := lipgloss.JoinVertical(lipgloss.Left, mainView, helpView, statusView)
+	return lipgloss.NewStyle().Width(m.width).Render(render)
 }
 
 type QueryData struct {
@@ -462,31 +516,38 @@ type QueryData struct {
 	Records []map[string]interface{} `json:"records"`
 }
 
-func NewFetchTask(profile config.Profile, query string, startTime string, endTime string) func() tea.Msg {
-	return func() tea.Msg {
+func NewFetchTask(profile config.Profile, query string, startTime string, endTime string) tea.Cmd {
+	return func() (msg tea.Msg) {
 		res := FetchData{
 			status: fetchErr,
 			schema: []string{},
 			data:   []map[string]interface{}{},
 		}
+		defer func() {
+			if r := recover(); r != nil {
+				msg = res
+			}
+		}()
 
 		client := &http.Client{
 			Timeout: time.Second * 50,
 		}
 
-		data, status := fetchData(client, &profile, query, startTime, endTime)
+		data, status, errMsg := fetchData(client, &profile, query, startTime, endTime)
 
 		if status == fetchOk {
 			res.data = data.Records
 			res.schema = data.Fields
 			res.status = fetchOk
+		} else {
+			res.errMsg = errMsg
 		}
 
 		return res
 	}
 }
 
-func IteratorNext(iter *iterator.QueryIterator[QueryData, FetchResult]) func() tea.Msg {
+func IteratorNext(iter *iterator.QueryIterator[QueryData, FetchResult]) tea.Cmd {
 	return func() tea.Msg {
 		res := FetchData{
 			status: fetchErr,
@@ -506,7 +567,7 @@ func IteratorNext(iter *iterator.QueryIterator[QueryData, FetchResult]) func() t
 	}
 }
 
-func IteratorPrev(iter *iterator.QueryIterator[QueryData, FetchResult]) func() tea.Msg {
+func IteratorPrev(iter *iterator.QueryIterator[QueryData, FetchResult]) tea.Cmd {
 	return func() tea.Msg {
 		res := FetchData{
 			status: fetchErr,
@@ -526,34 +587,52 @@ func IteratorPrev(iter *iterator.QueryIterator[QueryData, FetchResult]) func() t
 	}
 }
 
-func fetchData(client *http.Client, profile *config.Profile, query string, startTime string, endTime string) (data QueryData, res FetchResult) {
+func fetchData(client *http.Client, profile *config.Profile, query string, startTime string, endTime string) (data QueryData, res FetchResult, errMsg string) {
 	data = QueryData{}
 	res = fetchErr
 
-	queryTemplate := `{
-    "query": "%s",
-    "startTime": "%s",
-    "endTime": "%s"
-	}
-	`
-
-	finalQuery := fmt.Sprintf(queryTemplate, query, startTime, endTime)
-
-	endpoint := fmt.Sprintf("%s/%s", profile.URL, "api/v1/query?fields=true")
-	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer([]byte(finalQuery)))
+	body, err := json.Marshal(map[string]string{
+		"query":     query,
+		"startTime": startTime,
+		"endTime":   endTime,
+	})
 	if err != nil {
+		errMsg = err.Error()
 		return
 	}
-	req.SetBasicAuth(profile.Username, profile.Password)
+
+	endpoint, _ := url.JoinPath(profile.URL, "api/v1/query")
+	endpoint += "?fields=true"
+	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(body))
+	if err != nil {
+		errMsg = err.Error()
+		return
+	}
+	if profile.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+profile.Token)
+	} else {
+		req.SetBasicAuth(profile.Username, profile.Password)
+	}
 	req.Header.Add("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
+		errMsg = err.Error()
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		errMsg = strings.TrimSpace(string(b))
+		if errMsg == "" {
+			errMsg = resp.Status
+		}
 		return
 	}
 
 	err = json.NewDecoder(resp.Body).Decode(&data)
-	defer resp.Body.Close()
 	if err != nil {
+		errMsg = err.Error()
 		return
 	}
 
@@ -561,25 +640,24 @@ func fetchData(client *http.Client, profile *config.Profile, query string, start
 	return
 }
 
+type colSpec struct {
+	key        string
+	title      string
+	width      int
+	filterable bool
+	fixed      bool // fixed-width columns are not scaled down
+}
+
 func (m *QueryModel) UpdateTable(data FetchData) {
-	// pin p_timestamp to left if available
-	containsTimestamp := slices.Contains(data.schema, dateTimeKey)
-	containsTags := slices.Contains(data.schema, tagKey)
-	containsMetadata := slices.Contains(data.schema, metadataKey)
-	columns := make([]table.Column, len(data.schema))
-	columnIndex := 0
-
-	if containsTimestamp {
-		columns[0] = table.NewColumn(dateTimeKey, dateTimeKey, dateTimeWidth)
-		columnIndex++
+	if len(data.schema) == 0 {
+		return
 	}
 
-	if containsTags {
-		columns[len(columns)-2] = table.NewColumn(tagKey, tagKey, inferWidthForColumns(tagKey, &data.data, 100, 80)).WithFiltered(true)
-	}
+	// Build column specs: timestamp pinned left, p_tags/p_metadata pinned right.
+	var specs []colSpec
 
-	if containsMetadata {
-		columns[len(columns)-1] = table.NewColumn(metadataKey, metadataKey, inferWidthForColumns(metadataKey, &data.data, 100, 80)).WithFiltered(true)
+	if slices.Contains(data.schema, dateTimeKey) {
+		specs = append(specs, colSpec{key: dateTimeKey, title: dateTimeKey, width: dateTimeWidth, fixed: true})
 	}
 
 	for _, title := range data.schema {
@@ -587,20 +665,78 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 		case dateTimeKey, tagKey, metadataKey:
 			continue
 		default:
-			width := inferWidthForColumns(title, &data.data, 100, 100) + 1
-			columns[columnIndex] = table.NewColumn(title, title, width).WithFiltered(true)
-			columnIndex++
+			w := inferWidthForColumns(title, &data.data, 100, 100) + 1
+			specs = append(specs, colSpec{key: title, title: title, width: w, filterable: true})
 		}
 	}
 
-	rows := make([]table.Row, len(data.data))
-	for i := 0; i < len(data.data); i++ {
-		rowJSON := data.data[i]
-		rows[i] = table.NewRow(rowJSON)
+	if slices.Contains(data.schema, tagKey) {
+		specs = append(specs, colSpec{key: tagKey, title: tagKey, width: inferWidthForColumns(tagKey, &data.data, 100, 80), filterable: true})
+	}
+
+	if slices.Contains(data.schema, metadataKey) {
+		specs = append(specs, colSpec{key: metadataKey, title: metadataKey, width: inferWidthForColumns(metadataKey, &data.data, 100, 80), filterable: true})
+	}
+
+	// Scale scalable column widths so the total table fits within the terminal.
+	// Only scale when each column would still be at least minReadableWidth wide —
+	// when there are too many columns (e.g. 50+), skip scaling so the first N
+	// columns stay readable and > handles the rest via horizontal scroll.
+	if m.width > 0 && len(specs) > 0 {
+		const minReadableWidth = 8
+
+		numBorders := len(specs) + 1
+		available := m.width - numBorders
+
+		totalWidth, fixedWidth := 0, 0
+		for _, s := range specs {
+			totalWidth += s.width
+			if s.fixed {
+				fixedWidth += s.width
+			}
+		}
+
+		if totalWidth > available {
+			scalableAvail := available - fixedWidth
+			scalableTotal := totalWidth - fixedWidth
+			numScalable := 0
+			for _, s := range specs {
+				if !s.fixed {
+					numScalable++
+				}
+			}
+			if scalableTotal > 0 && scalableAvail > 0 && numScalable > 0 &&
+				scalableAvail/numScalable >= minReadableWidth {
+				for i := range specs {
+					if !specs[i].fixed {
+						newW := specs[i].width * scalableAvail / scalableTotal
+						if newW < minReadableWidth {
+							newW = minReadableWidth
+						}
+						specs[i].width = newW
+					}
+				}
+			}
+		}
+	}
+
+	// Build table.Columns from scaled specs.
+	columns := make([]table.Column, 0, len(specs))
+	for _, s := range specs {
+		col := table.NewColumn(s.key, s.title, s.width)
+		if s.filterable {
+			col = col.WithFiltered(true)
+		}
+		columns = append(columns, col)
+	}
+
+	m.dataRows = make([]table.Row, len(data.data))
+	for i, rowJSON := range data.data {
+		m.dataRows[i] = table.NewRow(rowJSON)
 	}
 
 	m.table = m.table.WithColumns(columns)
-	m.table = m.table.WithRows(rows)
+	m.table = m.table.WithRows(m.dataRows)
 }
 
 func inferWidthForColumns(column string, data *[]map[string]interface{}, maxRecords int, maxWidth int) (width int) {
@@ -649,16 +785,4 @@ func countDigits(num int) int {
 	// Using logarithm base 10 to calculate the number of digits
 	numDigits := int(math.Log10(math.Abs(float64(num)))) + 1
 	return numDigits
-}
-
-func streamNameFromQuery(query string) string {
-	stream := ""
-	tokens := strings.Split(query, " ")
-	for i, token := range tokens {
-		if token == "from" {
-			stream = tokens[i+1]
-			break
-		}
-	}
-	return stream
 }

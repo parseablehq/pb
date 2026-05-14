@@ -29,26 +29,22 @@ import (
 
 // Items for time range
 const (
-	TenMinute    = -10 * time.Minute
-	TwentyMinute = -20 * time.Minute
-	ThirtyMinute = -30 * time.Minute
-	OneHour      = -1 * time.Hour
-	ThreeHour    = -3 * time.Hour
-	OneDay       = -24 * time.Hour
-	ThreeDay     = -72 * time.Hour
-	OneWeek      = -168 * time.Hour
+	TenMinute = -10 * time.Minute
+	OneHour   = -1 * time.Hour
+	FiveHour  = -5 * time.Hour
+	OneDay    = -24 * time.Hour
+	ThreeDay  = -72 * time.Hour
+	OneWeek   = -168 * time.Hour
 )
 
 var (
 	timeDurations = []list.Item{
 		timeDurationItem{duration: TenMinute, repr: "10 Minutes"},
-		timeDurationItem{duration: TwentyMinute, repr: "20 Minutes"},
-		timeDurationItem{duration: ThirtyMinute, repr: "30 Minutes"},
 		timeDurationItem{duration: OneHour, repr: "1 Hour"},
-		timeDurationItem{duration: ThreeHour, repr: "3 Hours"},
+		timeDurationItem{duration: FiveHour, repr: "5 Hours"},
 		timeDurationItem{duration: OneDay, repr: "1 Day"},
 		timeDurationItem{duration: ThreeDay, repr: "3 Days"},
-		timeDurationItem{duration: OneWeek, repr: "1 Week"},
+		timeDurationItem{duration: OneWeek, repr: "7 Days"},
 	}
 
 	listItemRender         = lipgloss.NewStyle().Foreground(StandardSecondary)

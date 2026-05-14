@@ -21,14 +21,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
-	// "pb/pkg/model"
+	"pb/pkg/model"
 
-	//! This dependency is required by the interactive flag Do not remove
-	// tea "github.com/charmbracelet/bubbletea"
 	internalHTTP "pb/pkg/http"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/spf13/cobra"
 )
@@ -43,13 +45,14 @@ var (
 	defaultEnd   = "now"
 
 	outputFlag = "output"
+	saveAsName string
 )
 
 var query = &cobra.Command{
 	Use:     "run [query] [flags]",
-	Example: "  pb query run \"select * from frontend\" --from=10m --to=now",
+	Example: "  pb query run \"select * from frontend\" --from=10m --to=now\n  pb query run \"select * from frontend\" -i",
 	Short:   "Run SQL query on a dataset",
-	Long:    "\nRun SQL query on a dataset. Default output format is text. Use --output flag to set output format to json.",
+	Long:    "\nRun SQL query on a dataset. Default output format is text.\nUse --output json for JSON output, or -i for interactive table view.",
 	Args:    cobra.MaximumNArgs(1),
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(command *cobra.Command, args []string) error {
@@ -63,13 +66,23 @@ var query = &cobra.Command{
 			command.Annotations["executionTime"] = duration.String()
 		}()
 
-		if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
+		interactive, err := command.Flags().GetBool("interactive")
+		if err != nil {
+			command.Annotations["error"] = err.Error()
+			return err
+		}
+
+		if (len(args) == 0 || strings.TrimSpace(args[0]) == "") && !interactive {
 			fmt.Println("Please enter your query")
 			fmt.Printf("Example:\n  pb query run \"select * from frontend\" --from=10m --to=now\n")
 			return nil
 		}
 
-		query := args[0]
+		var sqlQuery string
+		if len(args) > 0 {
+			sqlQuery = args[0]
+		}
+
 		start, err := command.Flags().GetString(startFlag)
 		if err != nil {
 			command.Annotations["error"] = err.Error()
@@ -88,18 +101,50 @@ var query = &cobra.Command{
 			end = defaultEnd
 		}
 
-		outputFormat, err := command.Flags().GetString("output")
+		sqlQuery = quoteStreamNames(sqlQuery)
+		sqlQuery = quoteFieldsWithDots(sqlQuery)
+
+		if interactive {
+			startT, err := parseTimeStr(start)
+			if err != nil {
+				return fmt.Errorf("invalid --from value: %w", err)
+			}
+			endT, err := parseTimeStr(end)
+			if err != nil {
+				return fmt.Errorf("invalid --to value: %w", err)
+			}
+			m := model.NewQueryModel(DefaultProfile, sqlQuery, startT, endT)
+			p := tea.NewProgram(m, tea.WithAltScreen())
+			_, err = p.Run()
+			if err != nil {
+				command.Annotations["error"] = err.Error()
+			}
+			return err
+		}
+
+		outputFmt, err := command.Flags().GetString("output")
 		if err != nil {
 			command.Annotations["error"] = err.Error()
 			return fmt.Errorf("failed to get 'output' flag: %w", err)
 		}
 
 		client := internalHTTP.DefaultClient(&DefaultProfile)
-		err = fetchData(&client, query, start, end, outputFormat)
+		stopSpinner := startSpinner()
+		err = fetchData(&client, sqlQuery, start, end, outputFmt)
+		stopSpinner()
 		if err != nil {
 			command.Annotations["error"] = err.Error()
+			return err
 		}
-		return err
+
+		if saveAsName != "" {
+			if saveErr := saveFilter(&client, sqlQuery, saveAsName, start, end); saveErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not save query: %v\n", saveErr)
+			} else {
+				fmt.Fprintf(os.Stderr, "Query saved as '%s'\n", saveAsName)
+			}
+		}
+		return nil
 	},
 }
 
@@ -107,6 +152,150 @@ func init() {
 	query.Flags().StringP(startFlag, startFlagShort, defaultStart, "Start time for query.")
 	query.Flags().StringP(endFlag, endFlagShort, defaultEnd, "End time for query.")
 	query.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+	query.Flags().BoolP("interactive", "i", false, "Open interactive table view")
+	query.Flags().StringVar(&saveAsName, "save-as", "", "Save this query with a name for later use")
+}
+
+// parseTimeStr converts a CLI time string to time.Time.
+// Accepts: "now", RFC3339 ("2024-01-01T00:00:00Z"), Go durations ("10m", "2h"), or day suffix ("1d", "7d").
+func parseTimeStr(s string) (time.Time, error) {
+	if s == "now" {
+		return time.Now(), nil
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	if strings.HasSuffix(s, "d") {
+		n, err := strconv.Atoi(strings.TrimSuffix(s, "d"))
+		if err == nil {
+			return time.Now().Add(-time.Duration(n) * 24 * time.Hour), nil
+		}
+	}
+	if d, err := time.ParseDuration(s); err == nil {
+		return time.Now().Add(-d), nil
+	}
+	return time.Time{}, fmt.Errorf("unrecognized time format %q (use: now, 10m, 2h, 1d, or RFC3339)", s)
+}
+
+// startSpinner prints an animated spinner to stderr while a fetch is in progress.
+// Call the returned function to stop it and clear the line.
+func startSpinner() func() {
+	frames := []string{"|", "/", "-", "\\"}
+	done := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		i := 0
+		for {
+			select {
+			case <-done:
+				fmt.Fprint(os.Stderr, "\r\033[K")
+				return
+			default:
+				fmt.Fprintf(os.Stderr, "\r%s fetching...", frames[i%len(frames)])
+				i++
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		<-stopped // wait for goroutine to clear the line before caller prints output
+	}
+}
+
+// fromClauseRe matches an unquoted identifier after FROM or JOIN.
+var fromClauseRe = regexp.MustCompile(`(?i)(\b(?:from|join)\s+)([a-zA-Z_][a-zA-Z0-9_-]*)`)
+
+// quoteStreamNames wraps stream names containing hyphens in double quotes so
+// DataFusion does not treat them as subtraction (nginx-logs → "nginx-logs").
+// Already-quoted identifiers are left untouched.
+func quoteStreamNames(query string) string {
+	return fromClauseRe.ReplaceAllStringFunc(query, func(match string) string {
+		m := fromClauseRe.FindStringSubmatch(match)
+		if len(m) < 3 || !strings.Contains(m[2], "-") {
+			return match
+		}
+		return m[1] + `"` + m[2] + `"`
+	})
+}
+
+// quoteFieldsWithDots wraps unquoted dotted identifiers in double quotes so
+// DataFusion treats them as field names instead of table.column references.
+// e.g. service.name → "service.name", http.status_code → "http.status_code"
+// Already-quoted identifiers and string literals are left untouched.
+func quoteFieldsWithDots(query string) string {
+	var result strings.Builder
+	i, n := 0, len(query)
+	for i < n {
+		ch := query[i]
+		switch ch {
+		case '\'':
+			result.WriteByte(ch)
+			i++
+			for i < n {
+				c := query[i]
+				result.WriteByte(c)
+				i++
+				if c == '\'' {
+					if i < n && query[i] == '\'' { // escaped '' inside string
+						result.WriteByte(query[i])
+						i++
+					} else {
+						break
+					}
+				}
+			}
+		case '"':
+			result.WriteByte(ch)
+			i++
+			for i < n {
+				c := query[i]
+				result.WriteByte(c)
+				i++
+				if c == '"' {
+					break
+				}
+			}
+		default:
+			if identStart(ch) {
+				j := i + 1
+				for j < n && identChar(query[j]) {
+					j++
+				}
+				// walk dot-separated segments: a.b.c
+				k, hasDot := j, false
+				for k < n && query[k] == '.' && k+1 < n && identChar(query[k+1]) {
+					hasDot = true
+					k++
+					for k < n && identChar(query[k]) {
+						k++
+					}
+				}
+				if hasDot {
+					result.WriteByte('"')
+					result.WriteString(query[i:k])
+					result.WriteByte('"')
+					i = k
+				} else {
+					result.WriteString(query[i:j])
+					i = j
+				}
+			} else {
+				result.WriteByte(ch)
+				i++
+			}
+		}
+	}
+	return result.String()
+}
+
+func identStart(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
+}
+
+func identChar(c byte) bool {
+	return identStart(c) || (c >= '0' && c <= '9')
 }
 
 var QueryCmd = query
@@ -147,6 +336,79 @@ func fetchData(client *internalHTTP.HTTPClient, query string, startTime, endTime
 		fmt.Println(string(encodedResponse))
 	} else {
 		io.Copy(os.Stdout, resp.Body)
+	}
+	return nil
+}
+
+func extractStreamName(query string) string {
+	re := regexp.MustCompile(`(?i)\bfrom\s+(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_-]*))`)
+	m := re.FindStringSubmatch(query)
+	if len(m) >= 3 {
+		if m[1] != "" {
+			return m[1]
+		}
+		return m[2]
+	}
+	return ""
+}
+
+func saveFilter(client *internalHTTP.HTTPClient, sqlQuery, name, startTime, endTime string) error {
+	startT, err := parseTimeStr(startTime)
+	if err != nil {
+		return fmt.Errorf("invalid start time: %w", err)
+	}
+	endT, err := parseTimeStr(endTime)
+	if err != nil {
+		return fmt.Errorf("invalid end time: %w", err)
+	}
+
+	q := sqlQuery
+	body, err := json.Marshal(struct {
+		StreamName string `json:"stream_name"`
+		FilterName string `json:"filter_name"`
+		UserID     string `json:"user_id"`
+		Query      struct {
+			FilterType  string  `json:"filter_type"`
+			FilterQuery *string `json:"filter_query"`
+		} `json:"query"`
+		TimeFilter struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+		} `json:"time_filter"`
+	}{
+		StreamName: extractStreamName(sqlQuery),
+		FilterName: name,
+		UserID:     DefaultProfile.Username,
+		Query: struct {
+			FilterType  string  `json:"filter_type"`
+			FilterQuery *string `json:"filter_query"`
+		}{FilterType: "sql", FilterQuery: &q},
+		TimeFilter: struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+		}{
+			From: startT.UTC().Format(time.RFC3339),
+			To:   endT.UTC().Format(time.RFC3339),
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := client.NewRequest("POST", "filters", bytes.NewBuffer(body))
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.Client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("server returned %s: %s", resp.Status, strings.TrimSpace(string(b)))
 	}
 	return nil
 }

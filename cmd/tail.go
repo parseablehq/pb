@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"pb/pkg/analytics"
 	"pb/pkg/config"
 	internalHTTP "pb/pkg/http"
@@ -58,9 +59,10 @@ func tail(profile config.Profile, stream string) error {
 		Stream: stream,
 	})
 
-	// get grpc url for this request
+	stopConnect := tailSpinner("connecting...")
 	httpClient := internalHTTP.DefaultClient(&DefaultProfile)
 	about, err := analytics.FetchAbout(&httpClient)
+	stopConnect()
 	if err != nil {
 		return err
 	}
@@ -73,6 +75,11 @@ func tail(profile config.Profile, stream string) error {
 
 	authHeader := basicAuth(profile.Username, profile.Password)
 
+	watching := func() {
+		fmt.Fprintf(os.Stderr, "\r\033[K● watching %s... (ctrl+c to stop)", stream)
+	}
+	watching()
+
 	for {
 		resp, err := flightClient.DoGet(
 			metadata.NewOutgoingContext(context.Background(), metadata.New(map[string]string{
@@ -81,11 +88,13 @@ func tail(profile config.Profile, stream string) error {
 			&flight.Ticket{Ticket: payload},
 		)
 		if err != nil {
+			fmt.Fprint(os.Stderr, "\r\033[K")
 			return err
 		}
 
 		records, err := flight.NewRecordReader(resp)
 		if err != nil {
+			fmt.Fprint(os.Stderr, "\r\033[K")
 			return err
 		}
 
@@ -96,13 +105,16 @@ func tail(profile config.Profile, stream string) error {
 				if isStreamEnd(err) {
 					break
 				}
+				fmt.Fprint(os.Stderr, "\r\033[K")
 				return err
 			}
+			fmt.Fprint(os.Stderr, "\r\033[K") // clear watching line before printing record
 			var buf bytes.Buffer
 			array.RecordToJSON(record, &buf)
 			fmt.Println(buf.String())
 		}
 
+		watching()
 		time.Sleep(500 * time.Millisecond)
 	}
 }
@@ -119,6 +131,31 @@ func isStreamEnd(err error) bool {
 		}
 	}
 	return false
+}
+
+func tailSpinner(msg string) func() {
+	frames := []string{"|", "/", "-", "\\"}
+	done := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		i := 0
+		for {
+			select {
+			case <-done:
+				fmt.Fprint(os.Stderr, "\r\033[K")
+				return
+			default:
+				fmt.Fprintf(os.Stderr, "\r%s %s", frames[i%len(frames)], msg)
+				i++
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		<-stopped
+	}
 }
 
 func basicAuth(username, password string) string {
