@@ -32,7 +32,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const defaultMetricsStream = "otel_metrics"
+const defaultMetricsStream = "select-dataset"
 
 // PromqlCmd is the parent command for all PromQL operations.
 var PromqlCmd = &cobra.Command{
@@ -64,7 +64,7 @@ func init() {
 	promqlRunCmd.Flags().StringP("dataset", "d", defaultMetricsStream, "Metrics dataset to query")
 	promqlRunCmd.Flags().StringP("from", "f", "5m", "Start time (e.g. 5m, 1h, 2024-01-01T00:00:00Z)")
 	promqlRunCmd.Flags().StringP("to", "t", "now", "End time")
-	promqlRunCmd.Flags().String("step", "1m", "Resolution step for range queries (e.g. 15s, 1m, 1h)")
+	promqlRunCmd.Flags().String("step", "1m", "Resolution step for range queries (e.g. 15s, 1m)")
 	promqlRunCmd.Flags().StringP("output", "o", "text", "Output format: text or json")
 	promqlRunCmd.Flags().Bool("instant", false, "Instant query — evaluate at --to time only")
 	promqlRunCmd.Flags().BoolP("interactive", "i", false, "Open interactive TUI")

@@ -16,6 +16,7 @@
 package model
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -55,10 +56,13 @@ const (
 	// spotlight modal width
 	spotlightWidth    = 58
 	spotlightMaxItems = 12
+
+	builderMaxItems = 10
 )
 
 // overlay states (overlayNone and overlayInputs are defined in query.go)
 const overlayDataset uint = 2
+const overlayBuilder uint = 3
 
 var PromqlNavigationMap = []string{"dataset", "query", "time", "step", "table"}
 
@@ -103,6 +107,30 @@ type datasetListMsg struct {
 	errMsg   string
 }
 
+// builder message types — one per column so Update() can route them unambiguously.
+type builderMetricsMsg struct {
+	items  []string
+	errMsg string
+}
+type builderLabelsMsg struct {
+	metric string // which metric these labels belong to (for cache keying)
+	items  []string
+	errMsg string
+}
+type builderValuesMsg struct {
+	metric string // context for cache keying
+	label  string // context for cache keying
+	items  []string
+	errMsg string
+}
+
+// cacheMetricsMsg is returned by the background metrics pre-fetch (not the builder fetch).
+type cacheMetricsMsg struct {
+	dataset string
+	items   []string
+	errMsg  string
+}
+
 // ─── model ───────────────────────────────────────────────────────────────────
 
 // PromqlModel is the Bubble Tea model for interactive PromQL queries.
@@ -139,6 +167,36 @@ type PromqlModel struct {
 	filteredDatasets   []string
 	datasetSelectedIdx int
 	datasetsLoading    bool
+
+	// pre-fetch cache: warmed in background after dataset selection
+	cacheDataset string
+	cacheMetrics []string
+	cacheLabels  map[string][]string            // metric → label names
+	cacheValues  map[string]map[string][]string // metric → label → values
+
+	// query builder — 3-column panel (metrics | labels | values)
+	builderCol             int
+	builderMetric          string // currently highlighted metric (drives label/value fetch)
+	builderLabel           string // currently selected label for preview
+	builderValue           string // currently selected value for preview
+	builderMetrics         []string
+	builderLabels          []string
+	builderValues          []string
+	builderMetricsFiltered []string
+	builderLabelsFiltered  []string
+	builderValuesFiltered  []string
+	builderMetricsIdx      int
+	builderLabelsIdx       int
+	builderValuesIdx       int
+	builderMetricsLoading  bool
+	builderLabelsLoading   bool
+	builderValuesLoading   bool
+	builderFilter          textinput.Model
+	cancelLabels           context.CancelFunc // aborts in-flight labels request; nil when idle
+	cancelValues           context.CancelFunc // aborts in-flight values request; nil when idle
+
+	// query panel mode toggle: "code" (raw textarea) or "builder" (expression breadcrumb + overlay)
+	queryMode string
 }
 
 func (m *PromqlModel) focusSelected() {
@@ -209,15 +267,16 @@ func NewPromqlModel(profile config.Profile, expr string, startTime, endTime time
 	q := textarea.New()
 	q.MaxHeight = 0
 	q.MaxWidth = 0
-	q.SetHeight(2)
+	q.SetHeight(1)
 	q.SetWidth(qw)
-	q.ShowLineNumbers = true
+	q.ShowLineNumbers = false
 	q.SetValue(expr)
 	q.Placeholder = "write your PromQL expression here..."
 	q.KeyMap = textAreaKeyMap
 	q.Focus()
 
 	si := textinput.New()
+	si.Prompt = ""
 	si.SetValue(step)
 	si.Width = stepModePanelOuter - 10
 	si.Blur()
@@ -226,6 +285,11 @@ func NewPromqlModel(profile config.Profile, expr string, startTime, endTime time
 	sf.Placeholder = "search datasets..."
 	sf.Width = spotlightWidth - 6
 	sf.Blur()
+
+	bf := textinput.New()
+	bf.Placeholder = "search..."
+	bf.Width = 30
+	bf.Blur()
 
 	hlp := help.New()
 	hlp.Styles.FullDesc = lipgloss.NewStyle().Foreground(FocusSecondary)
@@ -256,20 +320,23 @@ func NewPromqlModel(profile config.Profile, expr string, startTime, endTime time
 
 		stepInput:       si,
 		spotlightFilter: sf,
+		builderFilter:   bf,
+		queryMode:       "code",
 	}
 }
 
 // ─── bubbletea lifecycle ─────────────────────────────────────────────────────
 
 func (m PromqlModel) Init() tea.Cmd {
-	if strings.TrimSpace(m.query.Value()) == "" {
-		return m.spinner.Tick
+	cmds := []tea.Cmd{m.spinner.Tick}
+	if strings.TrimSpace(m.query.Value()) != "" {
+		cmds = append(cmds, NewPromqlFetchTask(m.profile, m.query.Value(), m.dataset, m.step,
+			m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.instant))
 	}
-	return tea.Batch(
-		m.spinner.Tick,
-		NewPromqlFetchTask(m.profile, m.query.Value(), m.dataset, m.step,
-			m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.instant),
-	)
+	if m.dataset != "" {
+		cmds = append(cmds, fetchCacheMetrics(m.profile, m.dataset))
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -293,6 +360,8 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.query.SetWidth(m.queryWidth())
 		m.stepInput.Width = stepModePanelOuter - 10
 		m.spotlightFilter.Width = spotlightWidth - 6
+		colW := builderColWidth(m.width)
+		m.builderFilter.Width = colW*3 + 8
 		m.updateTableColumns(0, 0) // reflow columns to new terminal width
 		return m, nil
 
@@ -312,6 +381,94 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		return m, nil
+
+	case cacheMetricsMsg:
+		if msg.errMsg == "" && len(msg.items) > 0 && msg.dataset == m.dataset {
+			m.cacheDataset = msg.dataset
+			m.cacheMetrics = msg.items
+			if m.overlay == overlayBuilder && m.builderMetricsLoading {
+				// builder is open and waiting — feed it; labels wait for user navigation
+				m.builderMetricsLoading = false
+				m.builderMetrics = msg.items
+				m.builderMetricsFiltered = msg.items
+				m.builderMetricsIdx = 0
+				m.builderMetric = msg.items[0]
+			}
+		}
+		return m, nil
+
+	case builderMetricsMsg:
+		m.builderMetricsLoading = false
+		if msg.errMsg != "" {
+			m.status.Error = "could not load metrics: " + msg.errMsg
+			return m, nil
+		}
+		m.cacheDataset = m.dataset
+		m.cacheMetrics = msg.items
+		m.builderMetrics = msg.items
+		m.builderMetricsFiltered = msg.items
+		m.builderMetricsIdx = 0
+		if len(m.builderMetrics) > 0 {
+			m.builderMetric = m.builderMetrics[0]
+		}
+		return m, nil
+
+	case builderLabelsMsg:
+		m.builderLabelsLoading = false
+		m.cancelLabels = nil
+		// always cache, even if builder has moved on
+		if msg.metric != "" && msg.errMsg == "" {
+			if m.cacheLabels == nil {
+				m.cacheLabels = make(map[string][]string)
+			}
+			m.cacheLabels[msg.metric] = msg.items
+		}
+		// discard if user already navigated to a different metric
+		if msg.metric != m.builderCurrentMetric() {
+			return m, nil
+		}
+		if msg.errMsg != "" || len(msg.items) == 0 {
+			m.builderLabels = []string{"(any)"}
+			m.builderLabelsFiltered = []string{"(any)"}
+			m.builderLabelsIdx = 0
+			m.builderValues = []string{"(any)"}
+			m.builderValuesFiltered = []string{"(any)"}
+			return m, nil
+		}
+		labels := append([]string{"(any)"}, msg.items...)
+		m.builderLabels = labels
+		m.builderLabelsFiltered = labels
+		m.builderLabelsIdx = 1
+		// Values are fetched on Enter in col 1 — not auto-triggered here
+		return m, nil
+
+	case builderValuesMsg:
+		m.builderValuesLoading = false
+		m.cancelValues = nil
+		// cache non-sentinel results (sentinel = "(any)" label short-circuit returns empty metric/label)
+		if msg.metric != "" && msg.label != "" && msg.errMsg == "" {
+			if m.cacheValues == nil {
+				m.cacheValues = make(map[string]map[string][]string)
+			}
+			if m.cacheValues[msg.metric] == nil {
+				m.cacheValues[msg.metric] = make(map[string][]string)
+			}
+			m.cacheValues[msg.metric][msg.label] = msg.items
+		}
+		// update display only when the arrival still matches what the user is viewing
+		curMetric := m.builderCurrentMetric()
+		curLabel := m.builderCurrentLabel()
+		if msg.metric != "" && (msg.metric != curMetric || msg.label != curLabel) {
+			return m, nil
+		}
+		values := append([]string{"(any)"}, msg.items...)
+		if msg.errMsg != "" || len(msg.items) == 0 {
+			values = []string{"(any)"}
+		}
+		m.builderValues = values
+		m.builderValuesFiltered = values
+		m.builderValuesIdx = 0
 		return m, nil
 
 	case PromqlFetchData:
@@ -342,6 +499,200 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// ── global shortcuts (work from any state when no overlay is open) ───
+		if m.overlay == overlayNone {
+			switch msg.Type {
+			case tea.KeyCtrlD:
+				m.overlay = overlayDataset
+				m.spotlightFilter.Focus()
+				m.datasetsLoading = true
+				return m, fetchMetricDatasets(m.profile)
+			case tea.KeyCtrlB:
+				// Toggle query panel between Code and Builder mode, focusing the query panel.
+				if m.queryMode == "builder" {
+					m.queryMode = "code"
+				} else {
+					m.queryMode = "builder"
+				}
+				for i, p := range PromqlNavigationMap {
+					if p == "query" {
+						m.focused = i
+						break
+					}
+				}
+				m.focusSelected()
+				return m, nil
+			case tea.KeyCtrlQ:
+				for i, p := range PromqlNavigationMap {
+					if p == "query" {
+						m.focused = i
+						break
+					}
+				}
+				m.focusSelected()
+				return m, nil
+			}
+		}
+
+		// ── builder overlay ──────────────────────────────────────────────────
+		if m.overlay == overlayBuilder {
+			switch msg.Type {
+			case tea.KeyEsc:
+				m.overlay = overlayNone
+				m.builderFilter.SetValue("")
+				m.builderFilter.Blur()
+				m.focusSelected()
+				return m, nil
+
+			// Ctrl+R inside builder: build expression with current selections and run immediately.
+			case tea.KeyCtrlR:
+				expr := buildPromqlExpr(m.builderCurrentMetric(), m.builderCurrentLabel(), m.builderCurrentValue())
+				newM, cmd := m.runQueryFromBuilder(expr)
+				return newM, cmd
+
+			// Enter: wizard progression — each column confirms the selection and moves to the next.
+			// On the final column (Values) it also runs the query.
+			case tea.KeyEnter:
+				switch m.builderCol {
+				case 0: // confirm metric → fetch labels → move to Labels column
+					metric := m.builderCurrentMetric()
+					if metric == "" {
+						return m, nil
+					}
+					m.builderMetric = metric
+					m.builderLabels, m.builderLabelsFiltered = nil, nil
+					m.builderValues, m.builderValuesFiltered = nil, nil
+					m.builderLabelsIdx, m.builderValuesIdx = 0, 0
+					m.builderCol = 1
+					m.builderFilter.SetValue("")
+					// cancel any previous in-flight labels request
+					if m.cancelLabels != nil {
+						m.cancelLabels()
+					}
+					// cache hit — show instantly
+					if labels, ok := m.cacheLabels[metric]; ok {
+						full := append([]string{"(any)"}, labels...)
+						m.builderLabels = full
+						m.builderLabelsFiltered = full
+						m.builderLabelsIdx = 1
+						m.builderLabelsLoading = false
+						m.cancelLabels = nil
+						return m, nil
+					}
+					m.builderLabelsLoading = true
+					ctx, cancel := context.WithCancel(context.Background())
+					m.cancelLabels = cancel
+					return m, fetchBuilderLabelsCtx(ctx, m.profile, m.dataset, metric, m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
+
+				case 1: // confirm label → fetch values → move to Values column (or run if "(any)")
+					label := m.builderCurrentLabel()
+					m.builderLabel = label
+					m.builderFilter.SetValue("")
+					if label == "" || label == "(any)" {
+						// no label filter — build expr and run
+						expr := buildPromqlExpr(m.builderCurrentMetric(), "", "")
+						newM, cmd := m.runQueryFromBuilder(expr)
+						return newM, cmd
+					}
+					m.builderValues, m.builderValuesFiltered = nil, nil
+					m.builderValuesIdx = 0
+					m.builderCol = 2
+					// cancel any previous in-flight values request
+					if m.cancelValues != nil {
+						m.cancelValues()
+					}
+					// cache hit
+					if m.cacheValues != nil {
+						if metricVals, ok := m.cacheValues[m.builderCurrentMetric()]; ok {
+							if vals, ok2 := metricVals[label]; ok2 {
+								full := append([]string{"(any)"}, vals...)
+								m.builderValues = full
+								m.builderValuesFiltered = full
+								m.builderValuesIdx = 1
+								m.builderValuesLoading = false
+								m.cancelValues = nil
+								return m, nil
+							}
+						}
+					}
+					m.builderValuesLoading = true
+					ctx2, cancel2 := context.WithCancel(context.Background())
+					m.cancelValues = cancel2
+					return m, fetchBuilderValuesCtx(ctx2, m.profile, m.dataset, m.builderCurrentMetric(), label, m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc())
+
+				case 2: // confirm value → build expression + run query + close
+					expr := buildPromqlExpr(m.builderCurrentMetric(), m.builderCurrentLabel(), m.builderCurrentValue())
+					newM, cmd := m.runQueryFromBuilder(expr)
+					return newM, cmd
+				}
+				return m, nil
+
+			case tea.KeyTab:
+				m.builderCol = (m.builderCol + 1) % 3
+				m.builderFilter.SetValue("")
+				return m, nil
+
+			case tea.KeyShiftTab:
+				m.builderCol = (m.builderCol + 2) % 3
+				m.builderFilter.SetValue("")
+				return m, nil
+
+			case tea.KeyUp:
+				switch m.builderCol {
+				case 0:
+					if m.builderMetricsIdx > 0 {
+						m.builderMetricsIdx--
+					}
+				case 1:
+					if m.builderLabelsIdx > 0 {
+						m.builderLabelsIdx--
+					}
+				case 2:
+					if m.builderValuesIdx > 0 {
+						m.builderValuesIdx--
+					}
+				}
+				return m, nil
+
+			case tea.KeyDown:
+				switch m.builderCol {
+				case 0:
+					if m.builderMetricsIdx < len(m.builderMetricsFiltered)-1 {
+						m.builderMetricsIdx++
+					}
+				case 1:
+					if m.builderLabelsIdx < len(m.builderLabelsFiltered)-1 {
+						m.builderLabelsIdx++
+					}
+				case 2:
+					if m.builderValuesIdx < len(m.builderValuesFiltered)-1 {
+						m.builderValuesIdx++
+					}
+				}
+				return m, nil
+
+			default:
+				prev := m.builderFilter.Value()
+				m.builderFilter, cmd = m.builderFilter.Update(msg)
+				cmds = append(cmds, cmd)
+				if m.builderFilter.Value() != prev {
+					filter := m.builderFilter.Value()
+					switch m.builderCol {
+					case 0:
+						m.builderMetricsFiltered = filterDatasets(m.builderMetrics, filter)
+						m.builderMetricsIdx = 0
+					case 1:
+						m.builderLabelsFiltered = filterBuilderList(m.builderLabels, filter)
+						m.builderLabelsIdx = 0
+					case 2:
+						m.builderValuesFiltered = filterBuilderList(m.builderValues, filter)
+						m.builderValuesIdx = 0
+					}
+				}
+				return m, tea.Batch(cmds...)
+			}
+		}
+
 		// ── dataset spotlight overlay ────────────────────────────────────────
 		if m.overlay == overlayDataset {
 			switch msg.Type {
@@ -354,7 +705,20 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case tea.KeyEnter:
 				if len(m.filteredDatasets) > 0 {
-					m.dataset = m.filteredDatasets[m.datasetSelectedIdx]
+					newDS := m.filteredDatasets[m.datasetSelectedIdx]
+					if newDS != m.dataset {
+						m.dataset = newDS
+						// clear stale cache and warm fresh one in background
+						m.cacheDataset = ""
+						m.cacheMetrics = nil
+						m.cacheLabels = nil
+						m.cacheValues = nil
+						m.overlay = overlayNone
+						m.spotlightFilter.SetValue("")
+						m.spotlightFilter.Blur()
+						m.focusSelected()
+						return m, fetchCacheMetrics(m.profile, newDS)
+					}
 				}
 				m.overlay = overlayNone
 				m.spotlightFilter.SetValue("")
@@ -426,13 +790,18 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.overlay = overlayDataset
 			m.spotlightFilter.Focus()
 			m.datasetsLoading = true
-			return m, tea.Batch(fetchDatasetList(m.profile))
+			return m, fetchMetricDatasets(m.profile)
 		}
 
 		// Enter on time → open time overlay
 		if msg.Type == tea.KeyEnter && m.currentFocus() == "time" {
 			m.overlay = overlayInputs
 			return m, nil
+		}
+
+		// Enter on query panel in builder mode → open builder overlay
+		if msg.Type == tea.KeyEnter && m.currentFocus() == "query" && m.queryMode == "builder" {
+			return m, m.openBuilderOverlay()
 		}
 
 		// Ctrl+R → run query
@@ -467,8 +836,10 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			switch m.currentFocus() {
 			case "query":
-				m.query, cmd = m.query.Update(msg)
-				cmds = append(cmds, cmd)
+				if m.queryMode == "code" {
+					m.query, cmd = m.query.Update(msg)
+					cmds = append(cmds, cmd)
+				}
 			case "step":
 				m.stepInput, cmd = m.stepInput.Update(msg)
 				m.step = m.stepInput.Value()
@@ -483,6 +854,66 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// runQueryFromBuilder sets the expression, closes the builder overlay, and fires a query.
+// The query panel stays in builder mode so the expression is shown as a breadcrumb.
+func (m *PromqlModel) runQueryFromBuilder(expr string) (PromqlModel, tea.Cmd) {
+	if expr != "" {
+		m.query.SetValue(expr)
+	}
+	m.overlay = overlayNone
+	m.builderFilter.SetValue("")
+	m.builderFilter.Blur()
+	// return focus to query panel, stay in builder mode
+	for i, p := range PromqlNavigationMap {
+		if p == "query" {
+			m.focused = i
+			break
+		}
+	}
+	m.focusSelected()
+	if m.query.Value() == "" {
+		return *m, nil
+	}
+	m.status.Error = ""
+	m.status.Info = ""
+	m.loading = true
+	m.hasQueried = true
+	return *m, tea.Batch(m.spinner.Tick,
+		NewPromqlFetchTask(m.profile, m.query.Value(), m.dataset, m.step,
+			m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.instant))
+}
+
+// openBuilderOverlay transitions to the builder overlay, seeding state from the cache.
+func (m *PromqlModel) openBuilderOverlay() tea.Cmd {
+	m.overlay = overlayBuilder
+	m.builderCol = 0
+	m.builderMetric, m.builderLabel, m.builderValue = "", "", ""
+	m.builderMetricsIdx = 0
+	m.builderLabelsIdx, m.builderValuesIdx = 0, 0
+	m.builderLabels, m.builderLabelsFiltered = nil, nil
+	m.builderValues, m.builderValuesFiltered = nil, nil
+	m.builderLabelsLoading = false
+	m.builderValuesLoading = false
+	m.builderFilter.SetValue("")
+	m.builderFilter.Focus()
+
+	if m.dataset == "" {
+		m.builderMetrics, m.builderMetricsFiltered = nil, nil
+		m.builderMetricsLoading = false
+		return nil
+	}
+	if m.cacheDataset == m.dataset && len(m.cacheMetrics) > 0 {
+		m.builderMetrics = m.cacheMetrics
+		m.builderMetricsFiltered = m.cacheMetrics
+		m.builderMetricsLoading = false
+		m.builderMetric = m.cacheMetrics[0]
+		return nil
+	}
+	m.builderMetrics, m.builderMetricsFiltered = nil, nil
+	m.builderMetricsLoading = true
+	return fetchCacheMetrics(m.profile, m.dataset)
+}
+
 // ─── view ────────────────────────────────────────────────────────────────────
 
 func (m PromqlModel) View() string {
@@ -492,12 +923,18 @@ func (m PromqlModel) View() string {
 
 	// ── header panels ────────────────────────────────────────────────────────
 	dsName := m.dataset
-	if len(dsName) > datasetPanelOuter-4 {
-		dsName = dsName[:datasetPanelOuter-7] + "..."
+	var dsNameRendered string
+	if dsName == "" {
+		dsNameRendered = lipgloss.NewStyle().Foreground(StandardSecondary).Render("select dataset")
+	} else {
+		if len(dsName) > datasetPanelOuter-4 {
+			dsName = dsName[:datasetPanelOuter-7] + "..."
+		}
+		dsNameRendered = dsName
 	}
 	datasetPane := lipgloss.JoinVertical(lipgloss.Left,
 		baseBoldUnderlinedStyle.Render(" dataset "),
-		dsName,
+		dsNameRendered,
 	)
 
 	mode := "range"
@@ -553,10 +990,46 @@ func (m PromqlModel) View() string {
 	if queryW < 30 {
 		queryW = 30
 	}
-	m.query.SetWidth(queryW - 2) // -2 for query panel border
+	innerW := queryW - 2 // subtract border
+	m.query.SetWidth(innerW)
+
+	// ── query panel: toggle row + mode-aware content ──────────────────────────
+	activeTabStyle := lipgloss.NewStyle().Foreground(FocusPrimary).Bold(true)
+	inactiveTabStyle := lipgloss.NewStyle().Foreground(StandardSecondary)
+	var codeLabel, builderLabel string
+	if m.queryMode == "builder" {
+		codeLabel = inactiveTabStyle.Render("Code")
+		builderLabel = activeTabStyle.Render("Builder")
+	} else {
+		codeLabel = activeTabStyle.Render("Code")
+		builderLabel = inactiveTabStyle.Render("Builder")
+	}
+	toggleRow := lipgloss.NewStyle().
+		Width(innerW).
+		Align(lipgloss.Right).
+		Render(codeLabel + inactiveTabStyle.Render(" | ") + builderLabel)
+
+	var queryPanelContent string
+	if m.queryMode == "builder" {
+		expr := m.query.Value()
+		var exprDisplay string
+		if expr == "" {
+			exprDisplay = lipgloss.NewStyle().
+				Foreground(StandardSecondary).Width(innerW).
+				Render("press Enter to open builder...")
+		} else {
+			exprDisplay = lipgloss.NewStyle().
+				Foreground(FocusPrimary).Bold(true).Width(innerW).
+				Render(expr)
+		}
+		queryPanelContent = lipgloss.JoinVertical(lipgloss.Left, toggleRow, exprDisplay)
+	} else {
+		queryPanelContent = lipgloss.JoinVertical(lipgloss.Left, toggleRow, m.query.View())
+	}
+
 	header := lipgloss.JoinHorizontal(lipgloss.Top,
 		dsRendered,
-		queryOuter.Render(m.query.View()),
+		queryOuter.Render(queryPanelContent),
 		timeRendered,
 		stepRendered,
 	)
@@ -580,7 +1053,19 @@ func (m PromqlModel) View() string {
 				{promqlAdditionalKeyBinds[0]},
 			}
 		case "query":
-			helpKeys = TextAreaHelpKeys{}.FullHelp()
+			if m.queryMode == "builder" {
+				helpKeys = [][]key.Binding{
+					{
+						key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open builder")),
+						key.NewBinding(key.WithKeys("ctrl+b"), key.WithHelp("ctrl+b", "switch to code mode")),
+					},
+					{promqlAdditionalKeyBinds[0]},
+				}
+			} else {
+				helpKeys = append(TextAreaHelpKeys{}.FullHelp(),
+					[]key.Binding{key.NewBinding(key.WithKeys("ctrl+b"), key.WithHelp("ctrl+b", "switch to builder mode"))},
+				)
+			}
 		case "time":
 			timeHint := "edit time range"
 			if m.instant {
@@ -593,7 +1078,7 @@ func (m PromqlModel) View() string {
 		case "step":
 			helpKeys = [][]key.Binding{
 				{
-					key.NewBinding(key.WithKeys("type"), key.WithHelp("type", "edit step (e.g. 15s, 5m, 1h)")),
+					key.NewBinding(key.WithKeys("type"), key.WithHelp("type", "edit step (e.g. 15s, 5m)")),
 					key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "toggle range/instant")),
 				},
 				{
@@ -613,6 +1098,17 @@ func (m PromqlModel) View() string {
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
 		}}
+	case overlayBuilder:
+		helpKeys = [][]key.Binding{
+			{
+				key.NewBinding(key.WithKeys("↑/↓"), key.WithHelp("↑/↓", "navigate")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select → next / run")),
+			},
+			{
+				key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl+r", "run with current")),
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+			},
+		}
 	}
 	helpView := m.help.FullHelpView(helpKeys)
 	helpHeight := lipgloss.Height(helpView)
@@ -692,11 +1188,19 @@ func (m PromqlModel) View() string {
 			lipgloss.WithWhitespaceForeground(StandardSecondary),
 		)
 	case overlayDataset:
-		// render the normal content behind, then paint spotlight on top
 		behind := lipgloss.JoinVertical(lipgloss.Left, header, resultPane)
 		spotlight := m.renderSpotlight()
 		mainView = lipgloss.Place(m.width, m.height-helpHeight-statusHeight,
 			lipgloss.Center, lipgloss.Center, spotlight,
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceForeground(StandardSecondary),
+		)
+		_ = behind
+	case overlayBuilder:
+		behind := lipgloss.JoinVertical(lipgloss.Left, header, resultPane)
+		builder := m.renderBuilder()
+		mainView = lipgloss.Place(m.width, m.height-helpHeight-statusHeight,
+			lipgloss.Center, lipgloss.Center, builder,
 			lipgloss.WithWhitespaceChars(" "),
 			lipgloss.WithWhitespaceForeground(StandardSecondary),
 		)
@@ -814,47 +1318,6 @@ func (m *PromqlModel) updateTableColumns(_, valueWidth int) {
 		table.NewColumn(promqlValueKey, "value", valueWidth).WithFiltered(true),
 	}
 	m.table = m.table.WithColumns(columns).WithTargetWidth(m.width).WithRows(m.dataRows)
-}
-
-// ─── async commands ───────────────────────────────────────────────────────────
-
-// fetchDatasetList loads all streams from the server for the spotlight picker.
-func fetchDatasetList(profile config.Profile) tea.Cmd {
-	return func() tea.Msg {
-		reqURL, err := url.JoinPath(profile.URL, "api/v1/logstream")
-		if err != nil {
-			return datasetListMsg{errMsg: err.Error()}
-		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		req, err := http.NewRequest("GET", reqURL, nil)
-		if err != nil {
-			return datasetListMsg{errMsg: err.Error()}
-		}
-		if profile.Token != "" {
-			req.Header.Set("Authorization", "Bearer "+profile.Token)
-		} else {
-			req.SetBasicAuth(profile.Username, profile.Password)
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return datasetListMsg{errMsg: err.Error()}
-		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-
-		var items []struct {
-			Name string `json:"name"`
-		}
-		if err := json.Unmarshal(body, &items); err != nil {
-			return datasetListMsg{errMsg: err.Error()}
-		}
-		datasets := make([]string, len(items))
-		for i, item := range items {
-			datasets[i] = item.Name
-		}
-		sort.Strings(datasets)
-		return datasetListMsg{datasets: datasets}
-	}
 }
 
 // NewPromqlFetchTask returns a Bubble Tea command that fetches PromQL data asynchronously.
@@ -1045,4 +1508,388 @@ func filterDatasets(all []string, query string) []string {
 		}
 	}
 	return out
+}
+
+// filterBuilderList filters a column list, always keeping "(any)" at index 0.
+func filterBuilderList(all []string, query string) []string {
+	if query == "" {
+		return all
+	}
+	q := strings.ToLower(query)
+	var out []string
+	for _, item := range all {
+		if item == "(any)" {
+			continue
+		}
+		if strings.Contains(strings.ToLower(item), q) {
+			out = append(out, item)
+		}
+	}
+	if len(all) > 0 && all[0] == "(any)" {
+		return append([]string{"(any)"}, out...)
+	}
+	return out
+}
+
+// ─── builder helpers ──────────────────────────────────────────────────────────
+
+func builderColWidth(w int) int {
+	cw := (w - 14) / 3
+	if cw < 18 {
+		cw = 18
+	}
+	return cw
+}
+
+func (m PromqlModel) builderCurrentMetric() string {
+	if len(m.builderMetricsFiltered) == 0 {
+		return ""
+	}
+	idx := m.builderMetricsIdx
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(m.builderMetricsFiltered) {
+		idx = len(m.builderMetricsFiltered) - 1
+	}
+	return m.builderMetricsFiltered[idx]
+}
+
+func (m PromqlModel) builderCurrentLabel() string {
+	if len(m.builderLabelsFiltered) == 0 {
+		return ""
+	}
+	idx := m.builderLabelsIdx
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(m.builderLabelsFiltered) {
+		idx = len(m.builderLabelsFiltered) - 1
+	}
+	return m.builderLabelsFiltered[idx]
+}
+
+func (m PromqlModel) builderCurrentValue() string {
+	if len(m.builderValuesFiltered) == 0 {
+		return ""
+	}
+	idx := m.builderValuesIdx
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(m.builderValuesFiltered) {
+		idx = len(m.builderValuesFiltered) - 1
+	}
+	return m.builderValuesFiltered[idx]
+}
+
+func buildPromqlExpr(metric, label, value string) string {
+	if metric == "" {
+		return ""
+	}
+	if label == "" || label == "(any)" {
+		return metric
+	}
+	if value == "" || value == "(any)" {
+		return fmt.Sprintf(`%s{%s!=""}`, metric, label)
+	}
+	return fmt.Sprintf(`%s{%s="%s"}`, metric, label, value)
+}
+
+// renderBuilderCol renders a single column (Metrics / Labels / Values) for the builder overlay.
+func renderBuilderCol(title string, items []string, selectedIdx int, loading, focused bool, colW int) string {
+	innerW := colW - 2
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Width(innerW)
+	if focused {
+		titleStyle = titleStyle.Foreground(FocusPrimary)
+	} else {
+		titleStyle = titleStyle.Foreground(StandardSecondary)
+	}
+
+	var rows []string
+	switch {
+	case loading:
+		rows = append(rows, lipgloss.NewStyle().
+			Foreground(StandardSecondary).Width(innerW).
+			Render("loading..."))
+	case len(items) == 0:
+		rows = append(rows, lipgloss.NewStyle().
+			Foreground(StandardSecondary).Width(innerW).
+			Render("(empty)"))
+	default:
+		start := 0
+		if selectedIdx >= builderMaxItems {
+			start = selectedIdx - builderMaxItems + 1
+		}
+		end := start + builderMaxItems
+		if end > len(items) {
+			end = len(items)
+		}
+		for i := start; i < end; i++ {
+			item := items[i]
+			maxLen := innerW - 4
+			if maxLen > 3 && len(item) > maxLen {
+				item = item[:maxLen-3] + "..."
+			}
+			if i == selectedIdx {
+				rows = append(rows, lipgloss.NewStyle().
+					Background(FocusPrimary).
+					Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#000000"}).
+					Width(innerW).Padding(0, 1).Bold(true).
+					Render("▸ "+item))
+			} else {
+				rows = append(rows, lipgloss.NewStyle().
+					Width(innerW).Padding(0, 1).
+					Render("  "+item))
+			}
+		}
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		titleStyle.Render(title),
+		strings.Join(rows, "\n"),
+	)
+
+	borderStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		Width(colW)
+	if focused {
+		borderStyle = borderStyle.BorderForeground(FocusPrimary)
+	} else {
+		borderStyle = borderStyle.BorderForeground(StandardSecondary)
+	}
+	return borderStyle.Render(content)
+}
+
+// renderBuilder builds the 3-column query builder overlay.
+func (m PromqlModel) renderBuilder() string {
+	colW := builderColWidth(m.width)
+
+	metricsItems := m.builderMetricsFiltered
+	if m.dataset == "" {
+		metricsItems = []string{"── select a dataset first ──"}
+	}
+	col0 := renderBuilderCol("Metrics", metricsItems, m.builderMetricsIdx,
+		m.builderMetricsLoading, m.builderCol == 0, colW)
+	col1 := renderBuilderCol("Labels", m.builderLabelsFiltered, m.builderLabelsIdx,
+		m.builderLabelsLoading, m.builderCol == 1, colW)
+	col2 := renderBuilderCol("Values", m.builderValuesFiltered, m.builderValuesIdx,
+		m.builderValuesLoading, m.builderCol == 2, colW)
+
+	columns := lipgloss.JoinHorizontal(lipgloss.Top, col0, col1, col2)
+	colsW := lipgloss.Width(columns)
+
+	expr := buildPromqlExpr(m.builderCurrentMetric(), m.builderCurrentLabel(), m.builderCurrentValue())
+	dimStyle := lipgloss.NewStyle().Foreground(StandardSecondary)
+	exprStyle := lipgloss.NewStyle().Foreground(FocusPrimary).Bold(true)
+	exprLine := dimStyle.Render("Built: ") + exprStyle.Render(expr)
+
+	searchStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(FocusSecondary).
+		Width(colsW-4).
+		Padding(0, 1)
+	searchBar := searchStyle.Render(m.builderFilter.View())
+
+	titleStyle := lipgloss.NewStyle().
+		Foreground(FocusPrimary).Bold(true).
+		Width(colsW).Align(lipgloss.Center)
+	title := titleStyle.Render("PromQL Query Builder")
+
+	body := lipgloss.JoinVertical(lipgloss.Left, title, columns, exprLine, searchBar)
+
+	modal := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(FocusPrimary).
+		Padding(0, 1).
+		Render(body)
+
+	return modal
+}
+
+// ─── builder async commands ───────────────────────────────────────────────────
+
+// fetchMetricDatasets fetches all streams and keeps those whose name contains "metrics"
+// (case-insensitive). Falls back to all datasets when none match.
+func fetchMetricDatasets(profile config.Profile) tea.Cmd {
+	return func() tea.Msg {
+		reqURL, err := url.JoinPath(profile.URL, "api/v1/logstream")
+		if err != nil {
+			return datasetListMsg{errMsg: err.Error()}
+		}
+		client := &http.Client{Timeout: 15 * time.Second}
+		req, err := http.NewRequest("GET", reqURL, nil)
+		if err != nil {
+			return datasetListMsg{errMsg: err.Error()}
+		}
+		if profile.Token != "" {
+			req.Header.Set("Authorization", "Bearer "+profile.Token)
+		} else {
+			req.SetBasicAuth(profile.Username, profile.Password)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return datasetListMsg{errMsg: err.Error()}
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+
+		var items []struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(body, &items); err != nil {
+			return datasetListMsg{errMsg: err.Error()}
+		}
+
+		var all, matched []string
+		for _, item := range items {
+			all = append(all, item.Name)
+			if strings.Contains(strings.ToLower(item.Name), "metrics") {
+				matched = append(matched, item.Name)
+			}
+		}
+		datasets := matched
+		if len(datasets) == 0 {
+			datasets = all
+		}
+		sort.Strings(datasets)
+		return datasetListMsg{datasets: datasets}
+	}
+}
+
+type promqlLabelListResp struct {
+	Status string   `json:"status"`
+	Data   []string `json:"data"`
+	Error  string   `json:"error,omitempty"`
+}
+
+// builderHTTPGetCtx performs an authenticated GET with context for cancellation.
+// URLs are built manually so that match[] stays as literal brackets —
+// url.Values.Encode percent-encodes them to match%5B%5D, which Parseable ignores.
+func builderHTTPGetCtx(ctx context.Context, profile config.Profile, rawURL string) ([]byte, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if profile.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+profile.Token)
+	} else {
+		req.SetBasicAuth(profile.Username, profile.Password)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = resp.Status
+		}
+		return nil, fmt.Errorf("HTTP %s: %s", resp.Status, msg)
+	}
+	return body, nil
+}
+
+func fetchBuilderLabelsCtx(ctx context.Context, profile config.Profile, dataset, metric, startTime, endTime string) tea.Cmd {
+	return func() tea.Msg {
+		base, err := url.JoinPath(profile.URL, "prometheus/api/v1/labels")
+		if err != nil {
+			return builderLabelsMsg{metric: metric, errMsg: err.Error()}
+		}
+		rawURL := base + "?stream=" + url.QueryEscape(dataset)
+		if startTime != "" {
+			rawURL += "&start=" + url.QueryEscape(startTime)
+		}
+		if endTime != "" {
+			rawURL += "&end=" + url.QueryEscape(endTime)
+		}
+		if metric != "" {
+			rawURL += "&match[]=" + url.QueryEscape(metric)
+		}
+		body, err := builderHTTPGetCtx(ctx, profile, rawURL)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return builderLabelsMsg{metric: metric, errMsg: err.Error()}
+		}
+		var resp promqlLabelListResp
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return builderLabelsMsg{metric: metric, errMsg: err.Error()}
+		}
+		if resp.Status == "error" {
+			return builderLabelsMsg{metric: metric, errMsg: resp.Error}
+		}
+		var labels []string
+		for _, l := range resp.Data {
+			if l != "__name__" {
+				labels = append(labels, l)
+			}
+		}
+		return builderLabelsMsg{metric: metric, items: labels}
+	}
+}
+
+func fetchBuilderValuesCtx(ctx context.Context, profile config.Profile, dataset, metric, label, startTime, endTime string) tea.Cmd {
+	if label == "" || label == "(any)" {
+		return func() tea.Msg { return builderValuesMsg{} } // sentinel: clear values to [(any)]
+	}
+	return func() tea.Msg {
+		base, err := url.JoinPath(profile.URL, "prometheus/api/v1/label/"+url.PathEscape(label)+"/values")
+		if err != nil {
+			return builderValuesMsg{metric: metric, label: label, errMsg: err.Error()}
+		}
+		rawURL := base + "?stream=" + url.QueryEscape(dataset)
+		if startTime != "" {
+			rawURL += "&start=" + url.QueryEscape(startTime)
+		}
+		if endTime != "" {
+			rawURL += "&end=" + url.QueryEscape(endTime)
+		}
+		if metric != "" {
+			rawURL += "&match[]=" + url.QueryEscape(metric)
+		}
+		body, err := builderHTTPGetCtx(ctx, profile, rawURL)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return builderValuesMsg{metric: metric, label: label, errMsg: err.Error()}
+		}
+		var resp promqlLabelListResp
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return builderValuesMsg{metric: metric, label: label, errMsg: err.Error()}
+		}
+		if resp.Status == "error" {
+			return builderValuesMsg{metric: metric, label: label, errMsg: resp.Error}
+		}
+		return builderValuesMsg{metric: metric, label: label, items: resp.Data}
+	}
+}
+
+// fetchCacheMetrics is the background pre-fetch fired on dataset selection.
+func fetchCacheMetrics(profile config.Profile, dataset string) tea.Cmd {
+	return func() tea.Msg {
+		params := url.Values{}
+		params.Set("stream", dataset)
+		body, err := promqlModelFetch(profile, "prometheus/api/v1/label/__name__/values", params)
+		if err != nil {
+			return cacheMetricsMsg{dataset: dataset, errMsg: err.Error()}
+		}
+		var resp promqlLabelListResp
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return cacheMetricsMsg{dataset: dataset, errMsg: err.Error()}
+		}
+		if resp.Status == "error" {
+			return cacheMetricsMsg{dataset: dataset, errMsg: resp.Error}
+		}
+		return cacheMetricsMsg{dataset: dataset, items: resp.Data}
+	}
 }
