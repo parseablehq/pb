@@ -141,13 +141,13 @@ type QueryModel struct {
 
 func (m *QueryModel) focusSelected() {
 	m.query.Blur()
-	m.table.Focused(false)
+	m.table = m.table.Focused(false)
 
 	switch m.currentFocus() {
 	case "query":
 		m.query.Focus()
 	case "table":
-		m.table.Focused(true)
+		m.table = m.table.Focused(true)
 	}
 }
 
@@ -184,7 +184,7 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 		WithMissingDataIndicatorStyled(table.StyledCell{
 			Style: lipgloss.NewStyle().Foreground(StandardSecondary),
 			Data:  "╌",
-		}).WithMaxTotalWidth(100)
+		}).WithMaxTotalWidth(w)
 
 	query := textarea.New()
 	query.MaxHeight = 0
@@ -254,7 +254,6 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.help.Width = m.width
 		m.status.width = m.width
 		m.table = m.table.WithMaxTotalWidth(m.width)
-		m.query.SetWidth(int(m.width - 41))
 		return m, nil
 
 	case FetchData:
@@ -382,9 +381,16 @@ func (m QueryModel) View() string {
 			BorderForeground(FocusPrimary)
 	}
 
+	// render time first so query gets exactly the remaining width
+	timeRendered := timeOuter.Render(timePane)
+	queryW := m.width - lipgloss.Width(timeRendered)
+	if queryW < 30 {
+		queryW = 30
+	}
+	m.query.SetWidth(queryW - 2) // -2 for query panel border
 	header := lipgloss.JoinHorizontal(lipgloss.Top,
 		queryOuter.Render(m.query.View()),
-		timeOuter.Render(timePane),
+		timeRendered,
 	)
 	headerHeight := lipgloss.Height(header)
 
@@ -430,10 +436,11 @@ func (m QueryModel) View() string {
 	displayRows := make([]table.Row, pageSize)
 	copy(displayRows, m.dataRows)
 
-	m.table = m.table.WithPageSize(pageSize).WithRows(displayRows)
+	m.table = m.table.WithPageSize(pageSize).WithRows(displayRows).WithMaxTotalWidth(m.width)
+	tableOuter = tableOuter.Width(m.width)
 
 	// Step 4: compose main view.
-	availW := m.width - 6
+	availW := m.width
 	if availW < 0 {
 		availW = 0
 	}
@@ -476,7 +483,7 @@ func (m QueryModel) View() string {
 		errStyle := lipgloss.NewStyle().
 			Padding(1, 2).
 			Foreground(lipgloss.AdaptiveColor{Light: "#9B2226", Dark: "#FF6B6B"}).
-			Width(m.width - 6)
+			Width(m.width)
 		rendered := errStyle.Render(m.fetchErrMsg)
 		lines := strings.Split(rendered, "\n")
 		maxLines := tableAvail - 2
@@ -496,7 +503,12 @@ func (m QueryModel) View() string {
 	case overlayNone:
 		mainView = lipgloss.JoinVertical(lipgloss.Left, header, resultPane)
 	case overlayInputs:
-		mainView = m.timeRange.View()
+		timeView := m.timeRange.View()
+		mainView = lipgloss.Place(m.width, m.height-helpHeight-statusHeight,
+			lipgloss.Center, lipgloss.Center, timeView,
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceForeground(StandardSecondary),
+		)
 	}
 
 	// Pin help+status to the bottom by padding the main view to fill remaining height.
@@ -720,7 +732,7 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 		}
 	}
 
-	// Build table.Columns from scaled specs.
+	// Build table.Columns from scaled specs (all fixed-width for horizontal scroll support).
 	columns := make([]table.Column, 0, len(specs))
 	for _, s := range specs {
 		col := table.NewColumn(s.key, s.title, s.width)
@@ -735,7 +747,7 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 		m.dataRows[i] = table.NewRow(rowJSON)
 	}
 
-	m.table = m.table.WithColumns(columns)
+	m.table = m.table.WithColumns(columns).WithMaxTotalWidth(m.width)
 	m.table = m.table.WithRows(m.dataRows)
 }
 

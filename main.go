@@ -70,7 +70,7 @@ var profile = &cobra.Command{
 	Use:               "profile",
 	Short:             "Manage different Parseable targets",
 	Long:              "\nuse profile command to configure different Parseable instances. Each profile takes a URL and credentials.",
-	PersistentPreRunE: combinedPreRun,
+	PersistentPreRunE: analytics.CheckAndCreateULID,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		if os.Getenv("PB_ANALYTICS") == "disable" {
 			return

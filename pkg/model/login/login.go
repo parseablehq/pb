@@ -100,7 +100,7 @@ func New() Model {
 	passwordInput.EchoMode = textinput.EchoPassword
 	passwordInput.EchoCharacter = '•'
 
-	tokenInput := newInput("paste token here", 512)
+	tokenInput := newInput("paste API key here", 512)
 
 	profileInput := newInput("e.g. local, staging, prod", 64)
 	profileInput.SetValue("default")
@@ -259,7 +259,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case tea.KeyEnter:
 				if strings.TrimSpace(m.tokenInput.Value()) == "" {
-					m.errMsg = "Token is required"
+					m.errMsg = "API key is required"
 					return m, nil
 				}
 				m.errMsg = ""
@@ -433,7 +433,7 @@ func (m Model) View() string {
 		b.WriteString(breadcrumb("Self-hosted"))
 		b.WriteString(labelStyle.Render("Authentication"))
 		b.WriteString("\n\n")
-		authEntries := []string{"Username & Password", "Token"}
+		authEntries := []string{"Username & Password", "API key"}
 		for i, entry := range authEntries {
 			if i == m.authIndex {
 				b.WriteString(selectedStyle.Render("  ❯ " + entry))
@@ -465,7 +465,7 @@ func (m Model) View() string {
 
 	case stepEnterToken:
 		b.WriteString(breadcrumb("Self-hosted"))
-		b.WriteString(labelStyle.Render("Token"))
+		b.WriteString(labelStyle.Render("API key"))
 		b.WriteString("\n\n  ")
 		b.WriteString(m.tokenInput.View())
 		b.WriteString("\n\n")
@@ -508,7 +508,7 @@ func (m Model) View() string {
 		}
 		if m.Profile.Token != "" {
 			b.WriteString(labelStyle.Render("  Auth:  "))
-			b.WriteString(normalStyle.Render("token (stored)"))
+			b.WriteString(normalStyle.Render("API key (stored)"))
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")

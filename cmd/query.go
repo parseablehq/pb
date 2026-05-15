@@ -72,6 +72,40 @@ var query = &cobra.Command{
 			return err
 		}
 
+		usePromql, _ := command.Flags().GetBool("promql")
+		if usePromql && interactive {
+			start, _ := command.Flags().GetString(startFlag)
+			if !command.Flags().Changed(startFlag) {
+				start = "1h"
+			}
+			end, _ := command.Flags().GetString(endFlag)
+			if end == "" {
+				end = defaultEnd
+			}
+			startT, err := parseTimeStr(start)
+			if err != nil {
+				return fmt.Errorf("invalid --from: %w", err)
+			}
+			endT, err := parseTimeStr(end)
+			if err != nil {
+				return fmt.Errorf("invalid --to: %w", err)
+			}
+			dataset, _ := command.Flags().GetString("dataset")
+			step, _ := command.Flags().GetString("step")
+			instant, _ := command.Flags().GetBool("instant")
+			var expr string
+			if len(args) > 0 {
+				expr = args[0]
+			}
+			m := model.NewPromqlModel(DefaultProfile, expr, startT, endT, step, dataset, instant)
+			p := tea.NewProgram(m, tea.WithAltScreen())
+			_, err = p.Run()
+			if err != nil {
+				command.Annotations["error"] = err.Error()
+			}
+			return err
+		}
+
 		if (len(args) == 0 || strings.TrimSpace(args[0]) == "") && !interactive {
 			fmt.Println("Please enter your query")
 			fmt.Printf("Example:\n  pb query run \"select * from frontend\" --from=10m --to=now\n")
@@ -88,7 +122,9 @@ var query = &cobra.Command{
 			command.Annotations["error"] = err.Error()
 			return err
 		}
-		if start == "" {
+		if interactive && !command.Flags().Changed(startFlag) {
+			start = "1h"
+		} else if start == "" {
 			start = defaultStart
 		}
 
@@ -154,6 +190,10 @@ func init() {
 	query.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
 	query.Flags().BoolP("interactive", "i", false, "Open interactive table view")
 	query.Flags().StringVar(&saveAsName, "save-as", "", "Save this query with a name for later use")
+	query.Flags().Bool("promql", false, "Open PromQL interactive mode (use with -i)")
+	query.Flags().StringP("dataset", "d", defaultMetricsStream, "Metrics dataset (PromQL mode)")
+	query.Flags().String("step", "1m", "Resolution step for PromQL range queries")
+	query.Flags().Bool("instant", false, "PromQL instant query")
 }
 
 // parseTimeStr converts a CLI time string to time.Time.
