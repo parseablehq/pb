@@ -5,322 +5,203 @@
 [![Latest Release](https://img.shields.io/github/v/release/parseablehq/pb)](https://github.com/parseablehq/pb/releases/latest)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/parseablehq/pb)](go.mod)
 
-`pb` is the command line interface for [Parseable](https://github.com/parseablehq/parseable) — a fast, lightweight log and metrics storage server. Use `pb` to run SQL and PromQL queries, tail live data, manage datasets, users, and profiles, all from your terminal.
+`pb` is the command line interface for [Parseable](https://github.com/parseablehq/parseable). Use it to query logs with SQL, run PromQL queries on metrics, stream live events, and manage datasets, users, and profiles from your terminal.
 
 ## Installation
 
-Download the latest binary for your platform from the [releases page](https://github.com/parseablehq/pb/releases/latest).
+Download the binary for your platform from the [releases page](https://github.com/parseablehq/pb/releases/latest).
 
-**macOS / Linux**
+**macOS and Linux**
+
+Pick the binary for your platform:
+
+| Platform | Binary |
+|---|---|
+| macOS Apple Silicon (M1, M2, M3) | `pb_darwin_arm64` |
+| macOS Intel | `pb_darwin_amd64` |
+| Linux x86 64-bit | `pb_linux_amd64` |
+| Linux ARM 64-bit | `pb_linux_arm64` |
 
 ```bash
-tar -xzf pb_<version>_<os>_<arch>.tar.gz
-mv pb /usr/local/bin/pb
-pb --version
+curl -LO https://github.com/parseablehq/pb/releases/latest/download/<binary>
+chmod +x <binary>
+sudo mv <binary> /usr/local/bin/pb
 ```
 
 **Windows**
 
-1. Download `pb_<version>_windows_amd64.tar.gz` from the releases page
-2. Open PowerShell and extract:
+Download `pb_windows_amd64` from the [releases page](https://github.com/parseablehq/pb/releases/latest), rename it to `pb.exe`, and move it to a folder in your `PATH`.
 
-```powershell
-tar -xzf pb_<version>_windows_amd64.tar.gz
-```
-
-3. Move `pb.exe` to a folder in your `PATH` (e.g. `C:\Users\<you>\bin\`) and verify:
-
-```powershell
-pb --version
-```
-
-**Install with Go (all platforms)**
+**Using Go**
 
 ```bash
 go install github.com/parseablehq/pb@latest
 ```
 
+Verify the install:
+
+```bash
+pb --version
+```
+
 ## Quick Start
 
-### Step 1 — Connect to a server
+**Step 1 — Connect to a server**
 
-Run `pb login` to launch the interactive setup wizard:
+Run `pb login` to start the interactive setup wizard:
 
 ```bash
 pb login
 ```
 
-The wizard walks you through:
-- **Choose type** — Self-hosted or Parseable Cloud
-- **Enter server URL** — e.g. `http://localhost:8000`
-- **Choose auth** — Username & Password, or API key
-- **Enter credentials**
-- **Name the profile** — e.g. `local`, `staging`, `prod`
+The wizard asks for your server URL, auth method (username/password or API key), and a profile name. Use arrow keys to navigate, Enter to confirm, and Esc to go back.
 
-Use `↑ ↓` to navigate lists, `Enter` to confirm, `Esc` to go back one step. If a profile name already exists, the wizard asks whether to replace it or pick a new name.
-
-> **Prefer a one-liner?** Use `pb profile add` instead — see [Profiles](#profiles).
-
-### Step 2 — Run your first query
+**Step 2 — Run your first query**
 
 ```bash
 pb query run "SELECT * FROM backend" --from=10m --to=now
 ```
-
-That's it. See the sections below for every available command.
-
----
 
 ## Commands
 
 ### Profiles
 
-Manage multiple Parseable server connections. All commands use the active default profile automatically.
+Profiles store your server connections. All commands use the active default profile automatically.
 
-Profiles are stored in `~/.config/pb/config.toml` (macOS/Linux) or `%AppData%\pb\config.toml` (Windows).
-
-```bash
-pb login                                                            # interactive setup wizard (recommended for new users)
-pb profile add staging https://staging.example.com admin password    # add a profile non-interactively
-pb profile list                                                     # list all profiles
-pb profile default staging                                          # switch default profile
-pb profile update staging https://new-host.example.com:8000        # update URL for a profile
-pb profile remove staging                                           # remove a profile
-pb logout                                                           # remove the active profile
-```
-
-When you remove the default profile:
-- 1 profile remaining → it becomes the new default automatically
-- 2+ remaining → an interactive picker lets you choose the new default
-- 0 remaining → default is cleared
-
-## Interactive Mode
-
-`pb` ships two full-screen terminal UIs — one for SQL, one for PromQL. Both open with `-i`.
-
-### SQL Interactive (`pb query run -i`)
+Config file location: `~/.config/pb/config.toml` on macOS/Linux, `%AppData%\pb\config.toml` on Windows.
 
 ```bash
-pb query run -i                                         # open blank — write query inside
-pb query run "SELECT * FROM backend" --from=1h -i       # open with query pre-filled
+pb login                                                          # interactive setup wizard
+pb profile add staging https://staging.example.com admin pass    # add a profile without prompts
+pb profile list                                                   # list all saved profiles
+pb profile default staging                                        # switch the active profile
+pb profile update staging https://new-host.example.com           # update a profile URL
+pb profile remove staging                                         # remove a profile
+pb logout                                                         # remove the active profile
 ```
-
-Navigate panels with `Tab` / `Shift+Tab`:
-
-```
-[ Query ] → [ Time ] → [ Table ]
-```
-
-| Key | Action |
-|-----|--------|
-| `Tab` / `Shift+Tab` | Move between panels |
-| `Enter` (Time panel) | Open time range picker |
-| `Ctrl+R` | Run query |
-| `Ctrl+B` | Fetch previous page |
-| `Ctrl+C` | Exit |
-
-**Table panel:**
-
-| Key | Action |
-|-----|--------|
-| `↑` / `↓` | Scroll rows |
-| `Shift+↑` / `Shift+↓` | Previous / next page |
-| `←` / `→` | Scroll columns |
-| `/` | Filter rows |
-| `Esc` | Clear filter |
-
----
-
-### PromQL Interactive (`pb query promql run -i`)
-
-```bash
-pb query promql run -i                                                          # open blank — write expression inside
-pb query promql run "http_requests_total" --dataset otel_metrics --from=1h -i  # open with expression pre-filled
-```
-
-Navigate panels with `Tab` / `Shift+Tab`:
-
-```
-[ Dataset ] → [ Query ] → [ Time ] → [ Step ] → [ Table ]
-```
-
-| Key | Action |
-|-----|--------|
-| `Tab` / `Shift+Tab` | Move between panels |
-| `Enter` (Dataset panel) | Open dataset picker |
-| `Enter` (Time panel) | Open time range / evaluation time picker |
-| `Space` (Step panel) | Toggle range / instant mode |
-| `Ctrl+R` | Run query |
-| `Ctrl+C` | Exit |
-
-**Table panel** — same keys as SQL interactive (↑ ↓ rows, ← → columns, `/` filter).
-
----
 
 ### SQL Query
 
-Query a dataset and print results to stdout.
-
 ```bash
 pb query run "SELECT * FROM backend" --from=10m --to=now
-```
-
-**Time range** — supports relative durations, day shorthand, and RFC3339:
-
-```bash
-pb query run "SELECT * FROM backend" --from=1h                           # last 1 hour
-pb query run "SELECT * FROM backend" --from=7d                           # last 7 days
-pb query run "SELECT * FROM backend" \
-  --from=2024-01-01T00:00:00Z --to=2024-01-01T01:00:00Z                  # exact window
-```
-
-**JSON output:**
-
-```bash
+pb query run "SELECT * FROM backend" --from=1h
+pb query run "SELECT * FROM backend" --from=2024-01-01T00:00:00Z --to=2024-01-01T01:00:00Z
 pb query run "SELECT * FROM backend" --from=1h --output json | jq .
-```
-
-**Save a query for later:**
-
-```bash
 pb query run "SELECT * FROM backend WHERE status = 500" --from=1h --save-as=server-errors
 pb query list    # list and apply saved queries
 ```
 
-> **Note on field names with dots** — OTel fields like `service.name`, `http.status_code`, and `code.file.path` can be used directly in queries without manual quoting. `pb` handles the quoting transparently:
-> ```bash
-> pb query run "SELECT * FROM otel-logs WHERE service.name = 'frontend'" --from=1h
-> ```
+OTel fields with dots like `service.name` and `http.status_code` work directly in queries without manual quoting.
+
+### SQL Interactive Mode
+
+```bash
+pb query run -i
+pb query run "SELECT * FROM backend" --from=1h -i
+```
+
+Panels: Query, Time Range, Table. Navigate with Tab and Shift+Tab.
 
 ### PromQL Query
 
-Query metrics datasets using PromQL expressions.
-
 ```bash
-# Range query — returns a time series over the given window
-pb query promql run "rate(http_requests_total[5m])" \
-  --dataset otel_metrics --from=1h --step=1m
-
-# Instant query — evaluate at a single point in time
+pb query promql run "rate(http_requests_total[5m])" --dataset otel_metrics --from=1h --step=1m
 pb query promql run "up" --dataset otel_metrics --instant
-
-# JSON output
-pb query promql run "http_requests_total" --dataset otel_metrics -o json
+pb query promql run "http_requests_total" --dataset otel_metrics --output json
 ```
 
-**Explore metrics:**
+Explore labels and series:
 
 ```bash
-pb query promql labels --dataset otel_metrics                                           # all label names
-pb query promql label-values job --dataset otel_metrics                                 # values for a label
-pb query promql series --match 'http_requests_total{job="api"}' --dataset otel_metrics  # matching series
+pb query promql labels --dataset otel_metrics
+pb query promql label-values job --dataset otel_metrics
+pb query promql series --match 'http_requests_total{job="api"}' --dataset otel_metrics
 ```
 
-**Cardinality analysis** — find high-cardinality labels before they cause memory issues:
+Cardinality analysis:
 
 ```bash
-pb query promql cardinality label-names --dataset otel_metrics           # labels by distinct value count
-pb query promql cardinality label-values --label service.name \
-  --dataset otel_metrics                                                  # series count per label value
-pb query promql cardinality active-series --dataset otel_metrics         # total active series
-```
-
-**TSDB statistics:**
-
-```bash
-pb query promql tsdb --dataset otel_metrics
-```
-
-**Currently running queries:**
-
-```bash
+pb query promql cardinality label-names --dataset otel_metrics
 pb query promql active-queries
 ```
 
+### PromQL Interactive Mode
+
+```bash
+pb query run -i --promql
+#or
+pb query promql run -i
+pb query promql run "http_requests_total" --dataset otel_metrics --from=1h -i
+```
+
+Panels: Dataset, Query, Time, Step, Table. Navigate with Tab and Shift+Tab. Press Space on the Step panel to toggle between range and instant mode.
+
 ### Live Tail
 
-Stream live log events from a dataset as they arrive:
+Stream events from a dataset in real time:
 
 ```bash
 pb tail backend
+pb tail backend | jq 'select(.level == "error")'
+pb tail backend | grep timeout
 ```
 
-Filter in real time with standard tools:
+Press Ctrl+C to stop.
 
-```bash
-pb tail backend | jq '.[] | select(.method == "PATCH")'
-pb tail backend | grep "POST" | jq .
-```
-
-Press `Ctrl+C` to stop.
+Note: `pb tail` uses gRPC on port 8001. Make sure that port is open on your server in addition to the main HTTP port.
 
 ### Dataset Management
 
 ```bash
-pb dataset list                  # list all datasets on the server
-pb dataset info my_logs          # show stats (size, event count) for a dataset
-pb dataset add my_logs           # create a new dataset
-pb dataset remove my_logs        # delete a dataset
+pb dataset list
+pb dataset info my_logs
+pb dataset add my_logs
+pb dataset remove my_logs
 ```
 
 ### Users and Roles
 
 ```bash
-pb user list                              # list all users
-pb user add alice                         # create a user (prompts for password)
-pb user set-role alice admin,editor       # assign roles
-pb user remove alice                      # delete a user
+pb user list
+pb user add alice
+pb user set-role alice admin,editor
+pb user remove alice
 
-pb role list                              # list available roles
-pb role add ingestors                     # create a role (interactive privilege picker)
-pb role remove ingestors                  # delete a role
+pb role list
+pb role add ingestors
+pb role remove ingestors
 ```
 
-### Status
-
-Check connectivity and version info for the active server:
+### Other Commands
 
 ```bash
-pb status
+pb status       # check connection and server version
+pb version      # print client and server version info
 ```
 
-### Version
+### Shell Autocomplete
 
-```bash
-pb version
-pb --version
-```
-
-### Autocomplete
-
-Enable shell completion for `pb` commands and flags.
-
-**Bash:**
-
+**Bash**
 ```bash
 pb autocomplete bash > /etc/bash_completion.d/pb
 source /etc/bash_completion.d/pb
 ```
 
-**Zsh:**
-
-```zsh
+**Zsh**
+```bash
 pb autocomplete zsh > /usr/local/share/zsh/site-functions/_pb
-autoload -U compinit && compinit
+autoload -Uz compinit && compinit
 ```
 
-**PowerShell:**
-
+**PowerShell**
 ```powershell
 pb autocomplete powershell > $env:USERPROFILE\Documents\PowerShell\pb_complete.ps1
-. $PROFILE
+. $env:USERPROFILE\Documents\PowerShell\pb_complete.ps1
 ```
-
----
 
 ## Contributing
 
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up your dev environment, branch naming conventions, and the PR checklist. All contributors must sign the CLA — the bot will prompt you automatically on your first PR.
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, branch naming conventions, and the PR checklist. All contributors must sign the CLA — the bot will prompt you on your first PR.
 
 ## License
 
