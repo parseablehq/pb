@@ -133,9 +133,9 @@ var Light = Palette{
 	PanelAlt: "#F1F1F5",
 	EditorBg: "#F4F4F5",
 
-	Border:     "#D8D8DC",
-	BorderSoft: "#E9E9EC",
-	BorderHi:   "#B2B2FF",
+	Border:     "#A8A8B0",
+	BorderSoft: "#C8C8CE",
+	BorderHi:   "#5A5AC8",
 
 	Text:  "#09090B",
 	Body:  "#18181B",
@@ -169,7 +169,8 @@ var Light = Palette{
 // ── Theme loader ─────────────────────────────────────────────────────────────
 
 // LoadTheme reads $PB_THEME (light | dark | auto).
-// Auto sniffs $COLORFGBG; falls back to dark.
+// Auto sniffs $COLORFGBG, then falls back to lipgloss's terminal
+// background probe (OSC 11 / termenv). Default: dark.
 func LoadTheme() Palette {
 	switch strings.ToLower(os.Getenv("PB_THEME")) {
 	case "light":
@@ -183,6 +184,9 @@ func LoadTheme() Palette {
 			if len(parts) >= 2 && parts[len(parts)-1] == "15" {
 				return Light
 			}
+		}
+		if !lipgloss.HasDarkBackground() {
+			return Light
 		}
 		return Dark
 	}

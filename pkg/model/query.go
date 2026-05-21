@@ -94,9 +94,9 @@ var (
 )
 
 var (
-	// customBorder — k9s pattern: no outer box, no vertical column
-	// dividers, single horizontal hairline under the header. Lets the
-	// data breathe and stops the grid from competing with content.
+	// customBorder — no outer box. Outer border is drawn by the
+	// surrounding Results pane (renderResultsPane). Only column
+	// dividers remain so rows stay scannable.
 	customBorder = table.Border{
 		Top:    "",
 		Left:   "",
@@ -114,7 +114,7 @@ var (
 		BottomJunction: "",
 		InnerJunction:  "",
 
-		InnerDivider: " ",
+		InnerDivider: "│",
 	}
 
 	additionalKeyBinds = []key.Binding{runQueryKey}
@@ -407,160 +407,448 @@ func (m QueryModel) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
 	}
+	p := ui.Active
 
-	// ── Chrome: top HeaderStrip (KV context · keybinds · PB logo) ──
-	chromeView := buildQueryHeaderStrip(m)
-	chromeHeight := lipgloss.Height(chromeView)
+	// No breadcrumbs — minimal layout: editor + time on top, table,
+	// helper, status. Per scope: 5 zones only.
+	crumbsHeight := 0
 
-	// ── Top pane row: EDITOR (left) + TIME (right) ──
-	// Polish only — same structure as before. Both panes use the
-	// CardWithMeta primitive so titles + subtitles render consistently.
-	timeCardW := 32
-	if m.width < 80 {
-		timeCardW = 26
-	}
-	gutter := 1
-	editorW := m.width - timeCardW - gutter
-	if editorW < 36 {
-		editorW = 36
-	}
-	m.query.SetWidth(editorW - 6)
-
-	editorRows := 12
-	editorBody := m.query.View()
-	editorMeta := strings.ToUpper(extractDataset(m.query.Value())) + " · SQL"
-	editorCard := ui.CardWithMeta("EDITOR", editorMeta, editorW, editorRows,
-		m.currentFocus() == "query", editorBody)
-
-	timeBody := buildTimeBody(
-		m.timeRange.start.Value(),
-		m.timeRange.end.Value(),
-		timeCardW-4,
-	)
-	timeCard := ui.CardWithMeta("TIME RANGE", "enter to edit",
-		timeCardW, editorRows,
-		m.currentFocus() == "time", timeBody)
-
-	pad := lipgloss.NewStyle().
-		Width(gutter).
-		Background(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Bg })).
-		Render("")
-	header := lipgloss.JoinHorizontal(lipgloss.Top, editorCard, pad, timeCard)
-	headerHeight := lipgloss.Height(header)
-
+	// ── 2. Status bar / help (precompute heights) ─────────────────────
 	if m.loading {
 		m.status.Info = ""
 		m.status.Error = ""
 	}
 	m.status.SetMode("SQL")
 	if len(m.dataRows) > 0 {
-		m.status.Info = fmt.Sprintf("rows %d", len(m.dataRows))
+		page := m.table.CurrentPage()
+		total := m.table.MaxPages()
+		if total < 1 {
+			total = 1
+		}
+		m.status.Info = fmt.Sprintf("rows %d · %d/%d", len(m.dataRows), page, total)
 	}
 	statusView := m.status.View()
 	statusHeight := lipgloss.Height(statusView)
+	helpView := buildContextHelp(m, m.width)
+	helpHeight := lipgloss.Height(helpView)
 
-	// Help keybinds now live in the top HeaderStrip — no in-body help.
-	// Modal overlay shows its own footer hints (timeRange.FullHelp()).
-	helpView := ""
-	helpHeight := 0
+	// ── 3. TOP row: editor (wide) + date (narrow). Plain rectangles,
+	// label-only chrome. Date pane stays compact per mock.
+	topH := 11
+	if m.height < 30 {
+		topH = 8
+	}
+	sidebarW := 24
+	if m.width >= 140 {
+		sidebarW = 28
+	}
+	if m.width < 100 {
+		sidebarW = 20
+	}
+	editorW := m.width - sidebarW
+	if editorW < 30 {
+		editorW = 30
+		sidebarW = m.width - editorW
+	}
+	m.query.SetWidth(editorW - 6)
+	// Editor body height must match the pane's inner content area —
+	// innerH(topH-2) minus the title row (1). If textarea is taller
+	// than the pane, it overflows and pushes the top borders/labels
+	// off-screen.
+	editorBodyH := topH - 3
+	if editorBodyH < 1 {
+		editorBodyH = 1
+	}
+	m.query.SetHeight(editorBodyH)
+	editorPane := renderEditorPane(m.query.View(), editorW, topH, m.currentFocus() == "query")
+	timePane := renderTimePane(
+		m.timeRange.start.Value(),
+		m.timeRange.end.Value(),
+		sidebarW, topH,
+		m.currentFocus() == "time",
+	)
+	topSection := lipgloss.JoinHorizontal(lipgloss.Top, editorPane, timePane)
 
-	// Step 3: calculate exact table page size so everything fits.
-	tableAvail := m.height - chromeHeight - headerHeight - statusHeight
-	pageSize := tableAvail - 6
+	// ── 4. Results / table area ───────────────────────────────────────
+	availH := m.height - crumbsHeight - topH - helpHeight - statusHeight
+	if availH < 6 {
+		availH = 6
+	}
+	// Results pane border (2) + label row (1) = 3 rows of chrome.
+	resultsInnerH := availH - 3
+	if resultsInnerH < 3 {
+		resultsInnerH = 3
+	}
+	resultsInnerW := m.width - 4 // border(2) + h-padding(2)
+	if resultsInnerW < 10 {
+		resultsInnerW = 10
+	}
+	pageSize := resultsInnerH - 1
 	if pageSize < 1 {
 		pageSize = 1
 	}
+	m.table = m.table.WithPageSize(pageSize).WithRows(m.dataRows).WithMaxTotalWidth(resultsInnerW)
 
-	// Pad rows to pageSize so the table always fills its allocated height.
-	// Empty rows render as blank lines inside the table border.
-	displayRows := make([]table.Row, pageSize)
-	copy(displayRows, m.dataRows)
-
-	m.table = m.table.WithPageSize(pageSize).WithRows(displayRows).WithMaxTotalWidth(m.width - 4)
-
-	// Step 4: compose main view.
-	availW := m.width - 2
-	if availW < 0 {
-		availW = 0
-	}
-	availH := tableAvail - 4
-	if availH < 0 {
-		availH = 1
-	}
-
-	// Pick the right body for the RESULTS card.
 	var inner string
 	switch {
 	case !m.hasQueried:
-		// Empty state — block ASCII wordmark in brand accent + hint.
 		wordmark := lipgloss.NewStyle().
-			Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent })).
+			Foreground(p.Accent).
 			Bold(true).
 			Render(parseableAsciiArt)
-		hintKey := lipgloss.NewStyle().
-			Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent })).
-			Bold(true).
-			Render("ctrl+r")
-		hint := lipgloss.NewStyle().
-			MarginTop(1).
-			Render(hintKey + lipgloss.NewStyle().
-				Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Faint })).
-				Render("  run query"))
+		key := lipgloss.NewStyle().Foreground(p.Accent).Bold(true).Render("ctrl+r")
+		msg := lipgloss.NewStyle().Foreground(p.Faint).Render("  run query")
+		hint := lipgloss.NewStyle().MarginTop(1).Render(key + msg)
 		content := lipgloss.JoinVertical(lipgloss.Center, wordmark, hint)
-		inner = lipgloss.Place(availW, availH, lipgloss.Center, lipgloss.Center, content)
+		inner = lipgloss.Place(resultsInnerW, resultsInnerH, lipgloss.Center, lipgloss.Center, content,
+			lipgloss.WithWhitespaceChars(" "))
 	case m.loading:
-		spinStyle := ui.Type().Accent
-		content := spinStyle.Render(m.spinner.View() + " fetching...")
-		inner = lipgloss.Place(availW, availH, lipgloss.Center, lipgloss.Center, content)
+		content := ui.Type().Accent.Render(m.spinner.View() + " fetching...")
+		inner = lipgloss.Place(resultsInnerW, resultsInnerH, lipgloss.Center, lipgloss.Center, content,
+			lipgloss.WithWhitespaceChars(" "))
 	case m.fetchErrMsg != "":
 		errStyle := lipgloss.NewStyle().
 			Padding(1, 2).
-			Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Err })).
-			Width(availW)
+			Foreground(p.Err).
+			Width(resultsInnerW)
 		rendered := errStyle.Render(m.fetchErrMsg)
 		lines := strings.Split(rendered, "\n")
-		if len(lines) > availH {
-			lines = lines[:availH]
+		if len(lines) > resultsInnerH {
+			lines = lines[:resultsInnerH]
 		}
 		inner = strings.Join(lines, "\n")
 	default:
 		inner = m.table.View()
 	}
+	{
+		lines := strings.Split(inner, "\n")
+		if len(lines) > resultsInnerH {
+			lines = lines[:resultsInnerH]
+		}
+		inner = strings.Join(lines, "\n")
+	}
+	resultsPane := renderResultsPane(inner, m.width, availH, len(m.dataRows), m.currentFocus() == "table")
 
-	resultPane := ui.Card("RESULTS", m.width, availH,
-		m.currentFocus() == "table", inner)
-
+	// ── 5. Compose body or overlay ────────────────────────────────────
+	body := lipgloss.JoinVertical(lipgloss.Left, topSection, resultsPane)
 	var mainView string
 	switch m.overlay {
 	case overlayNone:
-		mainView = lipgloss.JoinVertical(lipgloss.Left, header, resultPane)
+		mainView = body
 	case overlayInputs:
 		timeView := m.timeRange.View()
-		mainView = lipgloss.Place(m.width, m.height-chromeHeight-helpHeight-statusHeight,
+		mainView = lipgloss.Place(m.width, m.height-crumbsHeight-helpHeight-statusHeight,
 			lipgloss.Center, lipgloss.Center, timeView,
 			lipgloss.WithWhitespaceChars(" "),
-			lipgloss.WithWhitespaceForeground(StandardSecondary),
 		)
 	}
 
-	// Pin help+status to the bottom by padding the main view to fill remaining height.
-	mainHeight := lipgloss.Height(mainView)
-	bottomHeight := helpHeight + statusHeight
-	padLines := m.height - mainHeight - bottomHeight
-	if padLines > 0 {
-		mainView = mainView + strings.Repeat("\n", padLines)
-	}
-
-	_ = helpView
-	breadcrumbs := buildQueryBreadcrumbs(m)
 	render := lipgloss.JoinVertical(lipgloss.Left,
-		chromeView,
 		mainView,
-		breadcrumbs,
+		helpView,
 		statusView,
 	)
 	return lipgloss.NewStyle().Width(m.width).Render(render)
 }
+
+// renderEditorPane draws a flat rectangle with a single label row
+// (Faint, top-left) and body below. NormalBorder per design — matches
+// the wireframe "plain rectangle with label inside" idiom.
+func renderEditorPane(body string, width, height int, focused bool) string {
+	p := ui.Active
+	borderColor := p.Border
+	titleFg := p.Faint
+	if focused {
+		borderColor = p.BorderHi
+		titleFg = p.Accent
+	}
+	innerW := width - 2
+	if innerW < 4 {
+		innerW = 4
+	}
+	innerH := height - 2
+	if innerH < 3 {
+		innerH = 3
+	}
+	title := lipgloss.NewStyle().Foreground(titleFg).Bold(focused).Render("EDITOR")
+	titleRow := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(title)
+	bodyPane := lipgloss.NewStyle().
+		Width(innerW).
+		Height(innerH - 1).
+		Padding(0, 1).
+		Render(body)
+	stack := lipgloss.JoinVertical(lipgloss.Left, titleRow, bodyPane)
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(borderColor).
+		Render(stack)
+}
+
+// renderTimePane draws the compact "DATE" sidebar — from/to labels +
+// timestamps in two stacked pairs. Same flat chrome as the editor.
+func renderTimePane(start, end string, width, height int, focused bool) string {
+	p := ui.Active
+	borderColor := p.Border
+	titleFg := p.Faint
+	if focused {
+		borderColor = p.BorderHi
+		titleFg = p.Accent
+	}
+	innerW := width - 2
+	if innerW < 4 {
+		innerW = 4
+	}
+	innerH := height - 2
+	if innerH < 3 {
+		innerH = 3
+	}
+	title := lipgloss.NewStyle().Foreground(titleFg).Bold(focused).Render("DATE")
+	titleRow := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(title)
+
+	label := lipgloss.NewStyle().Foreground(p.Faint)
+	val := lipgloss.NewStyle().Foreground(p.Body)
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		label.Render("from"),
+		val.Render(start),
+		"",
+		label.Render("to"),
+		val.Render(end),
+	)
+	bodyPane := lipgloss.NewStyle().
+		Width(innerW).
+		Height(innerH - 1).
+		Padding(0, 1).
+		Render(content)
+	stack := lipgloss.JoinVertical(lipgloss.Left, titleRow, bodyPane)
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(borderColor).
+		Render(stack)
+}
+
+// renderResultsPane wraps the table (or empty-state / loading / error
+// body) in a flat rectangle with a single label row. Row count appears
+// dim-right of the label when there is data.
+func renderResultsPane(body string, width, height, rowCount int, focused bool) string {
+	p := ui.Active
+	borderColor := p.Border
+	titleFg := p.Faint
+	if focused {
+		borderColor = p.BorderHi
+		titleFg = p.Accent
+	}
+	innerW := width - 2
+	if innerW < 4 {
+		innerW = 4
+	}
+	innerH := height - 2
+	if innerH < 3 {
+		innerH = 3
+	}
+	left := lipgloss.NewStyle().Foreground(titleFg).Bold(focused).Render("RESULTS")
+	var right string
+	if rowCount > 0 {
+		right = lipgloss.NewStyle().
+			Foreground(p.Faint).
+			Render(fmt.Sprintf("%d rows", rowCount))
+	}
+	gap := innerW - lipgloss.Width(left) - lipgloss.Width(right) - 2
+	if gap < 1 {
+		gap = 1
+	}
+	titleRow := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(
+		left + strings.Repeat(" ", gap) + right,
+	)
+	bodyPane := lipgloss.NewStyle().
+		Width(innerW).
+		Height(innerH - 1).
+		Padding(0, 1).
+		Render(body)
+	stack := lipgloss.JoinVertical(lipgloss.Left, titleRow, bodyPane)
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(borderColor).
+		Render(stack)
+}
+
+// renderTopSection (legacy: combined pane) — kept only to avoid
+// breaking callers; not used by the main View() any more.
+func renderTopSection(editorBody, start, end string, editorW, sidebarW, height int, focusEditor, focusTime bool) string {
+	p := ui.Active
+	borderColor := p.Border
+	if focusEditor || focusTime {
+		borderColor = p.BorderHi
+	}
+
+	innerH := height - 2 // outer border top+bottom
+	if innerH < 4 {
+		innerH = 4
+	}
+
+	// ── Left half: editor ────────────────────────────────────────────
+	leftInner := editorW - 2
+	if leftInner < 4 {
+		leftInner = 4
+	}
+	editorTitleFg := p.Ghost
+	if focusEditor {
+		editorTitleFg = p.Accent
+	}
+	editorTitleText := lipgloss.NewStyle().
+		Foreground(editorTitleFg).
+		Bold(focusEditor).
+		Render("EDITOR")
+	editorRail := " "
+	if focusEditor {
+		editorRail = lipgloss.NewStyle().Background(p.Accent).Render(" ")
+	}
+	editorTitleRow := lipgloss.NewStyle().
+		Width(leftInner).
+		Padding(0, 1).
+		Render(editorRail + " " + editorTitleText)
+	editorRule := lipgloss.NewStyle().
+		Foreground(p.BorderSoft).
+		Render(strings.Repeat("─", leftInner))
+	editorBodyPane := lipgloss.NewStyle().
+		Width(leftInner).
+		Height(innerH - 2).
+		Padding(0, 1).
+		Render(editorBody)
+	leftStack := lipgloss.JoinVertical(lipgloss.Left, editorTitleRow, editorRule, editorBodyPane)
+
+	// ── Vertical inner divider ───────────────────────────────────────
+	vDivLine := strings.TrimRight(strings.Repeat("│\n", innerH), "\n")
+	vDiv := lipgloss.NewStyle().
+		Foreground(p.BorderSoft).
+		Render(vDivLine)
+
+	// ── Right half: time sidebar ─────────────────────────────────────
+	rightInner := sidebarW - 3
+	if rightInner < 4 {
+		rightInner = 4
+	}
+	timeTitleFg := p.Ghost
+	if focusTime {
+		timeTitleFg = p.Accent
+	}
+	timeTitleText := lipgloss.NewStyle().
+		Foreground(timeTitleFg).
+		Bold(focusTime).
+		Render("TIME")
+	timeRail := " "
+	if focusTime {
+		timeRail = lipgloss.NewStyle().Background(p.Accent).Render(" ")
+	}
+	timeTitleRow := lipgloss.NewStyle().
+		Width(rightInner).
+		Padding(0, 1).
+		Render(timeRail + " " + timeTitleText)
+	timeRule := lipgloss.NewStyle().
+		Foreground(p.BorderSoft).
+		Render(strings.Repeat("─", rightInner))
+
+	label := lipgloss.NewStyle().Foreground(p.Ghost).Bold(true)
+	tsVal := lipgloss.NewStyle().Foreground(p.Accent)
+	hintKey := lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
+	hintLabel := lipgloss.NewStyle().Foreground(p.Ghost)
+	hint := hintKey.Render("enter") + hintLabel.Render("  edit range")
+	timeContent := lipgloss.JoinVertical(lipgloss.Left,
+		label.Render("START"),
+		tsVal.Render(start),
+		"",
+		label.Render("END"),
+		tsVal.Render(end),
+	)
+	padRows := (innerH - 2) - lipgloss.Height(timeContent) - lipgloss.Height(hint)
+	if padRows < 0 {
+		padRows = 0
+	}
+	timeStack := timeContent + strings.Repeat("\n", padRows+1) + hint
+	timeBodyPane := lipgloss.NewStyle().
+		Width(rightInner).
+		Height(innerH - 2).
+		Padding(0, 1).
+		Render(timeStack)
+	rightStack := lipgloss.JoinVertical(lipgloss.Left, timeTitleRow, timeRule, timeBodyPane)
+
+	row := lipgloss.JoinHorizontal(lipgloss.Top, leftStack, vDiv, rightStack)
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Render(row)
+}
+
+// buildBreadcrumbs renders the top tab row with FILLED active tab —
+// active = Accent bg + InvertText fg + bold; idle = Mute fg on
+// PanelAlt bg (raised vs canvas so the row reads as distinct chrome).
+// Bottom hairline in Border separates from body.
+func buildBreadcrumbs(active string, rowCount, savedCount, width int) string {
+	p := ui.Active
+	items := []struct {
+		id, label string
+		count     int
+	}{
+		{"query", "query", 0},
+		{"time", "time", 0},
+		{"results", "results", rowCount},
+		{"metrics", "metrics", 0},
+		{"saved", "saved", savedCount},
+		{"help", "help", 0},
+	}
+
+	var tabs []string
+	for _, it := range items {
+		isActive := it.id == active
+		st := lipgloss.NewStyle().Padding(0, 2)
+		if isActive {
+			st = st.Background(p.Accent).Foreground(p.InvertText).Bold(true)
+		} else {
+			st = st.Background(p.PanelAlt).Foreground(p.Mute)
+		}
+		text := it.label
+		if it.count > 0 {
+			text = fmt.Sprintf("%s %d", it.label, it.count)
+		}
+		tabs = append(tabs, st.Render(text))
+	}
+
+	row := lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
+	used := lipgloss.Width(row)
+	if used < width {
+		row = row + lipgloss.NewStyle().Width(width-used).Background(p.PanelAlt).Render("")
+	}
+	return lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderBottom(true).
+		BorderForeground(p.Border).
+		Render(row)
+}
+
+// buildContextHelp renders the section-aware help row inside its own
+// flat bordered rectangle — mirrors the editor/results pane chrome so
+// the four-zone layout reads as one design system.
+func buildContextHelp(m QueryModel, width int) string {
+	p := ui.Active
+	hints := queryKeysForFocus(m)
+	keyStyle := lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
+	labelStyle := lipgloss.NewStyle().Foreground(p.Faint)
+	var parts []string
+	for _, h := range hints {
+		k := strings.TrimSuffix(strings.TrimPrefix(h.Key, "<"), ">")
+		parts = append(parts, keyStyle.Render(k)+labelStyle.Render(" "+h.Label))
+	}
+	sep := "    "
+	row := strings.Join(parts, sep)
+	inner := lipgloss.NewStyle().
+		Width(width - 2).
+		Padding(0, 1).
+		Render(row)
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(p.Border).
+		Render(inner)
+}
+
 
 // buildQueryBreadcrumbs surfaces the current mode/overlay as a tab row.
 // Active crumb fills with accent; idle crumbs read on bg.
@@ -719,8 +1007,10 @@ func applyEditorStyles(t *textarea.Model) {
 	// uniform code block — no visible per-line bg shifts on empty
 	// rows. Active line gets a subtle EditorActive overlay only.
 	bgEditor := p.EditorBg
-	t.FocusedStyle.Base = lipgloss.NewStyle().Background(bgEditor).Foreground(p.Body)
-	t.FocusedStyle.Text = lipgloss.NewStyle().Background(bgEditor).Foreground(p.Body)
+	// Mute (#B5B5BE) instead of Body — slightly lighter, reads as
+	// normal-weight code rather than bold.
+	t.FocusedStyle.Base = lipgloss.NewStyle().Background(bgEditor).Foreground(p.Mute)
+	t.FocusedStyle.Text = lipgloss.NewStyle().Background(bgEditor).Foreground(p.Mute)
 	t.FocusedStyle.LineNumber = lipgloss.NewStyle().
 		Foreground(p.Faint).
 		Background(bgEditor).
@@ -987,7 +1277,9 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 	var specs []colSpec
 
 	if slices.Contains(data.schema, dateTimeKey) {
-		specs = append(specs, colSpec{key: dateTimeKey, title: dateTimeKey, width: dateTimeWidth, fixed: true})
+		// Display label "time" — full p_timestamp gets truncated to
+		// `P_TIMESTA…` at width 10. Short label fits cleanly.
+		specs = append(specs, colSpec{key: dateTimeKey, title: "time", width: dateTimeWidth, fixed: true})
 	}
 
 	for _, title := range data.schema {

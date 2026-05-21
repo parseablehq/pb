@@ -264,48 +264,14 @@ func (m TimeInputModel) View() string {
 	endNow := m.end.Time().Sub(time.Now()).Abs() < 2*time.Second
 	endField := renderTimeField("END", m.end.View(), endFocus, endNow)
 
-	// Summary chip — PanelAlt surface, Border outline, Faint labels +
-	// Accent values for the dynamic numbers.
-	dur := m.end.Time().Sub(m.start.Time())
-	span := humanizeDur(dur)
-	autoStep := autoStepFor(dur)
-	samples := samplesFor(dur, autoStep)
-	labFG := lipgloss.NewStyle().Foreground(p.Faint).Background(p.PanelAlt)
-	valFG := lipgloss.NewStyle().Foreground(p.Accent).Background(p.PanelAlt).Bold(true)
-	summary := lipgloss.NewStyle().
-		Padding(0, 2).
-		Width(36).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(p.Border).
-		Background(p.PanelAlt).
-		Render(
-			labFG.Render("span ") +
-				valFG.Render(span) +
-				labFG.Render("   step ") +
-				valFG.Render(autoStep) +
-				labFG.Render(fmt.Sprintf("   ~%d samples", samples)),
-		)
-
-	// Hint — Faint, lower than body, reads as secondary.
-	footer := lipgloss.NewStyle().
-		Foreground(p.Faint).
-		Padding(1, 0, 0, 0).
-		Render("tab fields  ·  digits edit  ·  ctrl+{ end → now")
-
+	// No span/step/samples chip and no extra footer hint — keep the
+	// picker minimal per the earlier main design (just presets +
+	// start/end fields).
 	var rightStack string
 	if m.instant {
-		rightStack = lipgloss.JoinVertical(lipgloss.Left,
-			endField,
-			summary,
-			footer,
-		)
+		rightStack = lipgloss.JoinVertical(lipgloss.Left, endField)
 	} else {
-		rightStack = lipgloss.JoinVertical(lipgloss.Left,
-			startField,
-			endField,
-			summary,
-			footer,
-		)
+		rightStack = lipgloss.JoinVertical(lipgloss.Left, startField, endField)
 	}
 
 	right := lipgloss.NewStyle().Padding(0, 2).Render(rightStack)

@@ -55,28 +55,20 @@ func (m StatusBar) Update(_ tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
 func (m StatusBar) View() string {
 	p := ui.Active
 
-	sep := lipgloss.NewStyle().
-		Foreground(p.BorderSoft).
-		Background(p.Panel).
-		Render(" │ ")
+	sep := lipgloss.NewStyle().Foreground(p.BorderSoft).Render(" │ ")
 
 	label := func(s string) string {
-		return lipgloss.NewStyle().
-			Foreground(p.Faint).
-			Background(p.Panel).
-			Render(s)
+		return lipgloss.NewStyle().Foreground(p.Faint).Render(s)
 	}
 	value := func(s string, fg lipgloss.Color, bold bool) string {
-		st := lipgloss.NewStyle().Foreground(fg).Background(p.Panel)
+		st := lipgloss.NewStyle().Foreground(fg)
 		if bold {
 			st = st.Bold(true)
 		}
 		return st.Render(s)
 	}
 
-	// ── Left: MODE · CLUSTER ──
 	leftParts := []string{
-		" ",
 		label("MODE"),
 		" ",
 		value(strings.ToUpper(m.title), p.Accent, true),
@@ -87,7 +79,6 @@ func (m StatusBar) View() string {
 	}
 	left := lipgloss.JoinHorizontal(lipgloss.Bottom, leftParts...)
 
-	// ── Right: ROWS · LIVE · t · ? ──
 	var rightParts []string
 	if m.Error != "" {
 		rightParts = append(rightParts,
@@ -112,25 +103,22 @@ func (m StatusBar) View() string {
 		label("?"),
 		" ",
 		value("help", p.Dim, false),
-		" ",
 	)
 	right := lipgloss.JoinHorizontal(lipgloss.Bottom, rightParts...)
 
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
+	innerW := m.width - 4 // border(2) + h-padding(2)
+	if innerW < 1 {
+		innerW = 1
+	}
+	gap := innerW - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
 	}
-	pad := lipgloss.NewStyle().
-		Width(gap).
-		Background(p.Panel).
-		Render("")
-
-	row := lipgloss.JoinHorizontal(lipgloss.Bottom, left, pad, right)
+	row := left + strings.Repeat(" ", gap) + right
+	inner := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(row)
 
 	return lipgloss.NewStyle().
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderTop(true).
-		BorderForeground(p.BorderSoft).
-		Width(m.width).
-		Render(row)
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(p.Border).
+		Render(inner)
 }
