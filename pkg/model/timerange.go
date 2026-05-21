@@ -65,35 +65,24 @@ func (d timeDurationItemDelegate) Height() int                             { ret
 func (d timeDurationItemDelegate) Spacing() int                            { return 0 }
 func (d timeDurationItemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
-// Render: selected row gets accent-rail prefix + bg shift + ▸ cursor.
-// Unselected rows are dim with leading space for alignment.
+// Render: selected row gets a 1-cell Accent rail + bold Accent label.
+// Idle rows are Body fg with leading 2 spaces for alignment. No bg
+// fills — they don't pad cleanly past trailing ANSI resets.
 func (d timeDurationItemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
 	i, ok := listItem.(timeDurationItem)
 	if !ok {
 		return
 	}
 	p := ui.Active
-	rowWidth := 22
 
 	if index == m.Index() {
-		rail := lipgloss.NewStyle().
-			Background(p.Accent).
-			Render(" ")
-		body := lipgloss.NewStyle().
-			Background(p.SelRow).
-			Foreground(p.Text).
-			Width(rowWidth - 1).
-			Render(
-				ui.Type().Accent.Render(" ▸ ") + i.repr,
-			)
-		fmt.Fprint(w, rail+body)
+		rail := lipgloss.NewStyle().Background(p.Accent).Render(" ")
+		name := lipgloss.NewStyle().Foreground(p.Accent).Bold(true).Render(i.repr)
+		fmt.Fprint(w, rail+" "+name)
 		return
 	}
-	body := lipgloss.NewStyle().
-		Foreground(p.Mute).
-		Width(rowWidth).
-		Render("   " + i.repr)
-	fmt.Fprint(w, body)
+	name := lipgloss.NewStyle().Foreground(p.Body).Render(i.repr)
+	fmt.Fprint(w, "  "+name)
 }
 
 // NewTimeRangeModel creates new range list — narrow column, no title,

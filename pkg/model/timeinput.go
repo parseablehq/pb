@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"pb/pkg/model/datetime"
 	"pb/pkg/ui"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -227,96 +226,91 @@ func (m TimeInputModel) Update(msg tea.Msg) (TimeInputModel, tea.Cmd) {
 func (m TimeInputModel) View() string {
 	p := ui.Active
 
-	// ── Preset card (left) ──
-	// Plain dim title, letter-spaced via single spaces between chars.
-	// No leading/trailing dashes; the card border carries the visual.
-	titleBar := lipgloss.NewStyle().
-		Foreground(p.Faint).
-		Background(p.Panel).
-		Padding(0, 2).
-		Width(28).
-		Render("T I M E   R A N G E")
-
-	presetBody := m.list.View()
-	leftBorderColor := p.Border
-	if m.currentFocus() == "list" {
-		leftBorderColor = p.BorderHi
-	}
-	leftCard := lipgloss.JoinVertical(
-		lipgloss.Left,
-		titleBar,
-		lipgloss.NewStyle().
-			Padding(1, 1).
-			Background(p.Panel).
-			Width(28).
-			Render(presetBody),
-	)
-	leftCard = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(leftBorderColor).
-		Render(leftCard)
-
-	// ── Field card (right) ──
+	leftFocused := m.currentFocus() == "list"
 	startFocus := m.currentFocus() == "start"
 	endFocus := m.currentFocus() == "end"
 
-	startField := renderTimeField("START", m.start.View(), startFocus, false)
-	endNow := m.end.Time().Sub(time.Now()).Abs() < 2*time.Second
-	endField := renderTimeField("END", m.end.View(), endFocus, endNow)
-
-	// No span/step/samples chip and no extra footer hint — keep the
-	// picker minimal per the earlier main design (just presets +
-	// start/end fields).
-	var rightStack string
-	if m.instant {
-		rightStack = lipgloss.JoinVertical(lipgloss.Left, endField)
-	} else {
-		rightStack = lipgloss.JoinVertical(lipgloss.Left, startField, endField)
+	// Section-title style: lowercase form labels (PRESETS / START /
+	// END), Accent bold when that section has focus, Faint otherwise.
+	secTitle := func(label string, focused bool) string {
+		fg := p.Faint
+		if focused {
+			fg = p.Accent
+		}
+		return lipgloss.NewStyle().Foreground(fg).Bold(true).Render(label)
 	}
 
-	right := lipgloss.NewStyle().Padding(0, 2).Render(rightStack)
+	// ── Left column: PRESETS list ──
+	leftColW := 24
+	leftHeader := secTitle("presets", leftFocused)
+	leftBody := m.list.View()
+	leftCol := lipgloss.JoinVertical(lipgloss.Left, leftHeader, "", leftBody)
+	leftCol = lipgloss.NewStyle().Width(leftColW).Render(leftCol)
 
-	body := lipgloss.JoinHorizontal(lipgloss.Top, leftCard, right)
-	return body
+	// ── Right column: START + END fields ──
+	startField := renderTimeField("start", m.start.View(), startFocus, false)
+	endNow := m.end.Time().Sub(time.Now()).Abs() < 2*time.Second
+	endField := renderTimeField("end", m.end.View(), endFocus, endNow)
+
+	var rightCol string
+	if m.instant {
+		rightCol = endField
+	} else {
+		rightCol = lipgloss.JoinVertical(lipgloss.Left, startField, "", endField)
+	}
+
+	// Gutter between columns.
+	gutter := lipgloss.NewStyle().Width(3).Render("")
+	body := lipgloss.JoinHorizontal(lipgloss.Top, leftCol, gutter, rightCol)
+
+	// Modal frame — single NormalBorder, "TIME RANGE" in border-style
+	// label rendered at top-left of the frame (no centered banner, no
+	// letter-spacing).
+	header := lipgloss.NewStyle().
+		Foreground(p.Accent).
+		Bold(true).
+		Render("TIME RANGE")
+	modalInner := lipgloss.JoinVertical(lipgloss.Left, header, "", body)
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(p.Border).
+		Padding(1, 2).
+		Render(modalInner)
 }
 
-// renderTimeField renders one START/END field card. Label inside the
-// box (Dim), value rendered in Accent. Now-badge floats top-right when
-// end ≈ now.
+// renderTimeField — flat NormalBorder field. Label is lowercase
+// (Faint when idle, Accent bold when focused), value Body, no bg
+// fills. now-badge sits to the right of the label.
 func renderTimeField(label, val string, focused, nowBadge bool) string {
 	p := ui.Active
 	borderColor := p.Border
+	labelFg := p.Faint
 	if focused {
 		borderColor = p.BorderHi
+		labelFg = p.Accent
 	}
 
-	// Header strip above the box — keeps the now-badge readable.
 	hdr := lipgloss.NewStyle().
-		Foreground(p.Dim).
+		Foreground(labelFg).
 		Bold(true).
-		Render(strings.ToLower(label))
+		Render(label)
 	if nowBadge {
 		badge := lipgloss.NewStyle().
 			Foreground(p.Ok).
-			Background(p.OkSoftBg).
-			Padding(0, 1).
 			Bold(true).
-			Render("now")
+			Render("· now")
 		hdr = lipgloss.JoinHorizontal(lipgloss.Top, hdr, "  ", badge)
 	}
 
-	// Inner box: EditorBg surface, value in Accent. Padded.
 	valueRow := lipgloss.NewStyle().
-		Foreground(p.Accent).
-		Background(p.EditorBg).
+		Foreground(p.Body).
 		Bold(true).
 		Render(val)
 	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
 		BorderForeground(borderColor).
-		Background(p.EditorBg).
-		Padding(0, 2).
-		Width(36).
+		Padding(0, 1).
+		Width(34).
 		Render(valueRow)
 	return lipgloss.JoinVertical(lipgloss.Left, hdr, box)
 }

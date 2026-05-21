@@ -99,18 +99,23 @@ func (m StatusBar) View() string {
 		label("LIVE"),
 		" ",
 		value("●", p.Ok, true),
-		sep,
-		label("?"),
-		" ",
-		value("help", p.Dim, false),
 	)
 	right := lipgloss.JoinHorizontal(lipgloss.Bottom, rightParts...)
 
-	innerW := m.width - 4 // border(2) + h-padding(2)
+	// Total bordered width must equal m.width to match the help bar
+	// above it. Border = 2 cells, h-padding inside = 2 cells. So
+	// inner Width = m.width - 2, content area inside padding =
+	// m.width - 4. Use the content area for gap math so right-aligned
+	// segments don't push past the padding into the border glyph.
+	innerW := m.width - 2
 	if innerW < 1 {
 		innerW = 1
 	}
-	gap := innerW - lipgloss.Width(left) - lipgloss.Width(right)
+	contentW := innerW - 2
+	if contentW < 1 {
+		contentW = 1
+	}
+	gap := contentW - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
 	}
