@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"pb/pkg/config"
+	"pb/pkg/ui"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -41,12 +42,12 @@ const (
 )
 
 var (
-	primaryColor  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
-	normalColor   = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
-	dimColor      = lipgloss.AdaptiveColor{Light: "244", Dark: "240"}
-	successColor  = lipgloss.AdaptiveColor{Light: "28", Dark: "82"}
-	errorColor    = lipgloss.AdaptiveColor{Light: "196", Dark: "196"}
-	subtitleColor = lipgloss.AdaptiveColor{Light: "238", Dark: "248"}
+	primaryColor  = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent })
+	normalColor   = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Body })
+	dimColor      = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Faint })
+	successColor  = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Ok })
+	errorColor    = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Err })
+	subtitleColor = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Mute })
 
 	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(primaryColor)
 	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(primaryColor)

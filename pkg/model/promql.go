@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"os"
 	"pb/pkg/config"
+	"pb/pkg/ui"
 	"sort"
 	"strings"
 	"time"
@@ -256,7 +257,7 @@ func NewPromqlModel(profile config.Profile, expr string, startTime, endTime time
 		WithPageSize(pageSize).
 		WithBaseStyle(tableStyle).
 		WithMissingDataIndicatorStyled(table.StyledCell{
-			Style: lipgloss.NewStyle().Foreground(StandardSecondary),
+			Style: ui.Type().Mute,
 			Data:  "╌",
 		}).WithTargetWidth(w)
 
@@ -292,13 +293,13 @@ func NewPromqlModel(profile config.Profile, expr string, startTime, endTime time
 	bf.Blur()
 
 	hlp := help.New()
-	hlp.Styles.FullDesc = lipgloss.NewStyle().Foreground(FocusSecondary)
+	hlp.Styles.FullDesc = ui.Type().Dim
 
 	stat := NewStatusBar(profile.URL, w)
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Line
-	sp.Style = lipgloss.NewStyle().Foreground(FocusPrimary)
+	sp.Style = ui.Type().Accent
 
 	hasQuery := strings.TrimSpace(expr) != ""
 	return PromqlModel{
@@ -752,6 +753,11 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// ── time overlay ─────────────────────────────────────────────────────
 		if m.overlay == overlayInputs {
+			if msg.Type == tea.KeyEsc {
+				m.overlay = overlayNone
+				m.focusSelected()
+				return m, nil
+			}
 			if msg.Type == tea.KeyEnter {
 				m.overlay = overlayNone
 				m.focusSelected()
@@ -804,8 +810,9 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.openBuilderOverlay()
 		}
 
-		// Ctrl+R → run query
-		if msg.Type == tea.KeyCtrlR {
+		// Ctrl+R or Alt+Enter (≈ Cmd+Enter with meta config) → run query
+		isAltEnter := msg.Alt && msg.Type == tea.KeyEnter
+		if msg.Type == tea.KeyCtrlR || isAltEnter {
 			m.overlay = overlayNone
 			m.status.Error = ""
 			m.status.Info = ""
@@ -921,123 +928,82 @@ func (m PromqlModel) View() string {
 		return ""
 	}
 
-	// ── header panels ────────────────────────────────────────────────────────
-	dsName := m.dataset
-	var dsNameRendered string
-	if dsName == "" {
-		dsNameRendered = lipgloss.NewStyle().Foreground(StandardSecondary).Render("select dataset")
-	} else {
-		if len(dsName) > datasetPanelOuter-4 {
-			dsName = dsName[:datasetPanelOuter-7] + "..."
-		}
-		dsNameRendered = dsName
+	// ── Top chrome: KV context · keybinds · PB logo ──
+	chromeView := buildPromqlHeaderStrip(m)
+	chromeHeight := lipgloss.Height(chromeView)
+
+	// ── Inline editor (no border boxes). Dataset/Time/Step/Mode all
+	// live in the top HeaderStrip KV block; navigation still cycles
+	// across the same logical panes for editing.
+	// Time pane lives on the right (matches mock); editor on the left.
+	timeCardW := 30
+	if m.width < 80 {
+		timeCardW = 26
 	}
-	datasetPane := lipgloss.JoinVertical(lipgloss.Left,
-		baseBoldUnderlinedStyle.Render(" dataset "),
-		dsNameRendered,
-	)
-
-	mode := "range"
-	modeColor := lipgloss.AdaptiveColor{Light: "28", Dark: "82"} // green = range
-	if m.instant {
-		mode = "instant"
-		modeColor = lipgloss.AdaptiveColor{Light: "208", Dark: "214"} // orange = instant
+	editorW := m.width - timeCardW
+	if editorW < 30 {
+		editorW = 30
 	}
-	modeLabel := lipgloss.NewStyle().Foreground(modeColor).Bold(true).Render(mode)
+	m.query.SetWidth(editorW - 4)
 
-	var stepRow string
-	if m.instant {
-		dimmed := lipgloss.NewStyle().Foreground(StandardSecondary).Render("--")
-		stepRow = fmt.Sprintf("%s %s", baseBoldUnderlinedStyle.Render(" step "), dimmed)
-	} else if m.currentFocus() == "step" {
-		stepRow = fmt.Sprintf("%s %s", baseBoldUnderlinedStyle.Render(" step "), m.stepInput.View())
-	} else {
-		stepRow = fmt.Sprintf("%s %s", baseBoldUnderlinedStyle.Render(" step "), m.step)
-	}
-	stepModePane := lipgloss.JoinVertical(lipgloss.Left,
-		stepRow,
-		fmt.Sprintf("%s %s", baseBoldUnderlinedStyle.Render(" mode "), modeLabel),
-	)
+	toolbar := buildPromqlToolbar(m, editorW)
 
-	timePane := lipgloss.JoinVertical(lipgloss.Left,
-		fmt.Sprintf("%s %s ", baseBoldUnderlinedStyle.Render(" start "), m.timeRange.start.Value()),
-		fmt.Sprintf("%s %s ", baseBoldUnderlinedStyle.Render("   end "), m.timeRange.end.Value()),
-	)
+	editorTitle := buildPaneTitle("EDITOR · PromQL", m.currentFocus() == "query", editorW)
 
-	// pick border styles based on focused panel
-	dsOuter, queryOuter, timeOuter, stepOuter := &borderedStyle, &borderedStyle, &borderedStyle, &borderedStyle
-	tableOuter := lipgloss.NewStyle()
-	switch m.currentFocus() {
-	case "dataset":
-		dsOuter = &borderedFocusStyle
-	case "query":
-		queryOuter = &borderedFocusStyle
-	case "time":
-		timeOuter = &borderedFocusStyle
-	case "step":
-		stepOuter = &borderedFocusStyle
-	case "table":
-		tableOuter = tableOuter.Border(lipgloss.DoubleBorder(), false, false, false, true).
-			BorderForeground(FocusPrimary)
-	}
-
-	// render fixed panels first so we can measure their real widths
-	dsRendered := dsOuter.Render(datasetPane)
-	timeRendered := timeOuter.Render(timePane)
-	stepRendered := stepOuter.Render(stepModePane)
-	fixedW := lipgloss.Width(dsRendered) + lipgloss.Width(timeRendered) + lipgloss.Width(stepRendered)
-	queryW := m.width - fixedW
-	if queryW < 30 {
-		queryW = 30
-	}
-	innerW := queryW - 2 // subtract border
-	m.query.SetWidth(innerW)
-
-	// ── query panel: toggle row + mode-aware content ──────────────────────────
-	activeTabStyle := lipgloss.NewStyle().Foreground(FocusPrimary).Bold(true)
-	inactiveTabStyle := lipgloss.NewStyle().Foreground(StandardSecondary)
-	var codeLabel, builderLabel string
-	if m.queryMode == "builder" {
-		codeLabel = inactiveTabStyle.Render("Code")
-		builderLabel = activeTabStyle.Render("Builder")
-	} else {
-		codeLabel = activeTabStyle.Render("Code")
-		builderLabel = inactiveTabStyle.Render("Builder")
-	}
-	toggleRow := lipgloss.NewStyle().
-		Width(innerW).
-		Align(lipgloss.Right).
-		Render(codeLabel + inactiveTabStyle.Render(" | ") + builderLabel)
-
-	var queryPanelContent string
+	var editorBody string
 	if m.queryMode == "builder" {
 		expr := m.query.Value()
-		var exprDisplay string
+		body := expr
 		if expr == "" {
-			exprDisplay = lipgloss.NewStyle().
-				Foreground(StandardSecondary).Width(innerW).
-				Render("press Enter to open builder...")
+			body = lipgloss.NewStyle().
+				Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Faint })).
+				Italic(true).
+				Render("press Enter to open builder…")
 		} else {
-			exprDisplay = lipgloss.NewStyle().
-				Foreground(FocusPrimary).Bold(true).Width(innerW).
+			body = lipgloss.NewStyle().
+				Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent })).
+				Bold(true).
 				Render(expr)
 		}
-		queryPanelContent = lipgloss.JoinVertical(lipgloss.Left, toggleRow, exprDisplay)
+		editorBody = lipgloss.NewStyle().
+			Width(editorW).
+			Padding(0, 2).
+			Background(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.EditorBg })).
+			Render(body)
 	} else {
-		queryPanelContent = lipgloss.JoinVertical(lipgloss.Left, toggleRow, m.query.View())
+		editorBody = lipgloss.NewStyle().
+			Width(editorW).
+			Padding(0, 2).
+			Background(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.EditorBg })).
+			Render(m.query.View())
 	}
 
-	header := lipgloss.JoinHorizontal(lipgloss.Top,
-		dsRendered,
-		queryOuter.Render(queryPanelContent),
-		timeRendered,
-		stepRendered,
+	leftPane := lipgloss.JoinVertical(lipgloss.Left, editorTitle, toolbar, editorBody)
+	timeBody := buildTimeBody(
+		m.timeRange.start.Value(),
+		m.timeRange.end.Value(),
+		timeCardW-4,
 	)
+	rightPane := ui.Card("TIME RANGE", timeCardW,
+		lipgloss.Height(leftPane)-2,
+		m.currentFocus() == "time",
+		timeBody,
+	)
+	header := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
+	tableOuter := lipgloss.NewStyle()
+	if m.currentFocus() == "table" {
+		tableOuter = tableOuter.Border(lipgloss.ThickBorder(), false, false, false, true).
+			BorderForeground(FocusPrimary)
+	}
 	headerHeight := lipgloss.Height(header)
 
 	if m.loading {
 		m.status.Info = ""
 		m.status.Error = ""
+	}
+	m.status.SetMode("PromQL")
+	if len(m.dataRows) > 0 {
+		m.status.Info = fmt.Sprintf("series %d", len(m.dataRows))
 	}
 	statusView := m.status.View()
 	statusHeight := lipgloss.Height(statusView)
@@ -1110,11 +1076,20 @@ func (m PromqlModel) View() string {
 			},
 		}
 	}
-	helpView := m.help.FullHelpView(helpKeys)
+	// Modal overlays still need their footer hint row; main views push
+	// keybinds into the HeaderStrip and drop the body help line.
+	var helpView string
+	switch m.overlay {
+	case overlayInputs, overlayDataset, overlayBuilder:
+		helpView = m.help.FullHelpView(helpKeys)
+	default:
+		helpView = ""
+		_ = helpKeys
+	}
 	helpHeight := lipgloss.Height(helpView)
 
 	// ── result area ──────────────────────────────────────────────────────────
-	tableAvail := m.height - headerHeight - helpHeight - statusHeight
+	tableAvail := m.height - chromeHeight - headerHeight - helpHeight - statusHeight
 	pageSize := tableAvail - 6
 	if pageSize < 1 {
 		pageSize = 1
@@ -1136,30 +1111,34 @@ func (m PromqlModel) View() string {
 
 	var resultPane string
 	if !m.hasQueried {
+		// Quiet empty state — mirrors mock ViewEmpty in terminal/page.tsx.
 		logoStyle := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(FocusPrimary).
-			Border(lipgloss.DoubleBorder()).
-			BorderForeground(FocusSecondary).
-			Padding(0, 2)
+			Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Ghost }))
 		hintStyle := lipgloss.NewStyle().
-			Foreground(StandardSecondary).
+			Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Faint })).
 			MarginTop(1)
-		keyStyle := lipgloss.NewStyle().Foreground(FocusPrimary).Bold(true)
-		logo := logoStyle.Render("P A R S E A B L E")
+		keyStyle := ui.Type().Accent.Bold(true)
+		exampleBox := lipgloss.NewStyle().
+			MarginTop(2).
+			Padding(0, 2).
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.BorderSoft })).
+			Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Body }))
+		logo := logoStyle.Render("p a r s e a b l e")
 		hint := hintStyle.Render("write a PromQL expression above and press " + keyStyle.Render("ctrl+r") + " to run")
-		content := lipgloss.JoinVertical(lipgloss.Center, logo, hint)
+		example := exampleBox.Render(`rate(http_requests_total{service="checkout"}[5m])`)
+		content := lipgloss.JoinVertical(lipgloss.Center, logo, hint, example)
 		placed := lipgloss.Place(availW, availH, lipgloss.Center, lipgloss.Center, content)
 		resultPane = tableOuter.Render(placed)
 	} else if m.loading {
-		spinStyle := lipgloss.NewStyle().Foreground(FocusPrimary)
+		spinStyle := ui.Type().Accent
 		content := spinStyle.Render(m.spinner.View() + " fetching...")
 		placed := lipgloss.Place(availW, availH, lipgloss.Center, lipgloss.Center, content)
 		resultPane = tableOuter.Render(placed)
 	} else if m.fetchErrMsg != "" {
 		errStyle := lipgloss.NewStyle().
 			Padding(1, 2).
-			Foreground(lipgloss.AdaptiveColor{Light: "#9B2226", Dark: "#FF6B6B"}).
+			Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Err })).
 			Width(m.width)
 		rendered := errStyle.Render(m.fetchErrMsg)
 		lines := strings.Split(rendered, "\n")
@@ -1214,8 +1193,200 @@ func (m PromqlModel) View() string {
 		mainView = mainView + strings.Repeat("\n", padLines)
 	}
 
-	render := lipgloss.JoinVertical(lipgloss.Left, mainView, helpView, statusView)
+	_ = helpView
+	breadcrumbs := buildPromqlBreadcrumbs(m)
+	render := lipgloss.JoinVertical(lipgloss.Left,
+		chromeView,
+		mainView,
+		breadcrumbs,
+		statusView,
+	)
 	return lipgloss.NewStyle().Width(m.width).Render(render)
+}
+
+// buildPromqlToolbar renders the row above the editor: range/instant
+// pills + step chip + code/builder pills.
+func buildPromqlToolbar(m PromqlModel, width int) string {
+	p := ui.Active
+	dim := ui.Type().Dim
+	chipStyle := lipgloss.NewStyle().
+		Foreground(p.Body).
+		Background(p.PanelAlt).
+		Padding(0, 1)
+
+	left := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		ui.Pill("range", !m.instant),
+		" ",
+		ui.Pill("instant", m.instant),
+		"  ",
+		dim.Render("step "),
+		chipStyle.Render(m.step),
+	)
+
+	right := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		ui.Pill("code", m.queryMode != "builder"),
+		" ",
+		ui.Pill("builder", m.queryMode == "builder"),
+	)
+
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right) - 4
+	if gap < 1 {
+		gap = 1
+	}
+	row := lipgloss.JoinHorizontal(lipgloss.Top,
+		left,
+		strings.Repeat(" ", gap),
+		right,
+	)
+	return lipgloss.NewStyle().
+		Width(width).
+		Padding(0, 2).
+		Background(p.Panel).
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderBottom(true).
+		BorderForeground(p.Border).
+		Render(row)
+}
+
+// buildPromqlBreadcrumbs surfaces current overlay/focus as the bottom tab row.
+func buildPromqlBreadcrumbs(m PromqlModel) string {
+	active := "query"
+	switch m.overlay {
+	case overlayDataset:
+		active = "picker"
+	case overlayInputs:
+		active = "time"
+	case overlayBuilder:
+		active = "builder"
+	default:
+		switch m.currentFocus() {
+		case "table":
+			active = "results"
+		case "time":
+			active = "time"
+		case "dataset":
+			active = "picker"
+		case "step":
+			active = "step"
+		default:
+			active = "query"
+		}
+	}
+	items := []ui.Breadcrumb{
+		{ID: "query", Label: "query", Active: active == "query"},
+		{ID: "picker", Label: "picker", Active: active == "picker"},
+		{ID: "time", Label: "time", Active: active == "time"},
+		{ID: "results", Label: "results", Active: active == "results"},
+		{ID: "help", Label: "help", Active: active == "help"},
+	}
+	return ui.Breadcrumbs(m.width, items)
+}
+
+// buildPromqlHeaderStrip renders the top chrome bar for the PromQL view.
+func buildPromqlHeaderStrip(m PromqlModel) string {
+	dataset := m.dataset
+	if dataset == "" {
+		dataset = "—"
+	}
+	rangeMode := "range"
+	if m.instant {
+		rangeMode = "instant"
+	}
+	rowsVal := "—"
+	if len(m.dataRows) > 0 {
+		rowsVal = fmt.Sprintf("%d series", len(m.dataRows))
+	}
+	latencyVal := "—"
+	if m.loading {
+		latencyVal = "…"
+	}
+	user := m.profile.Username
+	if user == "" {
+		user = "—"
+	}
+
+	ctx := []ui.KV{
+		{Key: "Cluster", Value: m.profile.URL, Variant: ui.KVMute},
+		{Key: "User", Value: user},
+		{Key: "Dataset", Value: dataset, Variant: ui.KVAccent},
+		{Key: "Mode", Value: rangeMode, Variant: ui.KVMute},
+		{Key: "Step", Value: m.step, Variant: ui.KVMute},
+		{Key: "Series", Value: rowsVal, Variant: ui.KVMute},
+		{Key: "Latency", Value: latencyVal, Variant: ui.KVMute},
+	}
+	keys := promqlKeysForFocus(m)
+	return ui.HeaderStrip(m.width, ctx, keys)
+}
+
+// promqlKeysForFocus returns context-aware keybind hints for the
+// HeaderStrip. Each focused pane / overlay surfaces its real keys.
+func promqlKeysForFocus(m PromqlModel) []ui.KeyHint {
+	common := []ui.KeyHint{
+		{Key: "<ctrl-r>", Label: "Run"},
+		{Key: "<tab>", Label: "Next pane"},
+		{Key: "<ctrl-c>", Label: "Quit"},
+	}
+	switch m.overlay {
+	case overlayDataset:
+		return []ui.KeyHint{
+			{Key: "<↑/↓>", Label: "Navigate"},
+			{Key: "<enter>", Label: "Select"},
+			{Key: "<esc>", Label: "Cancel"},
+			{Key: "type", Label: "Filter"},
+		}
+	case overlayBuilder:
+		return []ui.KeyHint{
+			{Key: "<↑/↓>", Label: "Navigate"},
+			{Key: "<enter>", Label: "Next col"},
+			{Key: "<tab>", Label: "Cycle col"},
+			{Key: "<ctrl-r>", Label: "Run"},
+			{Key: "<esc>", Label: "Cancel"},
+		}
+	case overlayInputs:
+		return []ui.KeyHint{
+			{Key: "<↑/↓>", Label: "Preset"},
+			{Key: "<tab>", Label: "Field"},
+			{Key: "<ctrl-{>", Label: "End → now"},
+			{Key: "<enter>", Label: "Apply"},
+			{Key: "<esc>", Label: "Cancel"},
+		}
+	}
+	switch m.currentFocus() {
+	case "dataset":
+		return append([]ui.KeyHint{
+			{Key: "<enter>", Label: "Open picker"},
+			{Key: "<ctrl-d>", Label: "Datasets"},
+		}, common...)
+	case "query":
+		if m.queryMode == "builder" {
+			return append([]ui.KeyHint{
+				{Key: "<enter>", Label: "Open builder"},
+				{Key: "<ctrl-b>", Label: "Code mode"},
+			}, common...)
+		}
+		return append([]ui.KeyHint{
+			{Key: "<ctrl-b>", Label: "Builder mode"},
+			{Key: "<ctrl-d>", Label: "Datasets"},
+		}, common...)
+	case "time":
+		return append([]ui.KeyHint{
+			{Key: "<enter>", Label: "Open picker"},
+		}, common...)
+	case "step":
+		return append([]ui.KeyHint{
+			{Key: "type", Label: "Edit (15s, 5m)"},
+			{Key: "<space>", Label: "Range/instant"},
+		}, common...)
+	case "table":
+		return append([]ui.KeyHint{
+			{Key: "<↑/↓>", Label: "Row"},
+			{Key: "</>", Label: "Filter"},
+			{Key: "<g/G>", Label: "Top/End"},
+		}, common...)
+	}
+	return common
 }
 
 // renderSpotlight builds the dataset picker modal.
@@ -1261,23 +1432,32 @@ func (m PromqlModel) renderSpotlight() string {
 		if m.datasetSelectedIdx >= spotlightMaxItems {
 			start = m.datasetSelectedIdx - spotlightMaxItems + 1
 		}
+		// Selection treatment matches the mock's picker: 1-cell accent
+		// rail, subtle SelRow background, ▸ cursor in accent. No yellow
+		// fill, no inverted text.
+		selBg := ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.SelRow })
+		selFg := ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Text })
+		selCursor := ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent })
+		rail := lipgloss.NewStyle().
+			Background(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent })).
+			Render(" ")
+		blankRail := " "
 		for i := start; i < start+limit && i < len(m.filteredDatasets); i++ {
 			ds := m.filteredDatasets[i]
 			if i == m.datasetSelectedIdx {
-				row := lipgloss.NewStyle().
-					Background(FocusPrimary).
-					Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#000000"}).
-					Width(innerW).
+				rowBody := lipgloss.NewStyle().
+					Background(selBg).
+					Foreground(selFg).
+					Width(innerW - 1).
 					Padding(0, 1).
-					Bold(true).
-					Render("▸ " + ds)
-				listLines = append(listLines, row)
+					Render(lipgloss.NewStyle().Foreground(selCursor).Render("▸ ") + ds)
+				listLines = append(listLines, rail+rowBody)
 			} else {
-				row := lipgloss.NewStyle().
-					Width(innerW).
+				rowBody := lipgloss.NewStyle().
+					Width(innerW - 1).
 					Padding(0, 1).
 					Render("  " + ds)
-				listLines = append(listLines, row)
+				listLines = append(listLines, blankRail+rowBody)
 			}
 		}
 		if len(m.filteredDatasets) > spotlightMaxItems {
@@ -1633,11 +1813,13 @@ func renderBuilderCol(title string, items []string, selectedIdx int, loading, fo
 				item = item[:maxLen-3] + "..."
 			}
 			if i == selectedIdx {
+				selBg := ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.SelRow })
+				selFg := ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Text })
+				cur := ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent })
 				rows = append(rows, lipgloss.NewStyle().
-					Background(FocusPrimary).
-					Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#000000"}).
-					Width(innerW).Padding(0, 1).Bold(true).
-					Render("▸ "+item))
+					Background(selBg).Foreground(selFg).
+					Width(innerW).Padding(0, 1).
+					Render(lipgloss.NewStyle().Foreground(cur).Render("▸ ")+item))
 			} else {
 				rows = append(rows, lipgloss.NewStyle().
 					Width(innerW).Padding(0, 1).
@@ -1681,8 +1863,8 @@ func (m PromqlModel) renderBuilder() string {
 	colsW := lipgloss.Width(columns)
 
 	expr := buildPromqlExpr(m.builderCurrentMetric(), m.builderCurrentLabel(), m.builderCurrentValue())
-	dimStyle := lipgloss.NewStyle().Foreground(StandardSecondary)
-	exprStyle := lipgloss.NewStyle().Foreground(FocusPrimary).Bold(true)
+	dimStyle := ui.Type().Mute
+	exprStyle := ui.Type().Accent.Bold(true)
 	exprLine := dimStyle.Render("Built: ") + exprStyle.Render(expr)
 
 	searchStyle := lipgloss.NewStyle().

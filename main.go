@@ -296,6 +296,7 @@ func main() {
 	cli.AddCommand(pb.LoginCmd)
 	cli.AddCommand(pb.LogoutCmd)
 	cli.AddCommand(pb.StatusCmd)
+	cli.AddCommand(pb.TuiCmd)
 
 	// Set as command
 	pb.VersionCmd.Run = func(_ *cobra.Command, _ []string) {

@@ -17,41 +17,28 @@
 package model
 
 import (
+	"pb/pkg/ui"
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-var (
-	commonStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#000000"})
-
-	titleStyle = commonStyle.
-			Background(lipgloss.AdaptiveColor{Light: "#134074", Dark: "#FFADAD"}).
-			Padding(0, 1)
-
-	hostStyle = commonStyle.
-			Background(lipgloss.AdaptiveColor{Light: "#13315C", Dark: "#FFD6A5"}).
-			Padding(0, 1)
-
-	infoStyle = commonStyle.
-			Background(lipgloss.AdaptiveColor{Light: "#212529", Dark: "#CAFFBF"}).
-			AlignHorizontal(lipgloss.Right)
-
-	errorStyle = commonStyle.
-			Background(lipgloss.AdaptiveColor{Light: "#5A2A27", Dark: "#D4A373"}).
-			AlignHorizontal(lipgloss.Right)
-)
+// Segmented status bar matching the design mock — k9s/helix idiom.
+// Left segments (mode, cluster) are sticky. Right segments (LIVE, latency,
+// help hint) collapse first when width is tight.
 
 type StatusBar struct {
-	title string
-	host  string
-	Info  string
-	Error string
+	title string // mode label (SQL / PromQL)
+	host  string // cluster host
+	Info  string // optional info string (rows, etc.)
+	Error string // error overrides Info on the right side
 	width int
 }
 
 func NewStatusBar(host string, width int) StatusBar {
 	return StatusBar{
-		title: "Parseable",
+		title: "parseable",
 		host:  host,
 		Info:  "",
 		Error: "",
@@ -59,32 +46,91 @@ func NewStatusBar(host string, width int) StatusBar {
 	}
 }
 
-func (m StatusBar) Init() tea.Cmd {
-	return nil
-}
+// SetMode lets callers update the MODE segment (e.g. "SQL" / "PromQL").
+func (m *StatusBar) SetMode(mode string) { m.title = mode }
 
-func (m StatusBar) Update(_ tea.Msg) (tea.Model, tea.Cmd) {
-	return m, nil
-}
+func (m StatusBar) Init() tea.Cmd                        { return nil }
+func (m StatusBar) Update(_ tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
 
 func (m StatusBar) View() string {
-	var right string
-	var rightStyle lipgloss.Style
+	p := ui.Active
 
-	if m.Error != "" {
-		right = m.Error
-		rightStyle = errorStyle
-	} else {
-		right = m.Info
-		rightStyle = infoStyle
+	sep := lipgloss.NewStyle().
+		Foreground(p.BorderSoft).
+		Background(p.Panel).
+		Render(" │ ")
+
+	label := func(s string) string {
+		return lipgloss.NewStyle().
+			Foreground(p.Faint).
+			Background(p.Panel).
+			Render(s)
+	}
+	value := func(s string, fg lipgloss.Color, bold bool) string {
+		st := lipgloss.NewStyle().Foreground(fg).Background(p.Panel)
+		if bold {
+			st = st.Bold(true)
+		}
+		return st.Render(s)
 	}
 
-	left := lipgloss.JoinHorizontal(lipgloss.Bottom, titleStyle.Render(m.title), hostStyle.Render(m.host))
+	// ── Left: MODE · CLUSTER ──
+	leftParts := []string{
+		" ",
+		label("MODE"),
+		" ",
+		value(strings.ToUpper(m.title), p.Accent, true),
+		sep,
+		label("CLUSTER"),
+		" ",
+		value(m.host, p.Dim, false),
+	}
+	left := lipgloss.JoinHorizontal(lipgloss.Bottom, leftParts...)
 
-	leftWidth := lipgloss.Width(left)
-	rightWidth := m.width - leftWidth
+	// ── Right: ROWS · LIVE · t · ? ──
+	var rightParts []string
+	if m.Error != "" {
+		rightParts = append(rightParts,
+			label("ERR"),
+			" ",
+			value(m.Error, p.Err, true),
+			sep,
+		)
+	} else if m.Info != "" {
+		rightParts = append(rightParts,
+			label("·"),
+			" ",
+			value(m.Info, p.Body, false),
+			sep,
+		)
+	}
+	rightParts = append(rightParts,
+		label("LIVE"),
+		" ",
+		value("●", p.Ok, true),
+		sep,
+		label("?"),
+		" ",
+		value("help", p.Dim, false),
+		" ",
+	)
+	right := lipgloss.JoinHorizontal(lipgloss.Bottom, rightParts...)
 
-	right = rightStyle.Width(rightWidth).Render(right)
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 1 {
+		gap = 1
+	}
+	pad := lipgloss.NewStyle().
+		Width(gap).
+		Background(p.Panel).
+		Render("")
 
-	return lipgloss.JoinHorizontal(lipgloss.Bottom, left, right)
+	row := lipgloss.JoinHorizontal(lipgloss.Bottom, left, pad, right)
+
+	return lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderTop(true).
+		BorderForeground(p.BorderSoft).
+		Width(m.width).
+		Render(row)
 }

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"pb/pkg/config"
+	"pb/pkg/ui"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -89,10 +90,20 @@ type Item struct {
 }
 
 var (
-	titleStyles       = lipgloss.NewStyle().PaddingLeft(0).Bold(true).Foreground(lipgloss.Color("9"))
-	queryStyle        = lipgloss.NewStyle().PaddingLeft(0).Foreground(lipgloss.Color("7"))
-	itemStyle         = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("8"))
-	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(1).Foreground(lipgloss.AdaptiveColor{Light: "16", Dark: "226"})
+	titleStyles = lipgloss.NewStyle().PaddingLeft(0).Bold(true).Foreground(
+		ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent }))
+	queryStyle = lipgloss.NewStyle().PaddingLeft(0).Foreground(
+		ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Body }))
+	itemStyle = lipgloss.NewStyle().PaddingLeft(4).Foreground(
+		ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Faint }))
+	// Selected row: brand accent text + 1px left rail (handled by the
+	// PaddingLeft + BorderLeft pair below). Yellow gone.
+	selectedItemStyle = lipgloss.NewStyle().
+				PaddingLeft(1).
+				BorderStyle(lipgloss.NormalBorder()).
+				BorderLeft(true).
+				BorderForeground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent })).
+				Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Text }))
 )
 
 type itemDelegate struct{}

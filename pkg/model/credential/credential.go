@@ -18,6 +18,7 @@ package credential
 
 import (
 	"pb/pkg/model/button"
+	"pb/pkg/ui"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -25,13 +26,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Default Style for this widget
+// Default Style for this widget — theme-derived; yellow no more.
 var (
-	FocusPrimary   = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
-	FocusSecondary = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
+	FocusPrimary   = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent })
+	FocusSecondary = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent2 })
 
-	StandardPrimary   = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
-	StandardSecondary = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
+	StandardPrimary   = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Body })
+	StandardSecondary = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Mute })
 
 	focusedStyle = lipgloss.NewStyle().Foreground(FocusPrimary)
 	blurredStyle = lipgloss.NewStyle().Foreground(StandardSecondary)

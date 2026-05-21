@@ -19,6 +19,8 @@ package model
 import (
 	"fmt"
 	"pb/pkg/model/datetime"
+	"pb/pkg/ui"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -210,37 +212,190 @@ func (m TimeInputModel) Update(msg tea.Msg) (TimeInputModel, tea.Cmd) {
 	return m, cmd
 }
 
+// View renders the time-range modal — matches mock ViewTime layout:
+//
+//	┌─ TIME RANGE ──────────┐  START
+//	│ ▸ 1 Hour              │  ┌──────────────────────┐
+//	│   10 Minutes          │  │ 2026-05-18 11:05:10 │
+//	│   5 Hours             │  └──────────────────────┘
+//	│   …                   │  END                [now]
+//	└───────────────────────┘  ┌──────────────────────┐
+//	                            │ 2026-05-18 12:05:10 │
+//	                            └──────────────────────┘
+//	                            span: 1h · auto step: 1m · ~60 samples
+//	                            tab/shift-tab fields · ctrl+{ snap end → now
 func (m TimeInputModel) View() string {
-	listStyle := &borderedStyle
-	startStyle := &borderedStyle
-	endStyle := &borderedStyle
+	p := ui.Active
 
-	switch m.currentFocus() {
-	case "list":
-		listStyle = &borderedFocusStyle
-	case "start":
-		startStyle = &borderedFocusStyle
-	case "end":
-		endStyle = &borderedFocusStyle
+	// ── Preset card (left) ──
+	// Plain dim title, letter-spaced via single spaces between chars.
+	// No leading/trailing dashes; the card border carries the visual.
+	titleBar := lipgloss.NewStyle().
+		Foreground(p.Faint).
+		Background(p.Panel).
+		Padding(0, 2).
+		Width(28).
+		Render("T I M E   R A N G E")
+
+	presetBody := m.list.View()
+	leftBorderColor := p.Border
+	if m.currentFocus() == "list" {
+		leftBorderColor = p.BorderHi
 	}
+	leftCard := lipgloss.JoinVertical(
+		lipgloss.Left,
+		titleBar,
+		lipgloss.NewStyle().
+			Padding(1, 1).
+			Background(p.Panel).
+			Width(28).
+			Render(presetBody),
+	)
+	leftCard = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(leftBorderColor).
+		Render(leftCard)
 
-	list := lipgloss.NewStyle().PaddingLeft(1).Render(m.list.View())
-	left := listStyle.Render(lipgloss.PlaceHorizontal(27, lipgloss.Left, list))
-	center := baseStyle.Render("│\n│\n│\n│")
-	center = lipgloss.PlaceHorizontal(5, lipgloss.Center, center)
+	// ── Field card (right) ──
+	startFocus := m.currentFocus() == "start"
+	endFocus := m.currentFocus() == "end"
 
-	var right string
+	startField := renderTimeField("START", m.start.View(), startFocus, false)
+	endNow := m.end.Time().Sub(time.Now()).Abs() < 2*time.Second
+	endField := renderTimeField("END", m.end.View(), endFocus, endNow)
+
+	// Summary chip — PanelAlt surface, Border outline, Faint labels +
+	// Accent values for the dynamic numbers.
+	dur := m.end.Time().Sub(m.start.Time())
+	span := humanizeDur(dur)
+	autoStep := autoStepFor(dur)
+	samples := samplesFor(dur, autoStep)
+	labFG := lipgloss.NewStyle().Foreground(p.Faint).Background(p.PanelAlt)
+	valFG := lipgloss.NewStyle().Foreground(p.Accent).Background(p.PanelAlt).Bold(true)
+	summary := lipgloss.NewStyle().
+		Padding(0, 2).
+		Width(36).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(p.Border).
+		Background(p.PanelAlt).
+		Render(
+			labFG.Render("span ") +
+				valFG.Render(span) +
+				labFG.Render("   step ") +
+				valFG.Render(autoStep) +
+				labFG.Render(fmt.Sprintf("   ~%d samples", samples)),
+		)
+
+	// Hint — Faint, lower than body, reads as secondary.
+	footer := lipgloss.NewStyle().
+		Foreground(p.Faint).
+		Padding(1, 0, 0, 0).
+		Render("tab fields  ·  digits edit  ·  ctrl+{ end → now")
+
+	var rightStack string
 	if m.instant {
-		// instant mode: only show end time, no start
-		label := lipgloss.NewStyle().Inherit(baseStyle).Bold(true).
-			Foreground(FocusSecondary).Render(" evaluation time ")
-		right = fmt.Sprintf("%s\n%s", label, endStyle.Render(m.end.View()))
+		rightStack = lipgloss.JoinVertical(lipgloss.Left,
+			endField,
+			summary,
+			footer,
+		)
 	} else {
-		right = fmt.Sprintf("%s\n\n%s",
-			startStyle.Render(m.start.View()),
-			endStyle.Render(m.end.View()),
+		rightStack = lipgloss.JoinVertical(lipgloss.Left,
+			startField,
+			endField,
+			summary,
+			footer,
 		)
 	}
 
-	return lipgloss.JoinHorizontal(lipgloss.Center, left, center, right)
+	right := lipgloss.NewStyle().Padding(0, 2).Render(rightStack)
+
+	body := lipgloss.JoinHorizontal(lipgloss.Top, leftCard, right)
+	return body
+}
+
+// renderTimeField renders one START/END field card. Label inside the
+// box (Dim), value rendered in Accent. Now-badge floats top-right when
+// end ≈ now.
+func renderTimeField(label, val string, focused, nowBadge bool) string {
+	p := ui.Active
+	borderColor := p.Border
+	if focused {
+		borderColor = p.BorderHi
+	}
+
+	// Header strip above the box — keeps the now-badge readable.
+	hdr := lipgloss.NewStyle().
+		Foreground(p.Dim).
+		Bold(true).
+		Render(strings.ToLower(label))
+	if nowBadge {
+		badge := lipgloss.NewStyle().
+			Foreground(p.Ok).
+			Background(p.OkSoftBg).
+			Padding(0, 1).
+			Bold(true).
+			Render("now")
+		hdr = lipgloss.JoinHorizontal(lipgloss.Top, hdr, "  ", badge)
+	}
+
+	// Inner box: EditorBg surface, value in Accent. Padded.
+	valueRow := lipgloss.NewStyle().
+		Foreground(p.Accent).
+		Background(p.EditorBg).
+		Bold(true).
+		Render(val)
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Background(p.EditorBg).
+		Padding(0, 2).
+		Width(36).
+		Render(valueRow)
+	return lipgloss.JoinVertical(lipgloss.Left, hdr, box)
+}
+
+func humanizeDur(d time.Duration) string {
+	if d < 0 {
+		d = -d
+	}
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
+}
+
+func autoStepFor(d time.Duration) string {
+	if d < 0 {
+		d = -d
+	}
+	switch {
+	case d <= 15*time.Minute:
+		return "10s"
+	case d <= time.Hour:
+		return "1m"
+	case d <= 6*time.Hour:
+		return "30s"
+	case d <= 24*time.Hour:
+		return "5m"
+	default:
+		return "30m"
+	}
+}
+
+func samplesFor(d time.Duration, step string) int {
+	if d < 0 {
+		d = -d
+	}
+	dStep, err := time.ParseDuration(step)
+	if err != nil || dStep == 0 {
+		return 0
+	}
+	return int(d / dStep)
 }

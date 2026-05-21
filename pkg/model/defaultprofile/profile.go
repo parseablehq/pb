@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"pb/pkg/config"
+	"pb/pkg/ui"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,14 +27,14 @@ import (
 )
 
 var (
-	// FocusPrimary is the primary focus color
-	FocusPrimary = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
-	// FocusSecondry is the secondry focus color
-	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
-	// StandardPrimary is the primary standard color
-	StandardPrimary = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
-	// StandardSecondary is the secondary standard color
-	StandardSecondary = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
+	// FocusPrimary is the primary focus color (brand indigo).
+	FocusPrimary = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent })
+	// FocusSecondry is the secondary focus color.
+	FocusSecondry = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent2 })
+	// StandardPrimary is the primary standard color.
+	StandardPrimary = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Body })
+	// StandardSecondary is the secondary standard color.
+	StandardSecondary = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Mute })
 
 	focusTitleStyle   = lipgloss.NewStyle().Foreground(FocusPrimary)
 	focusDescStyle    = lipgloss.NewStyle().Foreground(FocusSecondry)
