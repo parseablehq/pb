@@ -966,12 +966,12 @@ func (m PromqlModel) View() string {
 	bottomView := buildPromqlBottomBar(m, m.width)
 	bottomHeight := lipgloss.Height(bottomView)
 
-	// ── Top row: editor (wide) + DATE sidebar (narrow). Sidebar holds
-	// from/to + step/mode + dataset — 10 content rows. topH must be
-	// large enough that the sidebar body fits without overflow (else
-	// the top border + label scroll off). Editor + sidebar share the
-	// same pane height for visual symmetry.
-	topH := 13
+	// Top row: editor (wide) + sidebar (narrow). Sidebar is split
+	// into TWO stacked bordered boxes — controls (DATASET / STEP /
+	// MODE) on top, DATE (FROM / TO) below. Total sidebar height
+	// must match editor pane height for symmetry; topH=14 is the
+	// minimum that fits both boxes plus a 1-row gap.
+	topH := 14
 	sidebarW := 30
 	if m.width >= 140 {
 		sidebarW = 34
@@ -1029,14 +1029,24 @@ func (m PromqlModel) View() string {
 	if dataset == "" {
 		dataset = "select-dataset"
 	}
-	sidebarPane := renderPromqlSidebarPane(
-		m.timeRange.start.Value(), m.timeRange.end.Value(),
-		m.step, rangeMode, dataset,
-		sidebarW, topH,
-		sidebarFocused, timeHi, stepHi, dsHi, m.instant,
+	_ = sidebarFocused
+	// Two stacked sidebar boxes. Borders touch — same zero-gap join
+	// used between the top section and the results pane.
+	// Controls (8 rows) + Date (6 rows) = 14 = topH.
+	controlsBox := renderPromqlControlsBox(
+		dataset, m.step, rangeMode,
+		sidebarW, 8,
+		dsHi, stepHi,
 	)
+	dateBox := renderPromqlDateBox(
+		m.timeRange.start.Value(), m.timeRange.end.Value(),
+		sidebarW, 6,
+		timeHi, m.instant,
+	)
+	sidebarPane := lipgloss.JoinVertical(lipgloss.Left, controlsBox, dateBox)
+
 	gap := lipgloss.NewStyle().Width(1).Height(topH).Render("")
-	topSection := lipgloss.JoinHorizontal(lipgloss.Top, sidebarPane, gap, editorPane)
+	topSection := lipgloss.JoinHorizontal(lipgloss.Top, editorPane, gap, sidebarPane)
 
 	// ── Results pane ─────────────────────────────────────────────────
 	availH := m.height - topH - bottomHeight
@@ -1183,80 +1193,103 @@ func renderPromqlEditorPane(body string, width, height int, focused, builder boo
 		Render(stack)
 }
 
-// renderPromqlSidebarPane — control sidebar holding from/to, step,
-// mode, and dataset. Pane border lights when any sub-section has focus.
-// Each sub-section's label + value turn Accent when that specific focus
-// is active.
-func renderPromqlSidebarPane(start, end, step, mode, dataset string, width, height int, focused, timeHi, stepHi, datasetHi, instant bool) string {
+// sidebarStyles returns the shared label/value/rail styles used by
+// the controls and date sidebar boxes.
+func sidebarStyles() (dim, val, hi lipgloss.Style, rail string) {
 	p := ui.Active
-	borderColor := p.Border
-	if focused {
-		borderColor = p.BorderHi
-	}
+	dim = lipgloss.NewStyle().Foreground(p.Faint)
+	val = lipgloss.NewStyle().Foreground(p.Body)
+	hi = lipgloss.NewStyle().Foreground(p.Active).Bold(true)
+	rail = lipgloss.NewStyle().Background(p.Active).Render(" ")
+	return
+}
+
+// renderPromqlControlsBox draws the top sidebar card: DATASET +
+// STEP + MODE. Active sub-section (datasetHi / stepHi) gets the
+// Active rail + bold label on every row of that group.
+func renderPromqlControlsBox(dataset, step, mode string, width, height int, datasetHi, stepHi bool) string {
+	p := ui.Active
 	innerW := width - 2
 	if innerW < 4 {
 		innerW = 4
 	}
 	innerH := height - 2
-	if innerH < 3 {
-		innerH = 3
+	if innerH < 1 {
+		innerH = 1
 	}
-
-	dim := lipgloss.NewStyle().Foreground(p.Faint)
-	val := lipgloss.NewStyle().Foreground(p.Body)
-	// Active sub-section: bright Active (sky blue) bg rail on every
-	// line + Active bold label. Reserved color for "cursor here,
-	// will edit" — pops hard against the purple Accent used for
-	// borders, titles, code|builder mode, list selection, etc.
-	hiActive := lipgloss.NewStyle().Foreground(p.Active).Bold(true)
-	railActive := lipgloss.NewStyle().Background(p.Active).Render(" ")
-	prefix := func(hi bool) string {
-		if hi {
-			return railActive + " "
+	dim, val, hi, rail := sidebarStyles()
+	prefix := func(active bool) string {
+		if active {
+			return rail + " "
 		}
 		return "  "
 	}
-
-	tLabel := dim
-	if timeHi {
-		tLabel = hiActive
+	dLabel := dim
+	if datasetHi {
+		dLabel = hi
 	}
 	sLabel := dim
 	if stepHi {
-		sLabel = hiActive
+		sLabel = hi
 	}
-	dLabel := dim
-	if datasetHi {
-		dLabel = hiActive
-	}
-
 	lines := []string{
 		prefix(datasetHi) + dLabel.Render("DATASET"),
 		prefix(datasetHi) + val.Render(dataset),
 		"",
+		prefix(stepHi) + sLabel.Render("STEP  ") + val.Render(step),
+		prefix(stepHi) + sLabel.Render("MODE  ") + val.Render(mode),
 	}
+	body := lipgloss.NewStyle().
+		Width(innerW).
+		Height(innerH).
+		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(p.Border).
+		Render(body)
+}
+
+// renderPromqlDateBox draws the bottom sidebar card: FROM + TO.
+// `instant` hides FROM since instant queries evaluate at one point.
+// timeHi lights the Active rail + bold label.
+func renderPromqlDateBox(start, end string, width, height int, timeHi, instant bool) string {
+	p := ui.Active
+	innerW := width - 2
+	if innerW < 4 {
+		innerW = 4
+	}
+	innerH := height - 2
+	if innerH < 1 {
+		innerH = 1
+	}
+	dim, val, hi, rail := sidebarStyles()
+	prefix := "  "
+	if timeHi {
+		prefix = rail + " "
+	}
+	label := dim
+	if timeHi {
+		label = hi
+	}
+	lines := []string{}
 	if !instant {
 		lines = append(lines,
-			prefix(timeHi)+tLabel.Render("FROM"),
-			prefix(timeHi)+val.Render(start),
+			prefix+label.Render("FROM"),
+			prefix+val.Render(start),
 		)
 	}
 	lines = append(lines,
-		prefix(timeHi)+tLabel.Render("TO"),
-		prefix(timeHi)+val.Render(end),
-		"",
-		prefix(stepHi)+sLabel.Render("STEP ")+val.Render(step),
-		prefix(stepHi)+sLabel.Render("MODE ")+val.Render(mode),
+		prefix+label.Render("TO"),
+		prefix+val.Render(end),
 	)
-	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
-	bodyPane := lipgloss.NewStyle().
+	body := lipgloss.NewStyle().
 		Width(innerW).
 		Height(innerH).
-		Render(content)
+		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
 	return lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(borderColor).
-		Render(bodyPane)
+		BorderForeground(p.Border).
+		Render(body)
 }
 
 // buildPromqlBottomBar — single combined help+status row for PromQL.

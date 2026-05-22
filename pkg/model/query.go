@@ -474,15 +474,21 @@ func (m QueryModel) View() string {
 	if dataset == "—" || dataset == "" {
 		dataset = "—"
 	}
-	timePane := renderTimePane(
+	// Two stacked sidebar boxes — DATASET (read-only) on top, DATE
+	// (FROM/TO) below. Borders touch (same zero-gap join used
+	// between the top section and the results pane).
+	// Controls(4) + Date(7) = 11 = topH.
+	datasetBox := renderSQLDatasetBox(dataset, sidebarW, 4)
+	dateBox := renderSQLDateBox(
 		m.timeRange.start.Value(),
 		m.timeRange.end.Value(),
-		dataset,
-		sidebarW, topH,
+		sidebarW, 7,
 		m.currentFocus() == "time",
 	)
+	sidebarPane := lipgloss.JoinVertical(lipgloss.Left, datasetBox, dateBox)
+
 	gap := lipgloss.NewStyle().Width(1).Height(topH).Render("")
-	topSection := lipgloss.JoinHorizontal(lipgloss.Top, timePane, gap, editorPane)
+	topSection := lipgloss.JoinHorizontal(lipgloss.Top, editorPane, gap, sidebarPane)
 
 	// ── 4. Results / table area ───────────────────────────────────────
 	availH := m.height - crumbsHeight - topH - bottomHeight
@@ -595,53 +601,71 @@ func renderEditorPane(body string, width, height int, focused bool) string {
 		Render(stack)
 }
 
-// renderTimePane draws the SQL sidebar — DATASET (read-only, parsed
-// from the SQL FROM clause) + FROM/TO timestamps. Focused state uses
-// the Active (sky-blue) rail + label convention shared with PromQL.
-func renderTimePane(start, end, dataset string, width, height int, focused bool) string {
+// renderSQLDatasetBox draws the top SQL sidebar card: read-only
+// DATASET label + value parsed from the SQL FROM clause. SQL doesn't
+// have a separate dataset focus, so this card never lights.
+func renderSQLDatasetBox(dataset string, width, height int) string {
 	p := ui.Active
-	borderColor := p.Border
-	if focused {
-		borderColor = p.BorderHi
-	}
 	innerW := width - 2
 	if innerW < 4 {
 		innerW = 4
 	}
 	innerH := height - 2
-	if innerH < 3 {
-		innerH = 3
+	if innerH < 1 {
+		innerH = 1
 	}
-
 	dim := lipgloss.NewStyle().Foreground(p.Faint)
 	val := lipgloss.NewStyle().Foreground(p.Body)
-	labelStyle := dim
-	if focused {
-		labelStyle = lipgloss.NewStyle().Foreground(p.Active).Bold(true)
+	lines := []string{
+		"  " + dim.Render("DATASET"),
+		"  " + val.Render(dataset),
 	}
-	rail := lipgloss.NewStyle().Background(p.Active).Render(" ")
-	prefix := "  "
-	if focused {
-		prefix = rail + " "
-	}
-	content := lipgloss.JoinVertical(lipgloss.Left,
-		"  "+dim.Render("DATASET"),
-		"  "+val.Render(dataset),
-		"",
-		prefix+labelStyle.Render("FROM"),
-		prefix+val.Render(start),
-		"",
-		prefix+labelStyle.Render("TO"),
-		prefix+val.Render(end),
-	)
-	bodyPane := lipgloss.NewStyle().
+	body := lipgloss.NewStyle().
 		Width(innerW).
 		Height(innerH).
-		Render(content)
+		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
 	return lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(borderColor).
-		Render(bodyPane)
+		BorderForeground(p.Border).
+		Render(body)
+}
+
+// renderSQLDateBox draws the bottom SQL sidebar card: FROM + TO.
+// Focused state uses the Active (sky-blue) rail + bold label
+// convention shared with PromQL.
+func renderSQLDateBox(start, end string, width, height int, focused bool) string {
+	p := ui.Active
+	innerW := width - 2
+	if innerW < 4 {
+		innerW = 4
+	}
+	innerH := height - 2
+	if innerH < 1 {
+		innerH = 1
+	}
+	dim := lipgloss.NewStyle().Foreground(p.Faint)
+	val := lipgloss.NewStyle().Foreground(p.Body)
+	label := dim
+	prefix := "  "
+	if focused {
+		label = lipgloss.NewStyle().Foreground(p.Active).Bold(true)
+		prefix = lipgloss.NewStyle().Background(p.Active).Render(" ") + " "
+	}
+	lines := []string{
+		prefix + label.Render("FROM"),
+		prefix + val.Render(start),
+		"",
+		prefix + label.Render("TO"),
+		prefix + val.Render(end),
+	}
+	body := lipgloss.NewStyle().
+		Width(innerW).
+		Height(innerH).
+		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(p.Border).
+		Render(body)
 }
 
 // renderResultsPane wraps the table (or empty-state / loading / error
