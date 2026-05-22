@@ -76,8 +76,8 @@ func (d timeDurationItemDelegate) Render(w io.Writer, m list.Model, index int, l
 	p := ui.Active
 
 	if index == m.Index() {
-		rail := lipgloss.NewStyle().Background(p.Accent).Render(" ")
-		name := lipgloss.NewStyle().Foreground(p.Accent).Bold(true).Render(i.repr)
+		rail := lipgloss.NewStyle().Background(p.Active).Render(" ")
+		name := lipgloss.NewStyle().Foreground(p.Active).Bold(true).Render(i.repr)
 		fmt.Fprint(w, rail+" "+name)
 		return
 	}

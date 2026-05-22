@@ -230,7 +230,7 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 	// the gutter stays aligned but produces no visual noise.
 	query.EndOfBufferCharacter = ' '
 	query.SetValue(queryStr)
-	query.Placeholder = `select * from "dataset" limit 100`
+	query.Placeholder = "Write your queries here"
 	query.KeyMap = textAreaKeyMap
 
 	// Theme-aware editor styles. Active-line gets a subtle bg shift
@@ -439,16 +439,17 @@ func (m QueryModel) View() string {
 
 	// ── 3. TOP row: editor (wide) + date (narrow). Plain rectangles,
 	// label-only chrome. Date pane stays compact per mock.
+	// Sidebar holds DATASET + FROM + TO = 8 content rows; topH must
+	// stay >= 11 (innerH = 9 fits 8 + spare) or the sidebar overflows
+	// and pushes the top border off-screen.
 	topH := 11
-	if m.height < 30 {
-		topH = 8
-	}
-	sidebarW := 24
+	// Sidebar width matches PromQL so the two views read symmetric.
+	sidebarW := 30
 	if m.width >= 140 {
-		sidebarW = 28
+		sidebarW = 34
 	}
 	if m.width < 100 {
-		sidebarW = 20
+		sidebarW = 26
 	}
 	// editorW reserves 1 col for the horizontal gap between editor
 	// and date pane, so the two `│` borders aren't flush against
@@ -463,20 +464,25 @@ func (m QueryModel) View() string {
 	// innerH(topH-2) minus the title row (1). If textarea is taller
 	// than the pane, it overflows and pushes the top borders/labels
 	// off-screen.
-	editorBodyH := topH - 3
+	editorBodyH := topH - 4 // border(2) + title(1) + spacer(1)
 	if editorBodyH < 1 {
 		editorBodyH = 1
 	}
 	m.query.SetHeight(editorBodyH)
 	editorPane := renderEditorPane(m.query.View(), editorW, topH, m.currentFocus() == "query")
+	dataset := extractDataset(m.query.Value())
+	if dataset == "—" || dataset == "" {
+		dataset = "—"
+	}
 	timePane := renderTimePane(
 		m.timeRange.start.Value(),
 		m.timeRange.end.Value(),
+		dataset,
 		sidebarW, topH,
 		m.currentFocus() == "time",
 	)
 	gap := lipgloss.NewStyle().Width(1).Height(topH).Render("")
-	topSection := lipgloss.JoinHorizontal(lipgloss.Top, editorPane, gap, timePane)
+	topSection := lipgloss.JoinHorizontal(lipgloss.Top, timePane, gap, editorPane)
 
 	// ── 4. Results / table area ───────────────────────────────────────
 	availH := m.height - crumbsHeight - topH - bottomHeight
@@ -505,11 +511,7 @@ func (m QueryModel) View() string {
 			Foreground(p.Accent).
 			Bold(true).
 			Render(parseableAsciiArt)
-		key := lipgloss.NewStyle().Foreground(p.Accent).Bold(true).Render("<ctrl+r>")
-		msg := lipgloss.NewStyle().Foreground(p.Faint).Render(" run query")
-		hint := lipgloss.NewStyle().MarginTop(1).Render(key + msg)
-		content := lipgloss.JoinVertical(lipgloss.Center, wordmark, hint)
-		inner = lipgloss.Place(resultsInnerW, resultsInnerH, lipgloss.Center, lipgloss.Center, content,
+		inner = lipgloss.Place(resultsInnerW, resultsInnerH, lipgloss.Center, lipgloss.Center, wordmark,
 			lipgloss.WithWhitespaceChars(" "))
 	case m.loading:
 		content := ui.Type().Accent.Render(m.spinner.View() + " fetching...")
@@ -580,23 +582,23 @@ func renderEditorPane(body string, width, height int, focused bool) string {
 	}
 	title := lipgloss.NewStyle().Foreground(titleFg).Bold(focused).Render("EDITOR")
 	titleRow := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(title)
+	spacer := lipgloss.NewStyle().Width(innerW).Render("")
 	bodyPane := lipgloss.NewStyle().
 		Width(innerW).
-		Height(innerH - 1).
+		Height(innerH - 2).
 		Padding(0, 1).
 		Render(body)
-	stack := lipgloss.JoinVertical(lipgloss.Left, titleRow, bodyPane)
+	stack := lipgloss.JoinVertical(lipgloss.Left, titleRow, spacer, bodyPane)
 	return lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(borderColor).
 		Render(stack)
 }
 
-// renderTimePane draws the date sidebar — from/to labels + timestamps.
-// No pane title: the labels carry the meaning. Focused: labels flip to
-// Accent bold, values stay Body so the pane doesn't read as a wall of
-// purple.
-func renderTimePane(start, end string, width, height int, focused bool) string {
+// renderTimePane draws the SQL sidebar — DATASET (read-only, parsed
+// from the SQL FROM clause) + FROM/TO timestamps. Focused state uses
+// the Active (sky-blue) rail + label convention shared with PromQL.
+func renderTimePane(start, end, dataset string, width, height int, focused bool) string {
 	p := ui.Active
 	borderColor := p.Border
 	if focused {
@@ -611,22 +613,30 @@ func renderTimePane(start, end string, width, height int, focused bool) string {
 		innerH = 3
 	}
 
-	labelStyle := lipgloss.NewStyle().Foreground(p.Faint)
-	if focused {
-		labelStyle = lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
-	}
+	dim := lipgloss.NewStyle().Foreground(p.Faint)
 	val := lipgloss.NewStyle().Foreground(p.Body)
+	labelStyle := dim
+	if focused {
+		labelStyle = lipgloss.NewStyle().Foreground(p.Active).Bold(true)
+	}
+	rail := lipgloss.NewStyle().Background(p.Active).Render(" ")
+	prefix := "  "
+	if focused {
+		prefix = rail + " "
+	}
 	content := lipgloss.JoinVertical(lipgloss.Left,
-		labelStyle.Render("from"),
-		val.Render(start),
+		"  "+dim.Render("DATASET"),
+		"  "+val.Render(dataset),
 		"",
-		labelStyle.Render("to"),
-		val.Render(end),
+		prefix+labelStyle.Render("FROM"),
+		prefix+val.Render(start),
+		"",
+		prefix+labelStyle.Render("TO"),
+		prefix+val.Render(end),
 	)
 	bodyPane := lipgloss.NewStyle().
 		Width(innerW).
 		Height(innerH).
-		Padding(0, 1).
 		Render(content)
 	return lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).

@@ -61,6 +61,11 @@ type Palette struct {
 	Accent     lipgloss.Color
 	Accent2    lipgloss.Color
 	AccentSoft lipgloss.Color
+	// Active — bright sky-blue reserved for "cursor here, will edit"
+	// state (sidebar sub-section rails, code|builder toggle). Picked
+	// to contrast with Accent (purple) so users can distinguish
+	// "selection on a list" from "field is the editing target".
+	Active lipgloss.Color
 
 	// ── Semantic ─────────────────────────────────────────────────────────────
 	Ok       lipgloss.Color
@@ -106,6 +111,7 @@ var Dark = Palette{
 	Accent:     "#9E9EF0",
 	Accent2:    "#8484C8",
 	AccentSoft: "#2A2A4E",
+	Active:     "#38BDF8", // sky-400 — saturated, pops against purple
 
 	Ok:       "#34D399",
 	OkSoft:   "#6EE7B7",
@@ -133,9 +139,9 @@ var Light = Palette{
 	PanelAlt: "#F1F1F5",
 	EditorBg: "#F4F4F5",
 
-	Border:     "#A8A8B0",
-	BorderSoft: "#C8C8CE",
-	BorderHi:   "#5A5AC8",
+	Border:     "#D1D5DB", // gray-300 — subtle idle borders on white
+	BorderSoft: "#E5E7EB", // gray-200 — hairline rules
+	BorderHi:   "#5A5AC8", // purple — focused border pops against gray idle
 
 	Text:  "#09090B",
 	Body:  "#18181B",
@@ -147,6 +153,7 @@ var Light = Palette{
 	Accent:     "#3A3A8C",
 	Accent2:    "#5151A0",
 	AccentSoft: "#E5E5FF",
+	Active:     "#0284C7", // sky-600 — readable on white bg (matches #38BDF8 dark hue)
 
 	Ok:       "#047857",
 	OkSoft:   "#047857",

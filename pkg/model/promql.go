@@ -47,7 +47,7 @@ const (
 	promqlTimestampKey   = "timestamp"
 	promqlMetricKey      = "metric"
 	promqlValueKey       = "value"
-	promqlTimestampWidth = 20
+	promqlTimestampWidth = 10 // matches SQL dateTimeWidth (HH:MM:SS + slack)
 
 	// header panel outer widths (inner = outer - 2 for borders)
 	datasetPanelOuter  = 30
@@ -236,9 +236,9 @@ func NewPromqlModel(profile config.Profile, expr string, startTime, endTime time
 	inputs.SetInstant(instant)
 
 	columns := []table.Column{
-		table.NewColumn(promqlTimestampKey, "timestamp", promqlTimestampWidth),
-		table.NewFlexColumn(promqlMetricKey, "metric", 1),
-		table.NewColumn(promqlValueKey, "value", 14),
+		table.NewColumn(promqlTimestampKey, "TIMESTAMP", promqlTimestampWidth),
+		table.NewFlexColumn(promqlMetricKey, "METRIC", 1),
+		table.NewColumn(promqlValueKey, "VALUE", 14),
 	}
 
 	pageSize := h - 14
@@ -273,7 +273,7 @@ func NewPromqlModel(profile config.Profile, expr string, startTime, endTime time
 	q.ShowLineNumbers = true
 	q.EndOfBufferCharacter = ' '
 	q.SetValue(expr)
-	q.Placeholder = `rate(http_requests_total{service="checkout"}[5m])`
+	q.Placeholder = "Write your queries here"
 	q.KeyMap = textAreaKeyMap
 	applyEditorStyles(&q)
 	q.Focus()
@@ -390,7 +390,16 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.allDatasets = msg.datasets
 			m.filteredDatasets = msg.datasets
 			m.datasetSelectedIdx = 0
-			// pre-select current dataset
+			// No dataset chosen yet: pick the first available so the
+			// sidebar shows a real value out of the box instead of
+			// the "select-dataset" placeholder. Kick off the metrics
+			// cache fetch the same way an explicit selection does.
+			if (m.dataset == "" || m.dataset == "select-dataset") && len(msg.datasets) > 0 {
+				m.dataset = msg.datasets[0]
+				m.cacheDataset = ""
+				m.cacheMetrics = nil
+				return m, fetchCacheMetrics(m.profile, m.dataset)
+			}
 			for i, ds := range m.filteredDatasets {
 				if ds == m.dataset {
 					m.datasetSelectedIdx = i
@@ -979,7 +988,7 @@ func (m PromqlModel) View() string {
 		sidebarW = m.width - editorW - 1
 	}
 	m.query.SetWidth(editorW - 6)
-	editorBodyH := topH - 3
+	editorBodyH := topH - 4 // border(2) + title(1) + spacer(1)
 	if editorBodyH < 1 {
 		editorBodyH = 1
 	}
@@ -1027,7 +1036,7 @@ func (m PromqlModel) View() string {
 		sidebarFocused, timeHi, stepHi, dsHi, m.instant,
 	)
 	gap := lipgloss.NewStyle().Width(1).Height(topH).Render("")
-	topSection := lipgloss.JoinHorizontal(lipgloss.Top, editorPane, gap, sidebarPane)
+	topSection := lipgloss.JoinHorizontal(lipgloss.Top, sidebarPane, gap, editorPane)
 
 	// ── Results pane ─────────────────────────────────────────────────
 	availH := m.height - topH - bottomHeight
@@ -1055,11 +1064,7 @@ func (m PromqlModel) View() string {
 			Foreground(p.Accent).
 			Bold(true).
 			Render(parseableAsciiArt)
-		keyStyle := lipgloss.NewStyle().Foreground(p.Accent).Bold(true).Render("<ctrl+r>")
-		msgStyle := lipgloss.NewStyle().Foreground(p.Faint).Render(" run query")
-		hint := lipgloss.NewStyle().MarginTop(1).Render(keyStyle + msgStyle)
-		content := lipgloss.JoinVertical(lipgloss.Center, wordmark, hint)
-		inner = lipgloss.Place(resultsInnerW, resultsInnerH, lipgloss.Center, lipgloss.Center, content,
+		inner = lipgloss.Place(resultsInnerW, resultsInnerH, lipgloss.Center, lipgloss.Center, wordmark,
 			lipgloss.WithWhitespaceChars(" "))
 	case m.loading:
 		content := ui.Type().Accent.Render(m.spinner.View() + " fetching...")
@@ -1144,17 +1149,19 @@ func renderPromqlEditorPane(body string, width, height int, focused, builder boo
 
 	left := lipgloss.NewStyle().Foreground(titleFg).Bold(focused).Render("EDITOR")
 
-	active := lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
+	// Code | Builder — active mode uses Active (sky blue), same
+	// selection-state color used by sidebar focus. ctrl-b shortcut
+	// lives in the bottom bar.
+	activeStyle := lipgloss.NewStyle().Foreground(p.Active).Bold(true)
 	idle := lipgloss.NewStyle().Foreground(p.Faint)
 	sepStyle := lipgloss.NewStyle().Foreground(p.Faint)
-	keyStyle := lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
-	var toggle string
+	sep := sepStyle.Render(" | ")
+	var right string
 	if builder {
-		toggle = idle.Render("code") + sepStyle.Render(" | ") + active.Render("builder")
+		right = idle.Render("Code") + sep + activeStyle.Render("Builder")
 	} else {
-		toggle = active.Render("code") + sepStyle.Render(" | ") + idle.Render("builder")
+		right = activeStyle.Render("Code") + sep + idle.Render("Builder")
 	}
-	right := toggle + sepStyle.Render("  ") + keyStyle.Render("<ctrl-b>")
 
 	gap := innerW - lipgloss.Width(left) - lipgloss.Width(right) - 2
 	if gap < 1 {
@@ -1163,12 +1170,13 @@ func renderPromqlEditorPane(body string, width, height int, focused, builder boo
 	titleRow := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(
 		left + strings.Repeat(" ", gap) + right,
 	)
+	spacer := lipgloss.NewStyle().Width(innerW).Render("")
 	bodyPane := lipgloss.NewStyle().
 		Width(innerW).
-		Height(innerH - 1).
+		Height(innerH - 2).
 		Padding(0, 1).
 		Render(body)
-	stack := lipgloss.JoinVertical(lipgloss.Left, titleRow, bodyPane)
+	stack := lipgloss.JoinVertical(lipgloss.Left, titleRow, spacer, bodyPane)
 	return lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(borderColor).
@@ -1196,42 +1204,54 @@ func renderPromqlSidebarPane(start, end, step, mode, dataset string, width, heig
 
 	dim := lipgloss.NewStyle().Foreground(p.Faint)
 	val := lipgloss.NewStyle().Foreground(p.Body)
-	hiLabel := lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
+	// Active sub-section: bright Active (sky blue) bg rail on every
+	// line + Active bold label. Reserved color for "cursor here,
+	// will edit" — pops hard against the purple Accent used for
+	// borders, titles, code|builder mode, list selection, etc.
+	hiActive := lipgloss.NewStyle().Foreground(p.Active).Bold(true)
+	railActive := lipgloss.NewStyle().Background(p.Active).Render(" ")
+	prefix := func(hi bool) string {
+		if hi {
+			return railActive + " "
+		}
+		return "  "
+	}
 
-	// Focused sub-section: label flips to Accent bold. Value always
-	// stays Body so the sidebar doesn't read as a wall of purple.
 	tLabel := dim
 	if timeHi {
-		tLabel = hiLabel
+		tLabel = hiActive
 	}
 	sLabel := dim
 	if stepHi {
-		sLabel = hiLabel
+		sLabel = hiActive
 	}
 	dLabel := dim
 	if datasetHi {
-		dLabel = hiLabel
+		dLabel = hiActive
 	}
 
-	lines := []string{}
+	lines := []string{
+		prefix(datasetHi) + dLabel.Render("DATASET"),
+		prefix(datasetHi) + val.Render(dataset),
+		"",
+	}
 	if !instant {
-		lines = append(lines, tLabel.Render("from"), val.Render(start))
+		lines = append(lines,
+			prefix(timeHi)+tLabel.Render("FROM"),
+			prefix(timeHi)+val.Render(start),
+		)
 	}
 	lines = append(lines,
-		tLabel.Render("to"),
-		val.Render(end),
+		prefix(timeHi)+tLabel.Render("TO"),
+		prefix(timeHi)+val.Render(end),
 		"",
-		sLabel.Render("step ")+val.Render(step),
-		sLabel.Render("mode ")+val.Render(mode),
-		"",
-		dLabel.Render("dataset"),
-		val.Render(dataset),
+		prefix(stepHi)+sLabel.Render("STEP ")+val.Render(step),
+		prefix(stepHi)+sLabel.Render("MODE ")+val.Render(mode),
 	)
 	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	bodyPane := lipgloss.NewStyle().
 		Width(innerW).
 		Height(innerH).
-		Padding(0, 1).
 		Render(content)
 	return lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
@@ -1545,15 +1565,15 @@ func (m PromqlModel) renderSpotlight() string {
 		if m.datasetSelectedIdx >= spotlightMaxItems {
 			start = m.datasetSelectedIdx - spotlightMaxItems + 1
 		}
-		rail := lipgloss.NewStyle().Background(p.Accent).Render(" ")
+		rail := lipgloss.NewStyle().Background(p.Active).Render(" ")
 		for i := start; i < start+limit && i < len(m.filteredDatasets); i++ {
 			ds := m.filteredDatasets[i]
 			if i == m.datasetSelectedIdx {
-				// Selected: 1-cell Accent bg rail + bold Accent name.
-				// Bg-only rail always renders cleanly regardless of
-				// trailing ANSI resets, unlike a full-row Background.
+				// Selected: 1-cell Active (sky blue) bg rail + bold
+				// Active name — same selection convention as the
+				// main view sidebar and other lists.
 				name := lipgloss.NewStyle().
-					Foreground(p.Accent).
+					Foreground(p.Active).
 					Bold(true).
 					Render(ds)
 				listLines = append(listLines, rail+" "+name)
@@ -1596,9 +1616,9 @@ func (m *PromqlModel) updateTableColumns(_, valueWidth int) {
 		valueWidth = len(promqlValueKey)
 	}
 	columns := []table.Column{
-		table.NewColumn(promqlTimestampKey, "timestamp", promqlTimestampWidth),
-		table.NewFlexColumn(promqlMetricKey, "metric", 1).WithFiltered(true),
-		table.NewColumn(promqlValueKey, "value", valueWidth).WithFiltered(true),
+		table.NewColumn(promqlTimestampKey, "TIMESTAMP", promqlTimestampWidth),
+		table.NewFlexColumn(promqlMetricKey, "METRIC", 1).WithFiltered(true),
+		table.NewColumn(promqlValueKey, "VALUE", valueWidth).WithFiltered(true),
 	}
 	m.table = m.table.WithColumns(columns).WithTargetWidth(m.width).WithRows(m.dataRows)
 }
@@ -1727,7 +1747,7 @@ func promqlResultToRows(result promqlRespModel) (rows []table.Row, seriesCount, 
 		switch result.Data.ResultType {
 		case "vector":
 			if len(series.Value) == 2 {
-				ts := promqlModelFormatTS(series.Value[0])
+				ts := trimTimestampToHMS(promqlModelFormatTS(series.Value[0]))
 				val := fmt.Sprintf("%v", series.Value[1])
 				if len(val) > valueWidth {
 					valueWidth = len(val)
@@ -1741,7 +1761,7 @@ func promqlResultToRows(result promqlRespModel) (rows []table.Row, seriesCount, 
 		case "matrix":
 			for _, pt := range series.Values {
 				if len(pt) == 2 {
-					ts := promqlModelFormatTS(pt[0])
+					ts := trimTimestampToHMS(promqlModelFormatTS(pt[0]))
 					val := fmt.Sprintf("%v", pt[1])
 					if len(val) > valueWidth {
 						valueWidth = len(val)
@@ -1925,7 +1945,7 @@ func renderBuilderCol(title string, items []string, selectedIdx int, loading, fo
 		if end > len(items) {
 			end = len(items)
 		}
-		rail := lipgloss.NewStyle().Background(p.Accent).Render(" ")
+		rail := lipgloss.NewStyle().Background(p.Active).Render(" ")
 		for i := start; i < end; i++ {
 			item := items[i]
 			maxLen := innerW - 4
@@ -1934,7 +1954,7 @@ func renderBuilderCol(title string, items []string, selectedIdx int, loading, fo
 			}
 			if i == selectedIdx {
 				name := lipgloss.NewStyle().
-					Foreground(p.Accent).
+					Foreground(p.Active).
 					Bold(true).
 					Render(item)
 				rows = append(rows, " "+rail+" "+name)
