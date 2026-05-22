@@ -97,9 +97,9 @@ var Dark = Palette{
 	PanelAlt: "#1A1A2A",
 	EditorBg: "#1B1B1F",
 
-	Border:     "#2A2A3D",
-	BorderSoft: "#1F1F2E",
-	BorderHi:   "#5050A8",
+	Border:     "#4A4A5C", // brighter gray — idle pane borders stay visible on dark bg
+	BorderSoft: "#2A2A3D", // subtle hairlines / header underline
+	BorderHi:   "#7878E0", // focused border pops against #4A4A5C idle
 
 	Text:  "#F4F4F5",
 	Body:  "#E4E4E7",

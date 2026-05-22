@@ -42,7 +42,7 @@ const (
 )
 
 var (
-	docStyle = lipgloss.NewStyle().Margin(1, 2, 3)
+	docStyle = lipgloss.NewStyle().Padding(1, 2)
 )
 
 type Filter struct {
@@ -89,26 +89,9 @@ type Item struct {
 	id, title, stream, desc, from, to string
 }
 
-var (
-	titleStyles = lipgloss.NewStyle().PaddingLeft(0).Bold(true).Foreground(
-		ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent }))
-	queryStyle = lipgloss.NewStyle().PaddingLeft(0).Foreground(
-		ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Body }))
-	itemStyle = lipgloss.NewStyle().PaddingLeft(4).Foreground(
-		ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Faint }))
-	// Selected row: brand accent text + 1px left rail (handled by the
-	// PaddingLeft + BorderLeft pair below). Yellow gone.
-	selectedItemStyle = lipgloss.NewStyle().
-				PaddingLeft(1).
-				BorderStyle(lipgloss.NormalBorder()).
-				BorderLeft(true).
-				BorderForeground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent })).
-				Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Text }))
-)
-
 type itemDelegate struct{}
 
-func (d itemDelegate) Height() int                             { return 4 }
+func (d itemDelegate) Height() int                             { return 3 }
 func (d itemDelegate) Spacing() int                            { return 1 }
 func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
@@ -116,24 +99,50 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if !ok {
 		return
 	}
-	var str string
+	p := ui.Active
+
+	titleFg := lipgloss.NewStyle().Foreground(p.Body).Bold(true)
+	queryFg := lipgloss.NewStyle().Foreground(p.Faint)
+	metaFg := lipgloss.NewStyle().Foreground(p.Faint)
+	prefix := "    "
+
+	if index == m.Index() {
+		rail := lipgloss.NewStyle().Background(p.Active).Render(" ")
+		prefix = rail + "   "
+		titleFg = lipgloss.NewStyle().Foreground(p.Active).Bold(true)
+	}
+
+	// Truncate to the list's allocated row width so long SELECTs
+	// don't wrap and push the right border off-screen. Reserve 4
+	// cells for the leading prefix.
+	maxW := m.Width() - 4
+	if maxW < 10 {
+		maxW = 10
+	}
+	clip := func(s string) string {
+		if len(s) <= maxW {
+			return s
+		}
+		if maxW <= 3 {
+			return s[:maxW]
+		}
+		return s[:maxW-1] + "…"
+	}
+
+	titleRow := prefix + titleFg.Render(clip(i.title))
+	rows := titleRow
+
+	desc := strings.Trim(strings.TrimSpace(i.desc), `"`)
+	if desc == "" {
+		desc = "(empty query)"
+	}
+	rows += "\n    " + queryFg.Render(clip(desc))
 
 	if i.from != "" || i.to != "" {
-		str = fmt.Sprintf("From: %s\nTo: %s", i.from, i.to)
-	} else {
-		str = ""
+		meta := fmt.Sprintf("from %s · to %s", i.from, i.to)
+		rows += "\n    " + metaFg.Render(clip(meta))
 	}
-
-	fn := itemStyle.Render
-	tr := titleStyles.Render
-	qr := queryStyle.Render
-	if index == m.Index() {
-		tr = func(s ...string) string {
-			return selectedItemStyle.Render("> " + strings.Join(s, " "))
-		}
-	}
-
-	fmt.Fprint(w, fn(tr(i.title)+"\n"+qr(i.desc)+"\n"+str))
+	fmt.Fprint(w, rows)
 }
 
 // Implement itemDelegate ShortHelp to show only relevant bindings.
@@ -191,6 +200,8 @@ type modelSavedQueries struct {
 	commandOutput string
 	viewport      viewport.Model
 	queryExecuted bool // New field to track query execution
+	width         int
+	height        int
 }
 
 func (m modelSavedQueries) Init() tea.Cmd {
@@ -271,10 +282,23 @@ func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		h, v := docStyle.GetFrameSize()
-		m.list.SetSize(msg.Width-h, msg.Height-v)
-		m.viewport.Width = msg.Width - h
-		m.viewport.Height = msg.Height - v
+		m.width = msg.Width
+		m.height = msg.Height
+		// Main card: border(2) + h-padding(4) = 6 cols of chrome.
+		// Vertical chrome inside main card: border(2) + v-padding(2)
+		// + title(1) + spacer(1) = 6 rows. Footer card adds 3 rows
+		// (border 2 + content 1). Total non-list rows = 9.
+		bodyW := msg.Width - 6
+		bodyH := msg.Height - 9
+		if bodyW < 20 {
+			bodyW = 20
+		}
+		if bodyH < 5 {
+			bodyH = 5
+		}
+		m.list.SetSize(bodyW, bodyH)
+		m.viewport.Width = bodyW
+		m.viewport.Height = bodyH
 
 	case commandResultMsg:
 		m.commandOutput = string(msg)
@@ -288,10 +312,48 @@ func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 func (m modelSavedQueries) View() string {
-	if m.commandOutput != "" {
-		return m.viewport.View()
+	if m.width == 0 || m.height == 0 {
+		return ""
 	}
-	return m.list.View()
+	p := ui.Active
+
+	titleStyle := lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
+	keyStyle := lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
+	hintStyle := lipgloss.NewStyle().Foreground(p.Faint)
+
+	// ── Main card: title + list ─────────────────────────────────────
+	var body string
+	if m.commandOutput != "" {
+		body = m.viewport.View()
+	} else {
+		body = m.list.View()
+	}
+	mainInner := lipgloss.JoinVertical(lipgloss.Left,
+		titleStyle.Render("SAVED QUERIES"),
+		"",
+		body,
+	)
+	mainCard := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(p.Border).
+		Padding(1, 2).
+		Width(m.width).
+		Render(mainInner)
+
+	// ── Footer card: hint row ──────────────────────────────────────
+	hintRow := keyStyle.Render("<a/enter>") + hintStyle.Render(" apply    ") +
+		keyStyle.Render("<b>") + hintStyle.Render(" back    ") +
+		keyStyle.Render("<ctrl-c>") + hintStyle.Render(" quit")
+	footerInner := lipgloss.NewStyle().
+		Width(m.width - 2).
+		Padding(0, 1).
+		Render(hintRow)
+	footer := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(p.Border).
+		Render(footerInner)
+
+	return lipgloss.JoinVertical(lipgloss.Left, mainCard, footer)
 }
 
 // SavedQueriesMenu is a TUI which lists all available saved queries for the active user (only SQL queries )
@@ -311,7 +373,10 @@ func SavedQueriesMenu() *tea.Program {
 	userSavedQueries := fetchFilters(client, &userProfile)
 
 	m := modelSavedQueries{list: list.New(userSavedQueries, itemDelegate{}, 0, 0)}
-	m.list.Title = fmt.Sprintf("Saved Queries for User: %s", userProfile.Username)
+	m.list.SetShowTitle(false)
+	m.list.SetShowStatusBar(false)
+	m.list.SetShowHelp(false)
+	m.list.SetShowPagination(true)
 
 	return tea.NewProgram(m, tea.WithAltScreen())
 }
