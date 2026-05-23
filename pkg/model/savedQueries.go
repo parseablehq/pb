@@ -25,10 +25,10 @@ import (
 	"time"
 
 	"pb/pkg/config"
+	"pb/pkg/ui"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -38,10 +38,6 @@ const (
 	backButton       = "b"
 	confirmDelete    = "y"
 	cancelDelete     = "n"
-)
-
-var (
-	docStyle = lipgloss.NewStyle().Margin(1, 2, 3)
 )
 
 type Filter struct {
@@ -88,16 +84,9 @@ type Item struct {
 	id, title, stream, desc, from, to string
 }
 
-var (
-	titleStyles       = lipgloss.NewStyle().PaddingLeft(0).Bold(true).Foreground(lipgloss.Color("9"))
-	queryStyle        = lipgloss.NewStyle().PaddingLeft(0).Foreground(lipgloss.Color("7"))
-	itemStyle         = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("8"))
-	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(1).Foreground(lipgloss.AdaptiveColor{Light: "16", Dark: "226"})
-)
-
 type itemDelegate struct{}
 
-func (d itemDelegate) Height() int                             { return 4 }
+func (d itemDelegate) Height() int                             { return 3 }
 func (d itemDelegate) Spacing() int                            { return 1 }
 func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
@@ -105,24 +94,50 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if !ok {
 		return
 	}
-	var str string
+	p := ui.Active
+
+	titleFg := lipgloss.NewStyle().Foreground(p.Body).Bold(true)
+	queryFg := lipgloss.NewStyle().Foreground(p.Faint)
+	metaFg := lipgloss.NewStyle().Foreground(p.Faint)
+	prefix := "    "
+
+	if index == m.Index() {
+		rail := lipgloss.NewStyle().Background(p.Active).Render(" ")
+		prefix = rail + "   "
+		titleFg = lipgloss.NewStyle().Foreground(p.Active).Bold(true)
+	}
+
+	// Truncate to the list's allocated row width so long SELECTs
+	// don't wrap and push the right border off-screen. Reserve 4
+	// cells for the leading prefix.
+	maxW := m.Width() - 4
+	if maxW < 10 {
+		maxW = 10
+	}
+	clip := func(s string) string {
+		if len(s) <= maxW {
+			return s
+		}
+		if maxW <= 3 {
+			return s[:maxW]
+		}
+		return s[:maxW-1] + "…"
+	}
+
+	titleRow := prefix + titleFg.Render(clip(i.title))
+	rows := titleRow
+
+	desc := strings.TrimSpace(i.desc)
+	if desc == "" {
+		desc = "(empty query)"
+	}
+	rows += "\n    " + queryFg.Render(clip(desc))
 
 	if i.from != "" || i.to != "" {
-		str = fmt.Sprintf("From: %s\nTo: %s", i.from, i.to)
-	} else {
-		str = ""
+		meta := fmt.Sprintf("from %s · to %s", i.from, i.to)
+		rows += "\n    " + metaFg.Render(clip(meta))
 	}
-
-	fn := itemStyle.Render
-	tr := titleStyles.Render
-	qr := queryStyle.Render
-	if index == m.Index() {
-		tr = func(s ...string) string {
-			return selectedItemStyle.Render("> " + strings.Join(s, " "))
-		}
-	}
-
-	fmt.Fprint(w, fn(tr(i.title)+"\n"+qr(i.desc)+"\n"+str))
+	fmt.Fprint(w, rows)
 }
 
 // Implement itemDelegate ShortHelp to show only relevant bindings.
@@ -176,111 +191,84 @@ func (i Item) StartTime() string    { return i.from }
 func (i Item) EndTime() string      { return i.to }
 
 type modelSavedQueries struct {
-	list          list.Model
-	commandOutput string
-	viewport      viewport.Model
-	queryExecuted bool // New field to track query execution
+	list   list.Model
+	width  int
+	height int
 }
 
 func (m modelSavedQueries) Init() tea.Cmd {
 	return nil
 }
 
-// Define a message type for command results
-type commandResultMsg string
-
 func (m modelSavedQueries) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c":
+		case "ctrl+c", "b":
 			return m, tea.Quit
 
 		case "a", "enter":
-			// Only execute if a query hasn't already been run
-			if m.queryExecuted {
-				return m, nil // Skip execution if already executed
+			if item, ok := m.list.SelectedItem().(Item); ok {
+				selectedQueryApply = item
 			}
-			selectedQueryApply := m.list.SelectedItem().(Item)
-			m.queryExecuted = true // Mark as executed
-
-			cmd := func() tea.Msg {
-				// Load user profile configuration
-				userConfig, err := config.ReadConfigFromFile()
-				if err != nil {
-					return commandResultMsg(fmt.Sprintf("Error: %s", err))
-				}
-
-				profile, profileExists := userConfig.Profiles[userConfig.DefaultProfile]
-				if !profileExists {
-					return commandResultMsg("Error: Profile not found")
-				}
-
-				// Clean the query string
-				cleanedQuery := strings.TrimSpace(strings.ReplaceAll(selectedQueryApply.desc, `\`, ""))
-				cleanedQuery = strings.ReplaceAll(cleanedQuery, `"`, "")
-
-				// Log the command for debugging
-				fmt.Printf("Executing command: pb query run %s\n", cleanedQuery)
-
-				// Prepare HTTP client
-				client := &http.Client{Timeout: 60 * time.Second}
-
-				// Determine query time range
-				startTime := selectedQueryApply.StartTime()
-				endTime := selectedQueryApply.EndTime()
-
-				// If start and end times are not set, use a default range
-				if startTime == "" && endTime == "" {
-					startTime = "10m"
-					endTime = "now"
-				}
-
-				// Run the query
-				data, err := RunQuery(client, &profile, cleanedQuery, startTime, endTime)
-				if err != nil {
-					return commandResultMsg(fmt.Sprintf("Error: %s", err))
-				}
-				return commandResultMsg(data)
-			}
-			return m, cmd
-
-		case "b": // 'b' to go back to the saved query list
-			m.commandOutput = ""      // Clear the command output
-			m.viewport.SetContent("") // Clear viewport content
-			m.viewport.GotoTop()      // Reset viewport to the top
-			m.queryExecuted = false   // Reset the execution flag to allow a new query
-			return m, nil
-
-		case "down", "j":
-			m.viewport.LineDown(1) // Scroll down in the viewport
-
-		case "up", "k":
-			m.viewport.LineUp(1) // Scroll up in the viewport
+			return m, tea.Quit
 		}
 
 	case tea.WindowSizeMsg:
-		h, v := docStyle.GetFrameSize()
-		m.list.SetSize(msg.Width-h, msg.Height-v)
-		m.viewport.Width = msg.Width - h
-		m.viewport.Height = msg.Height - v
-
-	case commandResultMsg:
-		m.commandOutput = string(msg)
-		m.viewport.SetContent(m.commandOutput) // Update viewport content with command output
-		return m, nil
+		m.width = msg.Width
+		m.height = msg.Height
+		bodyW := msg.Width - 6
+		bodyH := msg.Height - 9
+		if bodyW < 20 {
+			bodyW = 20
+		}
+		if bodyH < 5 {
+			bodyH = 5
+		}
+		m.list.SetSize(bodyW, bodyH)
 	}
 
-	// Update the list and return
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
 	return m, cmd
 }
+
 func (m modelSavedQueries) View() string {
-	if m.commandOutput != "" {
-		return m.viewport.View()
+	if m.width == 0 || m.height == 0 {
+		return ""
 	}
-	return m.list.View()
+	p := ui.Active
+
+	titleStyle := lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
+	keyStyle := lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
+	hintStyle := lipgloss.NewStyle().Foreground(p.Faint)
+
+	mainInner := lipgloss.JoinVertical(lipgloss.Left,
+		titleStyle.Render("SAVED QUERIES"),
+		"",
+		m.list.View(),
+	)
+	mainCard := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(p.Border).
+		Padding(1, 2).
+		Width(m.width).
+		Render(mainInner)
+
+	hintRow := keyStyle.Render("<a/enter>") + hintStyle.Render(" apply    ") +
+		keyStyle.Render("<↑/↓>") + hintStyle.Render(" navigate    ") +
+		keyStyle.Render("<→/←>") + hintStyle.Render(" pages    ") +
+		keyStyle.Render("<b/ctrl-c>") + hintStyle.Render(" quit")
+	footerInner := lipgloss.NewStyle().
+		Width(m.width-2).
+		Padding(0, 1).
+		Render(hintRow)
+	footer := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(p.Border).
+		Render(footerInner)
+
+	return lipgloss.JoinVertical(lipgloss.Left, mainCard, footer)
 }
 
 // SavedQueriesMenu is a TUI which lists all available saved queries for the active user (only SQL queries )
@@ -300,7 +288,10 @@ func SavedQueriesMenu() *tea.Program {
 	userSavedQueries := fetchFilters(client, &userProfile)
 
 	m := modelSavedQueries{list: list.New(userSavedQueries, itemDelegate{}, 0, 0)}
-	m.list.Title = fmt.Sprintf("Saved Queries for User: %s", userProfile.Username)
+	m.list.SetShowTitle(false)
+	m.list.SetShowStatusBar(false)
+	m.list.SetShowHelp(false)
+	m.list.SetShowPagination(true)
 
 	return tea.NewProgram(m, tea.WithAltScreen())
 }
@@ -342,13 +333,11 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 		if filter.Query.FilterQuery == nil {
 			continue // Skip this filter if FilterQuery is null
 		}
-		queryBytes, _ := json.Marshal(filter.Query.FilterQuery)
-
 		userSavedQuery := Item{
 			id:     filter.FilterID,
 			title:  filter.FilterName,
 			stream: filter.StreamName,
-			desc:   string(queryBytes),
+			desc:   *filter.Query.FilterQuery,
 			from:   filter.TimeFilter.From,
 			to:     filter.TimeFilter.To,
 		}

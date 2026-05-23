@@ -17,23 +17,38 @@
 package cmd
 
 import (
+	"pb/pkg/ui"
+
 	"github.com/charmbracelet/lipgloss"
 )
 
-// styling for cli outputs
+// Styles for the cobra command CLI outputs (prompts, error messages, list
+// items rendered outside the bubbletea TUI). Sourced from the shared
+// ui.Palette so any palette change auto-propagates here.
+//
+// Names kept stable for backwards compatibility with existing call sites
+// across cmd/ and pkg/model/.
 var (
-	FocusPrimary   = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
-	FocusSecondary = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
+	// FocusPrimary / FocusSecondary used to be yellow (ANSI 226/220). Now
+	// brand indigo — same role (selected / active item highlight) but
+	// matches the rest of the design system.
+	FocusPrimary   = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent })
+	FocusSecondary = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent2 })
 
-	StandardPrimary   = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
-	StandardSecondary = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
+	StandardPrimary   = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Body })
+	StandardSecondary = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Mute })
+
 	StandardStyle     = lipgloss.NewStyle().Foreground(StandardPrimary)
 	StandardStyleBold = lipgloss.NewStyle().Foreground(StandardPrimary).Bold(true)
 	StandardStyleAlt  = lipgloss.NewStyle().Foreground(StandardSecondary)
 	SelectedStyle     = lipgloss.NewStyle().Foreground(FocusPrimary).Bold(true)
 	SelectedStyleAlt  = lipgloss.NewStyle().Foreground(FocusSecondary)
-	SelectedItemOuter = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).PaddingLeft(1).BorderForeground(FocusPrimary)
-	ItemOuter         = lipgloss.NewStyle().PaddingLeft(1)
+	SelectedItemOuter = lipgloss.NewStyle().
+				BorderStyle(lipgloss.NormalBorder()).
+				BorderLeft(true).
+				PaddingLeft(1).
+				BorderForeground(FocusPrimary)
+	ItemOuter = lipgloss.NewStyle().PaddingLeft(1)
 
 	StyleBold = lipgloss.NewStyle().Bold(true)
 )

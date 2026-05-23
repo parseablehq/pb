@@ -63,17 +63,16 @@ type TimeInputModel struct {
 	end     datetime.Model
 	list    list.Model
 	focus   int
-	instant bool // when true: hides start, presets move end backwards from now
+	instant bool
 }
 
 // SetInstant switches between range (start+end) and instant (end only) mode.
 func (m *TimeInputModel) SetInstant(v bool) {
 	m.instant = v
-	// stay on list so arrow keys immediately work on presets
+
 	m.focus = 0
 	m.focusSelected()
 	if v {
-		// pre-select "1 Hour" in the list to match the default end=now-1h
 		m.list.Select(1)
 	}
 }

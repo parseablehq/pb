@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"pb/pkg/config"
+	"pb/pkg/ui"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -41,21 +42,25 @@ const (
 )
 
 var (
-	primaryColor  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
-	normalColor   = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
-	dimColor      = lipgloss.AdaptiveColor{Light: "244", Dark: "240"}
-	successColor  = lipgloss.AdaptiveColor{Light: "28", Dark: "82"}
-	errorColor    = lipgloss.AdaptiveColor{Light: "196", Dark: "196"}
-	subtitleColor = lipgloss.AdaptiveColor{Light: "238", Dark: "248"}
+	primaryColor  = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent })
+	activeColor   = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Active })
+	normalColor   = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Body })
+	dimColor      = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Faint })
+	successColor  = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Ok })
+	errorColor    = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Err })
+	subtitleColor = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Mute })
+	borderColor   = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Border })
 
 	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(primaryColor)
-	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(primaryColor)
+	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(activeColor)
 	normalStyle   = lipgloss.NewStyle().Foreground(normalColor)
 	dimStyle      = lipgloss.NewStyle().Foreground(dimColor)
 	successStyle  = lipgloss.NewStyle().Bold(true).Foreground(successColor)
 	hintStyle     = lipgloss.NewStyle().Foreground(dimColor)
 	errorStyle    = lipgloss.NewStyle().Foreground(errorColor)
-	labelStyle    = lipgloss.NewStyle().Foreground(subtitleColor)
+	labelStyle    = lipgloss.NewStyle().Foreground(subtitleColor).Bold(true)
+	keyStyle      = lipgloss.NewStyle().Bold(true).Foreground(primaryColor)
+	railStyle     = lipgloss.NewStyle().Background(activeColor)
 )
 
 // Model is the BubbleTea model for the interactive login wizard.
@@ -371,28 +376,40 @@ func (m Model) finalize(name string) (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
-func sep() string {
-	return dimStyle.Render(strings.Repeat("─", 44))
+// rowSelected — Active sky-blue rail + ❯ cursor + bold Active label.
+// The arrow makes the active row unambiguous on monochrome terminals
+// where bg fills may not render.
+func rowSelected(label string) string {
+	return railStyle.Render(" ") + " " + selectedStyle.Render("❯ "+label)
 }
 
-func breadcrumb(trail string) string {
-	return dimStyle.Render("  "+trail+" ›") + " "
+// rowIdle — 4-space prefix + Body label, matches the arrow indent.
+func rowIdle(label string) string {
+	return "    " + normalStyle.Render(label)
 }
 
-// View renders the current wizard step.
+// hint — render "<key> action  <key> action" with consistent styling.
+func hint(pairs ...[2]string) string {
+	parts := make([]string, 0, len(pairs))
+	for _, kv := range pairs {
+		parts = append(parts, keyStyle.Render("<"+kv[0]+">")+hintStyle.Render(" "+kv[1]))
+	}
+	return "  " + strings.Join(parts, hintStyle.Render("    "))
+}
+
+// View renders the current wizard step inside a flat NormalBorder
+// card with a fixed UPPERCASE title strip. Each step writes its own
+// label row + body + hint row, joined into the card.
 func (m Model) View() string {
 	var b strings.Builder
 
-	b.WriteString("\n")
-	b.WriteString(titleStyle.Render("  Parseable Login"))
-	b.WriteString("\n")
-	b.WriteString(sep())
+	b.WriteString(titleStyle.Render("PARSEABLE LOGIN"))
 	b.WriteString("\n\n")
 
 	switch m.step {
 
 	case stepChooseType:
-		b.WriteString(dimStyle.Render("  How would you like to connect?"))
+		b.WriteString(labelStyle.Render("CONNECT TO"))
 		b.WriteString("\n\n")
 		entries := []struct{ label, badge string }{
 			{"Self-hosted", ""},
@@ -400,85 +417,79 @@ func (m Model) View() string {
 		}
 		for i, e := range entries {
 			if i == m.typeIndex {
-				b.WriteString(selectedStyle.Render("  ❯ " + e.label))
-				b.WriteString(dimStyle.Render(e.badge))
+				b.WriteString(rowSelected(e.label))
 			} else {
-				b.WriteString(normalStyle.Render("    " + e.label))
-				b.WriteString(dimStyle.Render(e.badge))
+				b.WriteString(rowIdle(e.label))
 			}
+			b.WriteString(dimStyle.Render(e.badge))
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")
-		b.WriteString(hintStyle.Render("  ↑↓ navigate  ·  Enter select  ·  Ctrl+C quit"))
+		b.WriteString(hint([2]string{"↑↓", "navigate"}, [2]string{"enter", "select"}, [2]string{"ctrl-c", "quit"}))
 
 	case stepCloudSoon:
-		b.WriteString(selectedStyle.Render("  Parseable Cloud"))
+		b.WriteString(labelStyle.Render("PARSEABLE CLOUD"))
 		b.WriteString("\n\n")
-		b.WriteString(normalStyle.Render("  We're working on it!"))
+		b.WriteString(normalStyle.Render("  We're working on it."))
 		b.WriteString("\n")
-		b.WriteString(dimStyle.Render("  Cloud login is coming soon. Stay tuned for updates."))
+		b.WriteString(dimStyle.Render("  Cloud login is coming soon."))
 		b.WriteString("\n\n")
-		b.WriteString(hintStyle.Render("  Press any key to go back"))
+		b.WriteString(hint([2]string{"any key", "back"}))
 
 	case stepEnterURL:
-		b.WriteString(breadcrumb("Self-hosted"))
-		b.WriteString(labelStyle.Render("Server URL"))
+		b.WriteString(labelStyle.Render("SERVER URL"))
 		b.WriteString("\n\n  ")
 		b.WriteString(m.urlInput.View())
 		b.WriteString("\n\n")
 		b.WriteString(renderErr(m.errMsg))
-		b.WriteString(hintStyle.Render("  Esc back  ·  Enter continue"))
+		b.WriteString(hint([2]string{"esc", "back"}, [2]string{"enter", "continue"}))
 
 	case stepChooseAuth:
-		b.WriteString(breadcrumb("Self-hosted"))
-		b.WriteString(labelStyle.Render("Authentication"))
+		b.WriteString(labelStyle.Render("AUTHENTICATION"))
 		b.WriteString("\n\n")
 		authEntries := []string{"Username & Password", "API key"}
 		for i, entry := range authEntries {
 			if i == m.authIndex {
-				b.WriteString(selectedStyle.Render("  ❯ " + entry))
+				b.WriteString(rowSelected(entry))
 			} else {
-				b.WriteString(normalStyle.Render("    " + entry))
+				b.WriteString(rowIdle(entry))
 			}
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")
-		b.WriteString(hintStyle.Render("  Esc back  ·  ↑↓ navigate  ·  Enter select"))
+		b.WriteString(hint([2]string{"esc", "back"}, [2]string{"↑↓", "navigate"}, [2]string{"enter", "select"}))
 
 	case stepEnterUsername:
-		b.WriteString(breadcrumb("Self-hosted"))
-		b.WriteString(labelStyle.Render("Username"))
+		b.WriteString(labelStyle.Render("USERNAME"))
 		b.WriteString("\n\n  ")
 		b.WriteString(m.usernameInput.View())
 		b.WriteString("\n\n")
 		b.WriteString(renderErr(m.errMsg))
-		b.WriteString(hintStyle.Render("  Esc back  ·  Enter continue"))
+		b.WriteString(hint([2]string{"esc", "back"}, [2]string{"enter", "continue"}))
 
 	case stepEnterPassword:
-		b.WriteString(breadcrumb("Self-hosted"))
-		b.WriteString(labelStyle.Render("Password"))
+		b.WriteString(labelStyle.Render("PASSWORD"))
 		b.WriteString("\n\n  ")
 		b.WriteString(m.passwordInput.View())
 		b.WriteString("\n\n")
 		b.WriteString(renderErr(m.errMsg))
-		b.WriteString(hintStyle.Render("  Esc back  ·  Enter continue"))
+		b.WriteString(hint([2]string{"esc", "back"}, [2]string{"enter", "continue"}))
 
 	case stepEnterToken:
-		b.WriteString(breadcrumb("Self-hosted"))
-		b.WriteString(labelStyle.Render("API key"))
+		b.WriteString(labelStyle.Render("API KEY"))
 		b.WriteString("\n\n  ")
 		b.WriteString(m.tokenInput.View())
 		b.WriteString("\n\n")
 		b.WriteString(renderErr(m.errMsg))
-		b.WriteString(hintStyle.Render("  Esc back  ·  Enter continue"))
+		b.WriteString(hint([2]string{"esc", "back"}, [2]string{"enter", "continue"}))
 
 	case stepEnterProfileName:
-		b.WriteString(labelStyle.Render("  Profile name"))
+		b.WriteString(labelStyle.Render("PROFILE NAME"))
 		b.WriteString("\n\n  ")
 		b.WriteString(m.profileNameInput.View())
 		b.WriteString("\n\n")
 		b.WriteString(renderErr(m.errMsg))
-		b.WriteString(hintStyle.Render("  Esc back  ·  Enter save"))
+		b.WriteString(hint([2]string{"esc", "back"}, [2]string{"enter", "save"}))
 
 	case stepConfirmReplace:
 		b.WriteString(errorStyle.Render("  Profile '" + m.Name + "' already exists"))
@@ -486,39 +497,43 @@ func (m Model) View() string {
 		entries := []string{"Replace it", "Change name"}
 		for i, e := range entries {
 			if i == m.replaceIndex {
-				b.WriteString(selectedStyle.Render("  ❯ " + e))
+				b.WriteString(rowSelected(e))
 			} else {
-				b.WriteString(normalStyle.Render("    " + e))
+				b.WriteString(rowIdle(e))
 			}
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")
-		b.WriteString(hintStyle.Render("  Esc back  ·  ↑↓ navigate  ·  Enter select"))
+		b.WriteString(hint([2]string{"esc", "back"}, [2]string{"↑↓", "navigate"}, [2]string{"enter", "select"}))
 
 	case stepDone:
-		b.WriteString(successStyle.Render("  ✓ Profile '" + m.Name + "' saved"))
+		b.WriteString(successStyle.Render("✓ profile '" + m.Name + "' saved"))
 		b.WriteString("\n\n")
-		b.WriteString(labelStyle.Render("  URL:   "))
+		b.WriteString("  " + labelStyle.Render("URL  "))
 		b.WriteString(normalStyle.Render(m.Profile.URL))
 		b.WriteString("\n")
 		if m.Profile.Username != "" {
-			b.WriteString(labelStyle.Render("  User:  "))
+			b.WriteString("  " + labelStyle.Render("USER "))
 			b.WriteString(normalStyle.Render(m.Profile.Username))
 			b.WriteString("\n")
 		}
 		if m.Profile.Token != "" {
-			b.WriteString(labelStyle.Render("  Auth:  "))
+			b.WriteString("  " + labelStyle.Render("AUTH "))
 			b.WriteString(normalStyle.Render("API key (stored)"))
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")
-		b.WriteString(dimStyle.Render("  To add more profiles:"))
-		b.WriteString("\n")
-		b.WriteString(hintStyle.Render("  pb profile add <name> <url> [user] [pass]"))
+		b.WriteString(dimStyle.Render("  add more profiles:"))
+		b.WriteString("\n  ")
+		b.WriteString(hintStyle.Render("pb profile add <name> <url> [user] [pass]"))
 	}
 
-	b.WriteString("\n\n")
-	return b.String()
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(borderColor).
+		Padding(1, 2).
+		Width(60).
+		Render(b.String()) + "\n"
 }
 
 func renderErr(msg string) string {

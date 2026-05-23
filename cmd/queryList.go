@@ -137,73 +137,27 @@ func deleteSavedQuery(client *internalHTTP.HTTPClient, savedQueryID, title strin
 	}
 }
 
-// Convert a saved query to executable pb query
-func savedQueryToPbQuery(query string, start string, end string) {
-	var timeStamps string
-	if start == "" || end == "" {
-		timeStamps = ``
-	} else {
-		startFormatted := formatToRFC3339(start)
-		endFormatted := formatToRFC3339(end)
-		timeStamps = ` --from=` + startFormatted + ` --to=` + endFormatted
+// Convert a saved query to executable pb query and print results to terminal
+func savedQueryToPbQuery(sqlQuery string, start string, end string) {
+	if start == "" {
+		start = "1h"
 	}
-	_ = `pb query run ` + query + timeStamps
-}
-
-// Parses all UTC time format from string to time interface
-func parseTimeToFormat(input string) (time.Time, error) {
-	// List of possible formats
-	formats := []string{
-		time.RFC3339,
-		"2006-01-02 15:04:05",
-		"2006-01-02",
-		"01/02/2006 15:04:05",
-		"02-Jan-2006 15:04:05 MST",
-		"2006-01-02T15:04:05Z",
-		"02-Jan-2006",
+	if end == "" {
+		end = "now"
 	}
 
-	var err error
-	var t time.Time
+	sqlQuery = quoteStreamNames(sqlQuery)
+	sqlQuery = quoteFieldsWithDots(sqlQuery)
 
-	for _, format := range formats {
-		t, err = time.Parse(format, input)
-		if err == nil {
-			return t, nil
-		}
-	}
+	fmt.Printf("Query: %s\n", sqlQuery)
 
-	return t, fmt.Errorf("unable to parse time: %s", input)
-}
-
-// Converts to RFC3339
-func convertTime(input string) (string, error) {
-	t, err := parseTimeToFormat(input)
+	client := internalHTTP.DefaultClient(&DefaultProfile)
+	stopSpinner := startSpinner()
+	err := fetchData(&client, sqlQuery, start, end, "")
+	stopSpinner()
 	if err != nil {
-		return "", err
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 	}
-
-	return t.Format(time.RFC3339), nil
-}
-
-// Converts User inputted time to string type RFC3339 time
-func formatToRFC3339(time string) string {
-	var formattedTime string
-	if len(strings.Fields(time)) > 1 {
-		newTime := strings.Fields(time)[0:2]
-		rfc39990time, err := convertTime(strings.Join(newTime, " "))
-		if err != nil {
-			fmt.Println("error formatting time")
-		}
-		formattedTime = rfc39990time
-	} else {
-		rfc39990time, err := convertTime(time)
-		if err != nil {
-			fmt.Println("error formatting time")
-		}
-		formattedTime = rfc39990time
-	}
-	return formattedTime
 }
 
 func init() {

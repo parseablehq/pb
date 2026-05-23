@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"pb/pkg/model/button"
 	"pb/pkg/model/selection"
+	"pb/pkg/ui"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -37,16 +38,16 @@ var (
 
 // Style for role selection widget
 var (
-	FocusPrimary  = lipgloss.AdaptiveColor{Light: "16", Dark: "226"}
-	FocusSecondry = lipgloss.AdaptiveColor{Light: "18", Dark: "220"}
+	FocusPrimary  = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent })
+	FocusSecondry = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent2 })
 
-	StandardPrimary  = lipgloss.AdaptiveColor{Light: "235", Dark: "255"}
-	StandardSecondry = lipgloss.AdaptiveColor{Light: "238", Dark: "254"}
+	StandardPrimary  = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Body })
+	StandardSecondry = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Mute })
 
-	focusedStyle           = lipgloss.NewStyle().Foreground(FocusSecondry)
+	focusedStyle           = lipgloss.NewStyle().Foreground(FocusPrimary)
 	blurredStyle           = lipgloss.NewStyle().Foreground(StandardPrimary)
 	selectionFocusStyle    = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true).BorderForeground(StandardSecondry)
-	selectionFocusStyleAlt = lipgloss.NewStyle().Border(lipgloss.DoubleBorder(), true).BorderForeground(FocusPrimary)
+	selectionFocusStyleAlt = lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(FocusPrimary)
 	selectionBlurStyle     = lipgloss.NewStyle().Height(3).AlignVertical(lipgloss.Center).MarginLeft(1).MarginRight(1)
 )
 
