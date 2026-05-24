@@ -222,6 +222,7 @@ var Active = LoadTheme()
 func SetActive(p Palette) {
 	Active = p
 	ActiveType = NewTypography(p)
+	pbStyle = nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

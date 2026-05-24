@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"pb/pkg/config"
 	internalHTTP "pb/pkg/http"
 	"pb/pkg/model"
@@ -36,7 +35,7 @@ var SavedQueryList = &cobra.Command{
 	Short:   "List of saved queries",
 	Long:    "\nShow the list of saved queries for active user",
 	PreRunE: PreRunDefaultProfile,
-	Run: func(_ *cobra.Command, _ []string) {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		client := internalHTTP.DefaultClient(&DefaultProfile)
 
 		// Check if the output flag is set
@@ -63,11 +62,11 @@ var SavedQueryList = &cobra.Command{
 				jsonOutput, err := json.MarshalIndent(userSavedQueries, "", "  ")
 				if err != nil {
 					fmt.Println("Error converting saved queries to JSON:", err)
-					return
+					return err
 				}
 				if string(jsonOutput) == "null" {
 					fmt.Println("[]")
-					return
+					return nil
 				}
 				fmt.Println(string(jsonOutput))
 			} else {
@@ -96,24 +95,27 @@ var SavedQueryList = &cobra.Command{
 			}
 			// Print all titles as a single line, comma-separated
 			fmt.Println(strings.Join(filterDetails, " "))
-			return
+			return nil
 
 		}
 
 		// Normal Saved Queries Menu if output flag not set
 		p := model.SavedQueriesMenu()
 		if _, err := p.Run(); err != nil {
-			os.Exit(1)
+			return err
 		}
 
 		a := model.QueryToApply()
 		d := model.QueryToDelete()
 		if a.Stream() != "" {
-			savedQueryToPbQuery(a.Stream(), a.StartTime(), a.EndTime())
+			if err := savedQueryToPbQuery(a.Stream(), a.StartTime(), a.EndTime()); err != nil {
+				return err
+			}
 		}
 		if d.SavedQueryID() != "" {
 			deleteSavedQuery(&client, d.SavedQueryID(), d.Title())
 		}
+		return nil
 	},
 }
 
@@ -138,7 +140,7 @@ func deleteSavedQuery(client *internalHTTP.HTTPClient, savedQueryID, title strin
 }
 
 // Convert a saved query to executable pb query and print results to terminal
-func savedQueryToPbQuery(sqlQuery string, start string, end string) {
+func savedQueryToPbQuery(sqlQuery string, start string, end string) error {
 	if start == "" {
 		start = "1h"
 	}
@@ -155,9 +157,7 @@ func savedQueryToPbQuery(sqlQuery string, start string, end string) {
 	stopSpinner := startSpinner()
 	err := fetchData(&client, sqlQuery, start, end, "")
 	stopSpinner()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-	}
+	return err
 }
 
 func init() {
@@ -207,19 +207,18 @@ func fetchFilters(client *http.Client, profile *config.Profile) []Item {
 	// This returns only the SQL type filters
 	var userSavedQueries []Item
 	for _, filter := range filters {
-
-		queryBytes, _ := json.Marshal(filter.Query.FilterQuery)
-
+		if filter.Query.FilterQuery == nil {
+			continue
+		}
 		userSavedQuery := Item{
 			ID:     filter.FilterID,
 			Title:  filter.FilterName,
 			Stream: filter.StreamName,
-			Desc:   string(queryBytes),
+			Desc:   *filter.Query.FilterQuery,
 			From:   filter.TimeFilter.From,
 			To:     filter.TimeFilter.To,
 		}
 		userSavedQueries = append(userSavedQueries, userSavedQuery)
-
 	}
 	return userSavedQueries
 }

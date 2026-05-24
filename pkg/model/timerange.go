@@ -30,13 +30,11 @@ import (
 // Time-range presets — match the mock at terminal/page.tsx ViewTime.
 // Custom… is a placeholder; selecting it leaves start/end editable.
 const (
-	FiveMinute = -5 * time.Minute
-	TenMinute  = -10 * time.Minute
-	OneHour    = -1 * time.Hour
-	FiveHour   = -5 * time.Hour
-	OneDay     = -24 * time.Hour
-	ThreeDay   = -72 * time.Hour
-	OneWeek    = -168 * time.Hour
+	TenMinute = -10 * time.Minute
+	OneHour   = -1 * time.Hour
+	FiveHour  = -5 * time.Hour
+	OneDay    = -24 * time.Hour
+	ThreeDay  = -72 * time.Hour
 )
 
 var (

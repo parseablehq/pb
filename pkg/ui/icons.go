@@ -74,7 +74,7 @@ var (
 		Sep:     "·",
 	}
 
-	activeIcons = asciiIcons
+	activeIcons = LoadIcons()
 )
 
 // LoadIcons reads PB_ICONS and returns the matching set. ASCII by

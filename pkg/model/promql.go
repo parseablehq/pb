@@ -396,7 +396,7 @@ func NewPromqlModel(profile config.Profile, expr string, startTime, endTime time
 
 func (m PromqlModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.spinner.Tick}
-	if strings.TrimSpace(m.query.Value()) != "" {
+	if strings.TrimSpace(m.query.Value()) != "" && m.dataset != "" {
 		cmds = append(cmds, NewPromqlFetchTask(m.profile, m.query.Value(), m.dataset, m.step,
 			m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.instant))
 	}
@@ -787,20 +787,28 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyEnter:
 				if len(m.filteredDatasets) > 0 {
 					newDS := m.filteredDatasets[m.datasetSelectedIdx]
-					m.dataset = newDS
-					m.query.SetValue("")
-					// clear stale cache and warm fresh one in background
-					m.cacheDataset = ""
-					m.cacheMetrics = nil
-					m.cacheLabels = nil
-					m.cacheValues = nil
+					if newDS != m.dataset {
+						m.dataset = newDS
+						m.query.SetValue("")
+						// clear stale cache and warm fresh one in background
+						m.cacheDataset = ""
+						m.cacheMetrics = nil
+						m.cacheLabels = nil
+						m.cacheValues = nil
+						m.overlay = overlayNone
+						m.spotlightFilter.SetValue("")
+						m.spotlightFilter.Blur()
+						m.focused = 0 // focus query editor
+						m.focusSelected()
+						return m, fetchCacheMetrics(m.profile, m.dataset)
+					}
 				}
+				// same dataset or empty list — close picker, preserve editor state
 				m.overlay = overlayNone
 				m.spotlightFilter.SetValue("")
 				m.spotlightFilter.Blur()
-				m.focused = 0 // focus query editor
 				m.focusSelected()
-				return m, fetchCacheMetrics(m.profile, m.dataset)
+				return m, nil
 
 			case tea.KeyUp:
 				if m.datasetSelectedIdx > 0 {
@@ -1916,6 +1924,14 @@ func (m PromqlModel) builderCurrentValue() string {
 	return m.builderValuesFiltered[idx]
 }
 
+func escapePromQLValue(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	s = strings.ReplaceAll(s, "\t", `\t`)
+	return s
+}
+
 func buildPromqlExpr(metric, label, value string) string {
 	if metric == "" {
 		return ""
@@ -1926,7 +1942,7 @@ func buildPromqlExpr(metric, label, value string) string {
 	if value == "" || value == "(any)" {
 		return fmt.Sprintf(`%s{%s!=""}`, metric, label)
 	}
-	return fmt.Sprintf(`%s{%s="%s"}`, metric, label, value)
+	return fmt.Sprintf(`%s{%s="%s"}`, metric, label, escapePromQLValue(value))
 }
 
 func renderBuilderCol(title string, items []string, selectedIdx int, loading, focused bool, colW int) string {

@@ -156,8 +156,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.current = ViewHelp
 			return a, nil
 		case "esc":
-			// Esc on Help / Time / Picker returns to whichever view the
-			// user came from. For v1 we simply jump to query.
 			if a.current == ViewHelp {
 				a.current = ViewQuery
 				return a, nil
@@ -174,6 +172,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if a.ctx.nextView != nil {
 		a.current = *a.ctx.nextView
 		a.ctx.nextView = nil
+		a.ctx.statusError = ""
 	}
 	return a, cmd
 }

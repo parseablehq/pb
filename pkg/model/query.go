@@ -28,6 +28,7 @@ import (
 	"pb/pkg/config"
 	"pb/pkg/iterator"
 	"pb/pkg/ui"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -438,12 +439,15 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyEnter:
 				if len(m.filteredDatasets) > 0 {
 					selected := m.filteredDatasets[m.datasetSelectedIdx]
+					needsSchema := selected != m.dataset || len(m.allColumns) == 0
 					if selected != m.dataset {
-						// dataset changed — reset column and fetch fresh schema
+						// dataset changed — reset column state
 						m.dataset = selected
 						m.selectedColumn = ""
 						m.allColumns = []string{}
 						m.filteredColumns = []string{}
+					}
+					if needsSchema {
 						m.columnsLoading = true
 						cmds = append(cmds, fetchStreamSchema(m.profile, selected))
 					}
@@ -999,12 +1003,16 @@ func renderSQLDateBox(start, end string, width, height int, focused bool) string
 		label = lipgloss.NewStyle().Foreground(p.Active).Bold(true)
 		prefix = lipgloss.NewStyle().Background(p.Active).Render(" ") + " "
 	}
+	valW := innerW - 2 // 2 for prefix
+	if valW < 4 {
+		valW = 4
+	}
 	lines := []string{
 		prefix + label.Render("FROM"),
-		prefix + val.Render(start),
+		prefix + val.Render(ui.Truncate(start, valW)),
 		"",
 		prefix + label.Render("TO"),
-		prefix + val.Render(end),
+		prefix + val.Render(ui.Truncate(end, valW)),
 	}
 	body := lipgloss.NewStyle().
 		Width(innerW).
@@ -1074,21 +1082,30 @@ func buildBottomBar(m QueryModel, width int) string {
 
 	// ── Line 1: shortcuts ─────────────────────────────────────────
 	hints := queryKeysForFocus(m)
-	var keyParts []string
-	for _, h := range hints {
-		k := strings.TrimSuffix(strings.TrimPrefix(h.Key, "<"), ">")
-		keyParts = append(keyParts,
-			keyStyle.Render("<"+k+">")+labelStyle.Render(" "+strings.ToLower(h.Label)),
-		)
-	}
 	const pad = 1
+	const sep = "    "
 	innerW := width - pad*2
 	if innerW < 1 {
 		innerW = 1
 	}
 	padding := strings.Repeat(" ", pad)
 
-	shortcutsLine := padding + strings.Join(keyParts, "    ")
+	var keyParts []string
+	used := 0
+	for _, h := range hints {
+		k := strings.TrimSuffix(strings.TrimPrefix(h.Key, "<"), ">")
+		part := keyStyle.Render("<"+k+">") + labelStyle.Render(" "+strings.ToLower(h.Label))
+		need := lipgloss.Width(part)
+		if used > 0 {
+			need += len(sep)
+		}
+		if used+need > innerW {
+			break
+		}
+		keyParts = append(keyParts, part)
+		used += need
+	}
+	shortcutsLine := padding + strings.Join(keyParts, sep)
 
 	// ── Line 2: hairline ──────────────────────────────────────────
 	divider := sepStyle.Render(strings.Repeat("─", width))
@@ -1286,14 +1303,16 @@ func isIdentChar(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
 }
 
-// resolveColumnPlaceholder replaces the literal word "column" in the query
-// with the selected column name wrapped in double quotes — mirrors how
-// resolveDatasetPlaceholder works for the dataset placeholder.
+var columnPlaceholderRE = regexp.MustCompile(`\bcolumn\b`)
+
+// resolveColumnPlaceholder replaces the standalone placeholder token "column"
+// in the query with the selected column name wrapped in double quotes.
 func resolveColumnPlaceholder(query, column string) string {
 	if column == "" {
 		return query
 	}
-	return strings.ReplaceAll(query, "column", `"`+column+`"`)
+	escaped := strings.ReplaceAll(column, `"`, `""`)
+	return columnPlaceholderRE.ReplaceAllString(query, `"`+escaped+`"`)
 }
 
 func NewFetchTask(profile config.Profile, query string, startTime string, endTime string) tea.Cmd {

@@ -96,11 +96,7 @@ func (v *PickerView) Update(msg tea.Msg, ctx *ui.AppCtx) tea.Cmd {
 				v.filter()
 			}
 			return nil
-		case "p":
-			// pin/unpin the current row (keep `p` as a literal for filter
-			// if user is mid-search; here we treat it as command since
-			// most names don't include letter p in fuzzy queries — TODO:
-			// chord on ctrl+p later)
+		case "ctrl+p":
 			if v.cursor < len(v.filtered) {
 				name := v.filtered[v.cursor].Name
 				v.pinned[name] = !v.pinned[name]
@@ -154,7 +150,7 @@ func (v *PickerView) HeaderKeys() []ui.KeyHint {
 		{Key: "type", Label: "Filter"},
 		{Key: "<↑/↓>", Label: "Navigate"},
 		{Key: "<enter>", Label: "Open"},
-		{Key: "<p>", Label: "Pin"},
+		{Key: "<ctrl+p>", Label: "Pin"},
 		{Key: "<?>", Label: "Help"},
 		{Key: "<ctrl-c>", Label: "Quit"},
 	}
@@ -227,7 +223,7 @@ func (v *PickerView) Render(width, height int, _ *ui.AppCtx) string {
 	footerLeft := lipgloss.JoinHorizontal(lipgloss.Top,
 		hint("↑↓", "nav"), "   ",
 		hint("↵", "open"), "   ",
-		hint("p", "pin"),
+		hint("^p", "pin"),
 	)
 	footerRight := hint("esc", "")
 	fgap := cardW - lipgloss.Width(footerLeft) - lipgloss.Width(footerRight) - 4
@@ -367,7 +363,7 @@ func fetchDatasets(profile config.Profile) tea.Cmd {
 			return datasetListMsg{err: err.Error()}
 		}
 		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
 		if resp.StatusCode >= 400 {
 			return datasetListMsg{err: fmt.Sprintf("HTTP %d: %s", resp.StatusCode, truncate(string(body), 200))}
 		}
@@ -405,10 +401,11 @@ func inferKind(name string) string {
 }
 
 func truncate(s string, n int) string {
-	if len(s) <= n {
+	runes := []rune(s)
+	if len(runes) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	return string(runes[:n]) + "…"
 }
 
 func max0(n int) int {

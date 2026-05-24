@@ -252,7 +252,7 @@ func (m modelSavedQueries) View() string {
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(p.Border).
 		Padding(1, 2).
-		Width(m.width).
+		Width(m.width - 2).
 		Render(mainInner)
 
 	hintRow := keyStyle.Render("<a/enter>") + hintStyle.Render(" apply    ") +
