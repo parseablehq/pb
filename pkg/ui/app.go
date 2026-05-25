@@ -193,6 +193,9 @@ func (a App) View() string {
 
 	// ── Top chrome: HeaderStrip with context KVs + view-aware keybinds + logo
 	view := a.views[a.current]
+	if view == nil {
+		view = a.views[ViewQuery]
+	}
 	ctxKVs := []KV{
 		{Key: "Cluster", Value: a.ctx.Profile.URL, Variant: KVMute},
 		{Key: "User", Value: orDash(a.ctx.Profile.Username)},

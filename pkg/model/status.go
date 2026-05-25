@@ -119,8 +119,10 @@ func (m StatusBar) View() string {
 		right = ""
 	}
 	gap := contentW - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 1 {
+	if right != "" && gap < 1 {
 		gap = 1
+	} else if gap < 0 {
+		gap = 0
 	}
 	row := left + strings.Repeat(" ", gap) + right
 	inner := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(row)
