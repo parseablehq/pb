@@ -5,6 +5,7 @@ go 1.25.0
 toolchain go1.25.4
 
 require (
+	github.com/alecthomas/chroma/v2 v2.24.1
 	github.com/apache/arrow/go/v13 v13.0.0
 	github.com/briandowns/spinner v1.23.1
 	github.com/charmbracelet/bubbles v0.18.0
@@ -12,6 +13,7 @@ require (
 	github.com/charmbracelet/lipgloss v0.12.1
 	github.com/dustin/go-humanize v1.0.1
 	github.com/gofrs/flock v0.12.1
+	github.com/guptarohit/asciigraph v0.9.0
 	github.com/manifoldco/promptui v0.9.0
 	github.com/oklog/ulid/v2 v2.1.0
 	github.com/olekukonko/tablewriter v0.0.5
@@ -55,6 +57,7 @@ require (
 	github.com/cyphar/filepath-securejoin v0.3.4 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/distribution/reference v0.6.0 // indirect
+	github.com/dlclark/regexp2 v1.12.0 // indirect
 	github.com/docker/cli v25.0.1+incompatible // indirect
 	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/docker v25.0.6+incompatible // indirect

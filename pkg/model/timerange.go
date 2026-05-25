@@ -19,7 +19,7 @@ package model
 import (
 	"fmt"
 	"io"
-	"strings"
+	"pb/pkg/ui"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -27,14 +27,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Items for time range
+// Time-range presets — match the mock at terminal/page.tsx ViewTime.
+// Custom… is a placeholder; selecting it leaves start/end editable.
 const (
 	TenMinute = -10 * time.Minute
 	OneHour   = -1 * time.Hour
 	FiveHour  = -5 * time.Hour
 	OneDay    = -24 * time.Hour
 	ThreeDay  = -72 * time.Hour
-	OneWeek   = -168 * time.Hour
 )
 
 var (
@@ -44,11 +44,7 @@ var (
 		timeDurationItem{duration: FiveHour, repr: "5 Hours"},
 		timeDurationItem{duration: OneDay, repr: "1 Day"},
 		timeDurationItem{duration: ThreeDay, repr: "3 Days"},
-		timeDurationItem{duration: OneWeek, repr: "7 Days"},
 	}
-
-	listItemRender         = lipgloss.NewStyle().Foreground(StandardSecondary)
-	listSelectedItemRender = lipgloss.NewStyle().Foreground(FocusPrimary)
 )
 
 type timeDurationItem struct {
@@ -63,34 +59,35 @@ type timeDurationItemDelegate struct{}
 func (d timeDurationItemDelegate) Height() int                             { return 1 }
 func (d timeDurationItemDelegate) Spacing() int                            { return 0 }
 func (d timeDurationItemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
+
+// Render: selected row gets a 1-cell Accent rail + bold Accent label.
+// Idle rows are Body fg with leading 2 spaces for alignment. No bg
+// fills — they don't pad cleanly past trailing ANSI resets.
 func (d timeDurationItemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
 	i, ok := listItem.(timeDurationItem)
 	if !ok {
 		return
 	}
+	p := ui.Active
 
-	fn := listItemRender.Render
 	if index == m.Index() {
-		fn = func(s ...string) string {
-			return listSelectedItemRender.Render("> " + strings.Join(s, " "))
-		}
+		rail := lipgloss.NewStyle().Background(p.Active).Render(" ")
+		name := lipgloss.NewStyle().Foreground(p.Active).Bold(true).Render(i.repr)
+		fmt.Fprint(w, rail+" "+name)
+		return
 	}
-
-	fmt.Fprint(w, fn(i.repr))
+	name := lipgloss.NewStyle().Foreground(p.Body).Render(i.repr)
+	fmt.Fprint(w, "  "+name)
 }
 
-// NewTimeRangeModel creates new range model
+// NewTimeRangeModel creates new range list — narrow column, no title,
+// no pagination, no filter. Title is rendered by the modal wrapper.
 func NewTimeRangeModel() list.Model {
-	list := list.New(timeDurations, timeDurationItemDelegate{}, 20, 10)
-	list.SetShowPagination(false)
-	list.SetShowHelp(false)
-	list.SetShowFilter(false)
-	list.SetShowTitle(true)
-	list.Styles.TitleBar = baseStyle
-	list.Styles.Title = baseStyle.MarginBottom(1)
-	list.Styles.TitleBar.Align(lipgloss.Left)
-	list.Title = "Select Time Range"
-	list.SetShowStatusBar(false)
-
-	return list
+	l := list.New(timeDurations, timeDurationItemDelegate{}, 24, 10)
+	l.SetShowPagination(false)
+	l.SetShowHelp(false)
+	l.SetShowFilter(false)
+	l.SetShowTitle(false)
+	l.SetShowStatusBar(false)
+	return l
 }

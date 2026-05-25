@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"pb/pkg/config"
 	internalHTTP "pb/pkg/http"
 	"pb/pkg/model"
@@ -36,7 +35,7 @@ var SavedQueryList = &cobra.Command{
 	Short:   "List of saved queries",
 	Long:    "\nShow the list of saved queries for active user",
 	PreRunE: PreRunDefaultProfile,
-	Run: func(_ *cobra.Command, _ []string) {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		client := internalHTTP.DefaultClient(&DefaultProfile)
 
 		// Check if the output flag is set
@@ -63,11 +62,11 @@ var SavedQueryList = &cobra.Command{
 				jsonOutput, err := json.MarshalIndent(userSavedQueries, "", "  ")
 				if err != nil {
 					fmt.Println("Error converting saved queries to JSON:", err)
-					return
+					return err
 				}
 				if string(jsonOutput) == "null" {
 					fmt.Println("[]")
-					return
+					return nil
 				}
 				fmt.Println(string(jsonOutput))
 			} else {
@@ -96,24 +95,27 @@ var SavedQueryList = &cobra.Command{
 			}
 			// Print all titles as a single line, comma-separated
 			fmt.Println(strings.Join(filterDetails, " "))
-			return
+			return nil
 
 		}
 
 		// Normal Saved Queries Menu if output flag not set
 		p := model.SavedQueriesMenu()
 		if _, err := p.Run(); err != nil {
-			os.Exit(1)
+			return err
 		}
 
 		a := model.QueryToApply()
 		d := model.QueryToDelete()
 		if a.Stream() != "" {
-			savedQueryToPbQuery(a.Stream(), a.StartTime(), a.EndTime())
+			if err := savedQueryToPbQuery(a.Stream(), a.StartTime(), a.EndTime()); err != nil {
+				return err
+			}
 		}
 		if d.SavedQueryID() != "" {
 			deleteSavedQuery(&client, d.SavedQueryID(), d.Title())
 		}
+		return nil
 	},
 }
 
@@ -137,73 +139,25 @@ func deleteSavedQuery(client *internalHTTP.HTTPClient, savedQueryID, title strin
 	}
 }
 
-// Convert a saved query to executable pb query
-func savedQueryToPbQuery(query string, start string, end string) {
-	var timeStamps string
-	if start == "" || end == "" {
-		timeStamps = ``
-	} else {
-		startFormatted := formatToRFC3339(start)
-		endFormatted := formatToRFC3339(end)
-		timeStamps = ` --from=` + startFormatted + ` --to=` + endFormatted
+// Convert a saved query to executable pb query and print results to terminal
+func savedQueryToPbQuery(sqlQuery string, start string, end string) error {
+	if start == "" {
+		start = "1h"
 	}
-	_ = `pb query run ` + query + timeStamps
-}
-
-// Parses all UTC time format from string to time interface
-func parseTimeToFormat(input string) (time.Time, error) {
-	// List of possible formats
-	formats := []string{
-		time.RFC3339,
-		"2006-01-02 15:04:05",
-		"2006-01-02",
-		"01/02/2006 15:04:05",
-		"02-Jan-2006 15:04:05 MST",
-		"2006-01-02T15:04:05Z",
-		"02-Jan-2006",
+	if end == "" {
+		end = "now"
 	}
 
-	var err error
-	var t time.Time
+	sqlQuery = quoteStreamNames(sqlQuery)
+	sqlQuery = quoteFieldsWithDots(sqlQuery)
 
-	for _, format := range formats {
-		t, err = time.Parse(format, input)
-		if err == nil {
-			return t, nil
-		}
-	}
+	fmt.Printf("Query: %s\n", sqlQuery)
 
-	return t, fmt.Errorf("unable to parse time: %s", input)
-}
-
-// Converts to RFC3339
-func convertTime(input string) (string, error) {
-	t, err := parseTimeToFormat(input)
-	if err != nil {
-		return "", err
-	}
-
-	return t.Format(time.RFC3339), nil
-}
-
-// Converts User inputted time to string type RFC3339 time
-func formatToRFC3339(time string) string {
-	var formattedTime string
-	if len(strings.Fields(time)) > 1 {
-		newTime := strings.Fields(time)[0:2]
-		rfc39990time, err := convertTime(strings.Join(newTime, " "))
-		if err != nil {
-			fmt.Println("error formatting time")
-		}
-		formattedTime = rfc39990time
-	} else {
-		rfc39990time, err := convertTime(time)
-		if err != nil {
-			fmt.Println("error formatting time")
-		}
-		formattedTime = rfc39990time
-	}
-	return formattedTime
+	client := internalHTTP.DefaultClient(&DefaultProfile)
+	stopSpinner := startSpinner()
+	err := fetchData(&client, sqlQuery, start, end, "")
+	stopSpinner()
+	return err
 }
 
 func init() {
@@ -253,19 +207,18 @@ func fetchFilters(client *http.Client, profile *config.Profile) []Item {
 	// This returns only the SQL type filters
 	var userSavedQueries []Item
 	for _, filter := range filters {
-
-		queryBytes, _ := json.Marshal(filter.Query.FilterQuery)
-
+		if filter.Query.FilterQuery == nil {
+			continue
+		}
 		userSavedQuery := Item{
 			ID:     filter.FilterID,
 			Title:  filter.FilterName,
 			Stream: filter.StreamName,
-			Desc:   string(queryBytes),
+			Desc:   *filter.Query.FilterQuery,
 			From:   filter.TimeFilter.From,
 			To:     filter.TimeFilter.To,
 		}
 		userSavedQueries = append(userSavedQueries, userSavedQuery)
-
 	}
 	return userSavedQueries
 }
