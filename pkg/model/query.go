@@ -28,7 +28,6 @@ import (
 	"pb/pkg/config"
 	"pb/pkg/iterator"
 	"pb/pkg/ui"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -340,7 +339,7 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 func (m QueryModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.spinner.Tick, fetchAllStreams(m.profile)}
 	if strings.TrimSpace(m.query.Value()) != "" {
-		cmds = append(cmds, NewFetchTask(m.profile, resolveColumnPlaceholder(resolveDatasetPlaceholder(m.query.Value(), m.dataset), m.selectedColumn), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()))
+		cmds = append(cmds, NewFetchTask(m.profile, resolveDatasetPlaceholder(m.query.Value(), m.dataset), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()))
 	}
 	return tea.Batch(cmds...)
 }
@@ -500,7 +499,8 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyEnter:
 				if len(m.filteredColumns) > 0 {
 					m.selectedColumn = m.filteredColumns[m.columnSelectedIdx]
-					m.query.InsertString("column ")
+					escaped := strings.ReplaceAll(m.selectedColumn, `"`, `""`)
+					m.query.InsertString(`"` + escaped + `" `)
 				}
 				m.overlay = overlayNone
 				m.columnFilter.SetValue("")
@@ -607,7 +607,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status.Info = ""
 				m.loading = true
 				m.hasQueried = true
-				return m, tea.Batch(m.spinner.Tick, NewFetchTask(m.profile, resolveColumnPlaceholder(resolveDatasetPlaceholder(m.query.Value(), m.dataset), m.selectedColumn), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()))
+				return m, tea.Batch(m.spinner.Tick, NewFetchTask(m.profile, resolveDatasetPlaceholder(m.query.Value(), m.dataset), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()))
 			}
 		}
 
@@ -621,7 +621,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status.Info = ""
 			m.loading = true
 			m.hasQueried = true
-			return m, tea.Batch(m.spinner.Tick, NewFetchTask(m.profile, resolveColumnPlaceholder(resolveDatasetPlaceholder(m.query.Value(), m.dataset), m.selectedColumn), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()))
+			return m, tea.Batch(m.spinner.Tick, NewFetchTask(m.profile, resolveDatasetPlaceholder(m.query.Value(), m.dataset), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()))
 		}
 
 		if msg.Type == tea.KeyCtrlB {
@@ -1301,18 +1301,6 @@ func resolveDatasetPlaceholder(query, dataset string) string {
 
 func isIdentChar(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
-}
-
-var columnPlaceholderRE = regexp.MustCompile(`\bcolumn\b`)
-
-// resolveColumnPlaceholder replaces the standalone placeholder token "column"
-// in the query with the selected column name wrapped in double quotes.
-func resolveColumnPlaceholder(query, column string) string {
-	if column == "" {
-		return query
-	}
-	escaped := strings.ReplaceAll(column, `"`, `""`)
-	return columnPlaceholderRE.ReplaceAllString(query, `"`+escaped+`"`)
 }
 
 func NewFetchTask(profile config.Profile, query string, startTime string, endTime string) tea.Cmd {

@@ -136,28 +136,36 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Quit
 		case "1":
 			a.current = ViewQuery
+			a.ctx.statusError = ""
 			return a, nil
 		case "2":
 			a.current = ViewResults
+			a.ctx.statusError = ""
 			return a, nil
 		case "3":
 			a.current = ViewMetrics
+			a.ctx.statusError = ""
 			return a, nil
 		case "4":
 			a.current = ViewPicker
+			a.ctx.statusError = ""
 			return a, nil
 		case "5":
 			a.current = ViewTime
+			a.ctx.statusError = ""
 			return a, nil
 		case "6":
 			a.current = ViewSaved
+			a.ctx.statusError = ""
 			return a, nil
 		case "?", "7":
 			a.current = ViewHelp
+			a.ctx.statusError = ""
 			return a, nil
 		case "esc":
 			if a.current == ViewHelp {
 				a.current = ViewQuery
+				a.ctx.statusError = ""
 				return a, nil
 			}
 		}

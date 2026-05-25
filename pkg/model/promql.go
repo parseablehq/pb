@@ -366,7 +366,7 @@ func NewPromqlModel(profile config.Profile, expr string, startTime, endTime time
 		}
 	}
 
-	hasQuery := strings.TrimSpace(expr) != ""
+	hasQuery := strings.TrimSpace(expr) != "" && dataset != ""
 	return PromqlModel{
 		width:      w,
 		height:     h,
@@ -453,6 +453,16 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.dataset = msg.datasets[0]
 				m.cacheDataset = ""
 				m.cacheMetrics = nil
+				if strings.TrimSpace(m.query.Value()) != "" {
+					m.loading = true
+					m.hasQueried = true
+					return m, tea.Batch(
+						m.spinner.Tick,
+						fetchCacheMetrics(m.profile, m.dataset),
+						NewPromqlFetchTask(m.profile, m.query.Value(), m.dataset, m.step,
+							m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.instant),
+					)
+				}
 				return m, fetchCacheMetrics(m.profile, m.dataset)
 			}
 			for i, ds := range m.filteredDatasets {

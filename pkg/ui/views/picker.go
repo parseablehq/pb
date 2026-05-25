@@ -363,7 +363,14 @@ func fetchDatasets(profile config.Profile) tea.Cmd {
 			return datasetListMsg{err: err.Error()}
 		}
 		defer resp.Body.Close()
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
+		const limit = 10 * 1024 * 1024
+		body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+		if err != nil {
+			return datasetListMsg{err: "failed to read response: " + err.Error()}
+		}
+		if len(body) > limit {
+			return datasetListMsg{err: "response too large (>10 MB)"}
+		}
 		if resp.StatusCode >= 400 {
 			return datasetListMsg{err: fmt.Sprintf("HTTP %d: %s", resp.StatusCode, truncate(string(body), 200))}
 		}

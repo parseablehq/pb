@@ -115,6 +115,9 @@ func (m StatusBar) View() string {
 	if contentW < 1 {
 		contentW = 1
 	}
+	if lipgloss.Width(left)+lipgloss.Width(right) > contentW {
+		right = ""
+	}
 	gap := contentW - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
