@@ -1375,12 +1375,16 @@ func renderPromqlControlsBox(dataset, step, mode string, width, height int, data
 		sLabel = lipgloss.NewStyle().Foreground(p.Ghost)
 		stepVal = lipgloss.NewStyle().Foreground(p.Ghost).Render("—")
 	}
+	modeLabel := sLabel
+	if stepHi && instant {
+		modeLabel = hi
+	}
 	lines := []string{
 		prefix(datasetHi) + dLabel.Render("DATASET"),
 		prefix(datasetHi) + val.Render(dataset),
 		"",
-		prefix(stepHi && !instant) + sLabel.Render("STEP  ") + stepVal,
-		prefix(stepHi && !instant) + sLabel.Render("MODE  ") + val.Render(mode),
+		prefix(stepHi) + sLabel.Render("STEP  ") + stepVal,
+		prefix(stepHi) + modeLabel.Render("MODE  ") + val.Render(mode),
 	}
 	body := lipgloss.NewStyle().
 		Width(innerW).
