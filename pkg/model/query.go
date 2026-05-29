@@ -1124,7 +1124,7 @@ func buildBottomBar(m QueryModel, width int) string {
 		)
 	}
 	rightParts = append(rightParts,
-		labelStyle.Render("MODE"),
+		labelStyle.Render("QUERY"),
 		" ",
 		lipgloss.NewStyle().Foreground(p.Accent).Bold(true).Render(strings.ToUpper(m.status.title)),
 	)
