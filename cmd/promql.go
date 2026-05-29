@@ -64,7 +64,7 @@ func init() {
 	promqlRunCmd.Flags().StringP("dataset", "d", defaultMetricsStream, "Metrics dataset to query")
 	promqlRunCmd.Flags().StringP("from", "f", "5m", "Start time (e.g. 5m, 1h, 2024-01-01T00:00:00Z)")
 	promqlRunCmd.Flags().StringP("to", "t", "now", "End time")
-	promqlRunCmd.Flags().String("step", "1m", "Resolution step for range queries (e.g. 15s, 1m)")
+	promqlRunCmd.Flags().String("step", "auto", "Resolution step for range queries (auto, 15s, 1m)")
 	promqlRunCmd.Flags().StringP("output", "o", "text", "Output format: text or json")
 	promqlRunCmd.Flags().Bool("instant", false, "Instant query — evaluate at --to time only")
 	promqlRunCmd.Flags().BoolP("interactive", "i", false, "Open interactive TUI")
@@ -262,7 +262,7 @@ func runPromqlQuery(cmd *cobra.Command, args []string) error {
 		apiPath = "prometheus/api/v1/query_range"
 		params.Set("start", startTime.UTC().Format(time.RFC3339))
 		params.Set("end", toTime.UTC().Format(time.RFC3339))
-		params.Set("step", step)
+		params.Set("step", model.ResolvePromqlStep(step, startTime, toTime))
 	}
 
 	body, err := promqlGet(apiPath, params)

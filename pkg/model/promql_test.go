@@ -177,35 +177,58 @@ func TestExtractChartDataGroupsSeriesByMetricLabelSet(t *testing.T) {
 	}
 }
 
-func TestAggregateChartSeriesAveragesValuesByTimestamp(t *testing.T) {
-	series := []promqlChartSeries{
-		{
-			times:  []string{"2026-01-02T04:00:00+05:30", "2026-01-02T02:00:00+05:30"},
-			values: []float64{2, 1},
-		},
-		{
-			times:  []string{"2026-01-02T02:00:00+05:30", "2026-01-02T04:00:00+05:30"},
-			values: []float64{100, 200},
+func TestChartSeriesPointsPreservesRawSeries(t *testing.T) {
+	m := PromqlModel{
+		dataRows: []table.Row{
+			table.NewRow(table.RowData{
+				promqlTimestampFullKey: "2026-01-02T04:00:00+05:30",
+				promqlMetricKey:        `cpu_usage{host.arch="amd64"}`,
+				promqlValueKey:         "2",
+			}),
+			table.NewRow(table.RowData{
+				promqlTimestampFullKey: "2026-01-02T02:00:00+05:30",
+				promqlMetricKey:        `cpu_usage{host.arch="amd64"}`,
+				promqlValueKey:         "1",
+			}),
+			table.NewRow(table.RowData{
+				promqlTimestampFullKey: "2026-01-02T02:00:00+05:30",
+				promqlMetricKey:        `cpu_usage{host.arch="arm64"}`,
+				promqlValueKey:         "100",
+			}),
+			table.NewRow(table.RowData{
+				promqlTimestampFullKey: "2026-01-02T04:00:00+05:30",
+				promqlMetricKey:        `cpu_usage{host.arch="arm64"}`,
+				promqlValueKey:         "200",
+			}),
 		},
 	}
 
-	got := aggregateChartSeries(series)
-	if !reflect.DeepEqual(got.values, []float64{50.5, 101}) {
-		t.Fatalf("values = %#v, want %#v", got.values, []float64{50.5, 101})
+	got := m.chartSeriesPoints()
+	if len(got) != 2 {
+		t.Fatalf("series count = %d, want 2", len(got))
 	}
-	if len(got.times) != 2 {
-		t.Fatalf("times length = %d, want 2", len(got.times))
+	if got[0].points[0].Value != 100 || got[0].points[1].Value != 200 {
+		t.Fatalf("first series values = %#v, want highest latest-value series 100,200", got[0].points)
 	}
-	first, ok := parsePromqlChartTime(got.times[0])
-	if !ok {
-		t.Fatalf("failed to parse first aggregated timestamp %q", got.times[0])
+	if got[1].points[0].Value != 1 || got[1].points[1].Value != 2 {
+		t.Fatalf("second series values = %#v, want lower latest-value series 1,2", got[1].points)
 	}
-	second, ok := parsePromqlChartTime(got.times[1])
-	if !ok {
-		t.Fatalf("failed to parse second aggregated timestamp %q", got.times[1])
+	if !got[0].points[0].Time.Before(got[0].points[1].Time) {
+		t.Fatalf("first series timestamps not sorted: %#v", got[0].points)
 	}
-	if !first.Before(second) {
-		t.Fatalf("aggregated timestamps not sorted: %q then %q", got.times[0], got.times[1])
+	if got[0].color == got[1].color {
+		t.Fatalf("series colors should be unique, got %q", got[0].color)
+	}
+}
+
+func TestChartSeriesColorDoesNotRepeatForManySeries(t *testing.T) {
+	seen := map[string]bool{}
+	for i := 0; i < 40; i++ {
+		color := string(chartSeriesColor(i))
+		if seen[color] {
+			t.Fatalf("chartSeriesColor(%d) repeated color %s", i, color)
+		}
+		seen[color] = true
 	}
 }
 
@@ -256,5 +279,33 @@ func TestPromqlModelFormatTSUsesLocalTime(t *testing.T) {
 	want := "2026-01-02T15:30:00+05:30"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolvePromqlStep(t *testing.T) {
+	start := time.Date(2026, 5, 29, 10, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name     string
+		step     string
+		duration time.Duration
+		want     string
+	}{
+		{name: "manual unchanged", step: "5m", duration: time.Hour, want: "5m"},
+		{name: "ten minute range", step: "auto", duration: 10 * time.Minute, want: "15s"},
+		{name: "one hour range", step: "auto", duration: time.Hour, want: "1m"},
+		{name: "one day range", step: "auto", duration: 24 * time.Hour, want: "15m"},
+		{name: "empty uses auto", step: "", duration: 6 * time.Hour, want: "5m"},
+		{name: "invalid uses auto", step: "now", duration: time.Hour, want: "1m"},
+		{name: "compound manual unchanged", step: "1h30m", duration: 24 * time.Hour, want: "1h30m"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ResolvePromqlStep(tt.step, start, start.Add(tt.duration))
+			if got != tt.want {
+				t.Fatalf("ResolvePromqlStep(%q, %s) = %q, want %q", tt.step, tt.duration, got, tt.want)
+			}
+		})
 	}
 }

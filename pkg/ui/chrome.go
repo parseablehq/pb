@@ -188,6 +188,11 @@ func buildKeyGrid(keys []KeyHint, cols, availW int) string {
 	return strings.Join(out, "\n")
 }
 
+// KeyGrid renders key hints using the same column layout as HeaderStrip.
+func KeyGrid(keys []KeyHint, cols, availW int) string {
+	return buildKeyGrid(keys, cols, availW)
+}
+
 // Breadcrumb is one tab/crumb in the bottom navigation.
 type Breadcrumb struct {
 	ID     string
