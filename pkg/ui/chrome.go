@@ -190,6 +190,9 @@ func buildKeyGrid(keys []KeyHint, cols, availW int) string {
 
 // KeyGrid renders key hints using the same column layout as HeaderStrip.
 func KeyGrid(keys []KeyHint, cols, availW int) string {
+	if cols <= 0 || availW <= 0 || len(keys) == 0 {
+		return ""
+	}
 	return buildKeyGrid(keys, cols, availW)
 }
 
