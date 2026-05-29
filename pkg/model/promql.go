@@ -21,15 +21,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"pb/pkg/config"
 	"pb/pkg/ui"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/NimbleMarkets/ntcharts/canvas"
+	"github.com/NimbleMarkets/ntcharts/canvas/runes"
+	"github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -43,10 +48,11 @@ import (
 // ─── constants ───────────────────────────────────────────────────────────────
 
 const (
-	promqlTimestampKey   = "timestamp"
-	promqlMetricKey      = "metric"
-	promqlValueKey       = "value"
-	promqlTimestampWidth = 10 // matches SQL dateTimeWidth (HH:MM:SS + slack)
+	promqlTimestampKey     = "timestamp"
+	promqlTimestampFullKey = "_timestamp_full"
+	promqlMetricKey        = "metric"
+	promqlValueKey         = "value"
+	promqlTimestampWidth   = 10 // matches SQL dateTimeWidth (HH:MM:SS + slack)
 
 	// spotlight modal width
 	spotlightWidth    = 58
@@ -145,6 +151,11 @@ type PromqlModel struct {
 	fetchErrMsg    string
 	lastResultType string
 	seriesCount    int
+	chartMode      bool // toggle between table and chart view
+	tsChart        timeserieslinechart.Model
+	tsChartReady   bool
+	chartCursor    int
+	chartHover     bool
 
 	// query parameters
 	dataset string
@@ -384,6 +395,7 @@ func NewPromqlModel(profile config.Profile, expr string, startTime, endTime time
 		step:       step,
 		instant:    instant,
 		focused:    queryFocusIdx,
+		chartMode:  true,
 
 		stepInput:       si,
 		spotlightFilter: sf,
@@ -435,6 +447,7 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateTableColumns(0, 0)
 		bh := lipgloss.Height(buildPromqlBottomBar(m, m.width))
 		m.table = m.table.WithPageSize(promqlPageSize(m.height, bh))
+		m.rebuildChart()
 		return m, nil
 
 	case datasetListMsg:
@@ -572,7 +585,10 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastResultType = msg.resultType
 			m.seriesCount = msg.seriesCount
 			m.status.Info = ""
+			m.chartCursor = 0
+			m.chartHover = false
 			m.updateTableColumns(msg.metricWidth, msg.valueWidth)
+			m.rebuildChart()
 			// Auto-focus results table after successful query.
 			for i, p := range PromqlNavigationMap {
 				if p == "table" {
@@ -584,6 +600,10 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.dataRows = []table.Row{}
 			m.table = m.table.WithRows([]table.Row{})
+			m.tsChart = timeserieslinechart.Model{}
+			m.tsChartReady = false
+			m.chartCursor = 0
+			m.chartHover = false
 			m.fetchErrMsg = msg.errMsg
 			if m.fetchErrMsg == "" {
 				m.fetchErrMsg = "query failed"
@@ -960,6 +980,25 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// 't' on results panel toggles chart/table view
+		if msg.String() == "t" && m.currentFocus() == "table" && m.overlay == overlayNone {
+			m.chartMode = !m.chartMode
+			m.rebuildChart()
+			return m, nil
+		}
+		if m.chartMode && m.currentFocus() == "table" && m.overlay == overlayNone {
+			switch {
+			case msg.Type == tea.KeyLeft || msg.String() == "[":
+				m.moveChartCursor(-1)
+				m.rebuildChart()
+				return m, nil
+			case msg.Type == tea.KeyRight || msg.String() == "]":
+				m.moveChartCursor(1)
+				m.rebuildChart()
+				return m, nil
+			}
+		}
+
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
@@ -1153,12 +1192,6 @@ func (m PromqlModel) View() string {
 		resultsInnerW = 10
 	}
 
-	pageSize := resultsInnerH - 5
-	if pageSize < 1 {
-		pageSize = 1
-	}
-	m.table = m.table.WithPageSize(pageSize).WithRows(m.dataRows).WithTargetWidth(resultsInnerW)
-
 	var inner string
 	switch {
 	case !m.hasQueried:
@@ -1188,53 +1221,64 @@ func (m PromqlModel) View() string {
 		inner = lipgloss.Place(resultsInnerW, resultsInnerH, lipgloss.Center, lipgloss.Center, msg,
 			lipgloss.WithWhitespaceChars(" "))
 	default:
-		tableStr := m.table.View()
-		tableLines := strings.Split(tableStr, "\n")
-		// strip any trailing blank line the table renderer may emit
-		for len(tableLines) > 0 && tableLines[len(tableLines)-1] == "" {
-			tableLines = tableLines[:len(tableLines)-1]
-		}
+		if m.chartMode {
+			// Render chart view
+			inner = m.renderChart(resultsInnerW, resultsInnerH)
+		} else {
+			// Render table view
+			pageSize := resultsInnerH - 5
+			if pageSize < 1 {
+				pageSize = 1
+			}
+			m.table = m.table.WithPageSize(pageSize).WithRows(m.dataRows).WithTargetWidth(resultsInnerW)
+			tableStr := m.table.View()
+			tableLines := strings.Split(tableStr, "\n")
+			// strip any trailing blank line the table renderer may emit
+			for len(tableLines) > 0 && tableLines[len(tableLines)-1] == "" {
+				tableLines = tableLines[:len(tableLines)-1]
+			}
 
-		var bottomRule string
-		if len(tableLines) > 0 {
-			bottomRule = tableLines[len(tableLines)-1]
-			tableLines = tableLines[:len(tableLines)-1]
+			var bottomRule string
+			if len(tableLines) > 0 {
+				bottomRule = tableLines[len(tableLines)-1]
+				tableLines = tableLines[:len(tableLines)-1]
+			}
+			tableBodyH := len(tableLines) + 1 // +1 for the bottom rule line
+			paddingH := resultsInnerH - 1 - tableBodyH
+			if paddingH < 0 {
+				paddingH = 0
+			}
+			// placeholder row — matches table row indent (no left border in customBorder)
+			dashRow := lipgloss.NewStyle().
+				Foreground(p.Ghost).
+				Width(resultsInnerW).
+				Render(" --")
+			var leftPart, rightPart string
+			if m.table.MaxPages() > 1 {
+				leftPart = fmt.Sprintf("%d/%d", m.table.CurrentPage(), m.table.MaxPages())
+			}
+			if len(m.dataRows) > 0 {
+				curRow := m.table.GetHighlightedRowIndex() + 1
+				rightPart = fmt.Sprintf("%d | %d rows", curRow, len(m.dataRows))
+			}
+			faint := lipgloss.NewStyle().Foreground(p.Faint)
+			leftR, rightR := faint.Render(leftPart), faint.Render(rightPart)
+			gap := resultsInnerW - 2 - lipgloss.Width(leftR) - lipgloss.Width(rightR)
+			if gap < 1 {
+				gap = 1
+			}
+			footerLine := lipgloss.NewStyle().Width(resultsInnerW).Padding(0, 1).
+				Render(leftR + strings.Repeat(" ", gap) + rightR)
+			// assemble: body rows → "--" placeholders → closing rule → footer
+			parts := make([]string, 0, len(tableLines)+paddingH+3)
+			parts = append(parts, strings.Join(tableLines, "\n"))
+			for i := 0; i < paddingH; i++ {
+				parts = append(parts, dashRow)
+			}
+			parts = append(parts, bottomRule)
+			parts = append(parts, footerLine)
+			inner = strings.Join(parts, "\n")
 		}
-		tableBodyH := len(tableLines) + 1 // +1 for the bottom rule line
-		paddingH := resultsInnerH - 1 - tableBodyH
-		if paddingH < 0 {
-			paddingH = 0
-		}
-		// placeholder row — matches table row indent (no left border in customBorder)
-		dashRow := lipgloss.NewStyle().
-			Foreground(p.Ghost).
-			Width(resultsInnerW).
-			Render(" --")
-		var leftPart, rightPart string
-		if m.table.MaxPages() > 1 {
-			leftPart = fmt.Sprintf("%d/%d", m.table.CurrentPage(), m.table.MaxPages())
-		}
-		if len(m.dataRows) > 0 {
-			curRow := m.table.GetHighlightedRowIndex() + 1
-			rightPart = fmt.Sprintf("%d | %d rows", curRow, len(m.dataRows))
-		}
-		faint := lipgloss.NewStyle().Foreground(p.Faint)
-		leftR, rightR := faint.Render(leftPart), faint.Render(rightPart)
-		gap := resultsInnerW - 2 - lipgloss.Width(leftR) - lipgloss.Width(rightR)
-		if gap < 1 {
-			gap = 1
-		}
-		footerLine := lipgloss.NewStyle().Width(resultsInnerW).Padding(0, 1).
-			Render(leftR + strings.Repeat(" ", gap) + rightR)
-		// assemble: body rows → "--" placeholders → closing rule → footer
-		parts := make([]string, 0, len(tableLines)+paddingH+3)
-		parts = append(parts, strings.Join(tableLines, "\n"))
-		for i := 0; i < paddingH; i++ {
-			parts = append(parts, dashRow)
-		}
-		parts = append(parts, bottomRule)
-		parts = append(parts, footerLine)
-		inner = strings.Join(parts, "\n")
 	}
 	{
 		lines := strings.Split(inner, "\n")
@@ -1243,7 +1287,16 @@ func (m PromqlModel) View() string {
 		}
 		inner = strings.Join(lines, "\n")
 	}
-	resultsPane := renderResultsPane(inner, m.width, availH, 0, m.currentFocus() == "table")
+	var resultsTitleRight string
+	resultsTitle := "RESULTS | Table View"
+	if m.chartMode {
+		resultsTitle = "RESULTS | Chart View"
+		resultsTitleRight = lipgloss.NewStyle().
+			Foreground(p.Accent).
+			Bold(true).
+			Render(m.chartTimeRangeTitle())
+	}
+	resultsPane := renderPromqlResultsPane(inner, m.width, availH, m.currentFocus() == "table", resultsTitle, resultsTitleRight)
 
 	// ── Compose body or overlay ──────────────────────────────────────
 	body := lipgloss.JoinVertical(lipgloss.Left, topSection, resultsPane)
@@ -1276,6 +1329,43 @@ func (m PromqlModel) View() string {
 		bottomView,
 	)
 	return lipgloss.NewStyle().Width(m.width).Render(render)
+}
+
+func renderPromqlResultsPane(body string, width, height int, focused bool, title string, right string) string {
+	p := ui.Active
+	borderColor := p.Border
+	titleFg := p.Faint
+	if focused {
+		borderColor = p.BorderHi
+		titleFg = p.Accent
+	}
+	innerW := width - 2
+	if innerW < 4 {
+		innerW = 4
+	}
+	innerH := height - 2
+	if innerH < 3 {
+		innerH = 3
+	}
+
+	left := lipgloss.NewStyle().Foreground(titleFg).Bold(focused).Render(title)
+	gap := innerW - lipgloss.Width(left) - lipgloss.Width(right) - 2
+	if gap < 1 {
+		gap = 1
+	}
+	titleRow := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(
+		left + strings.Repeat(" ", gap) + right,
+	)
+	bodyPane := lipgloss.NewStyle().
+		Width(innerW).
+		Height(innerH-1).
+		Padding(0, 1).
+		Render(body)
+	stack := lipgloss.JoinVertical(lipgloss.Left, titleRow, bodyPane)
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(borderColor).
+		Render(stack)
 }
 
 func renderPromqlEditorPane(body string, width, height int, focused, builder bool) string {
@@ -1552,10 +1642,18 @@ func promqlKeysForFocus(m PromqlModel) []ui.KeyHint {
 			{Key: "<space>", Label: "Toggle range/instant"},
 		}, common...)
 	case "table":
-		return append([]ui.KeyHint{
+		if m.chartMode {
+			return append([]ui.KeyHint{
+				{Key: "<←/→>", Label: "Inspect"},
+				{Key: "<t>", Label: "Toggle chart/table"},
+			}, common...)
+		}
+		hints := []ui.KeyHint{
 			{Key: "<↑/↓>", Label: "Row"},
 			{Key: "</>", Label: "Filter"},
-		}, common...)
+			{Key: "<t>", Label: "Toggle chart/table"},
+		}
+		return append(hints, common...)
 	}
 	return common
 }
@@ -1792,29 +1890,33 @@ func promqlResultToRows(result promqlRespModel) (rows []table.Row, seriesCount, 
 		switch result.Data.ResultType {
 		case "vector":
 			if len(series.Value) == 2 {
-				ts := trimTimestampToHMS(promqlModelFormatTS(series.Value[0]))
+				tsFull := promqlModelFormatTS(series.Value[0])
+				ts := trimTimestampToHMS(tsFull)
 				val := fmt.Sprintf("%v", series.Value[1])
 				if len(val) > valueWidth {
 					valueWidth = len(val)
 				}
 				addRow(table.RowData{
-					promqlTimestampKey: ts,
-					promqlMetricKey:    metricStr,
-					promqlValueKey:     val,
+					promqlTimestampKey:     ts,
+					promqlTimestampFullKey: tsFull,
+					promqlMetricKey:        metricStr,
+					promqlValueKey:         val,
 				})
 			}
 		case "matrix":
 			for _, pt := range series.Values {
 				if len(pt) == 2 {
-					ts := trimTimestampToHMS(promqlModelFormatTS(pt[0]))
+					tsFull := promqlModelFormatTS(pt[0])
+					ts := trimTimestampToHMS(tsFull)
 					val := fmt.Sprintf("%v", pt[1])
 					if len(val) > valueWidth {
 						valueWidth = len(val)
 					}
 					addRow(table.RowData{
-						promqlTimestampKey: ts,
-						promqlMetricKey:    metricStr,
-						promqlValueKey:     val,
+						promqlTimestampKey:     ts,
+						promqlTimestampFullKey: tsFull,
+						promqlMetricKey:        metricStr,
+						promqlValueKey:         val,
 					})
 				}
 			}
@@ -1845,7 +1947,14 @@ func promqlModelFormatLabels(m map[string]string) string {
 
 func promqlModelFormatTS(v any) string {
 	if f, ok := v.(float64); ok {
-		return time.Unix(int64(f), 0).UTC().Format("2006-01-02T15:04:05Z")
+		sec, frac := math.Modf(f)
+		nsec := int64(frac * float64(time.Second))
+		return time.Unix(int64(sec), nsec).In(time.Local).Format("2006-01-02T15:04:05-07:00")
+	}
+	if s, ok := v.(string); ok {
+		if t, parsed := parsePromqlChartTime(s); parsed {
+			return t.Format("2006-01-02T15:04:05-07:00")
+		}
 	}
 	return fmt.Sprintf("%v", v)
 }
@@ -2280,4 +2389,697 @@ func fetchCacheMetrics(profile config.Profile, dataset string) tea.Cmd {
 		}
 		return cacheMetricsMsg{dataset: dataset, items: resp.Data}
 	}
+}
+
+type promqlChartSeries struct {
+	label  string    // metric label (for legend)
+	times  []string  // timestamps (X-axis)
+	values []float64 // numeric values (Y-axis)
+}
+
+// extractChartData extracts value data from PromQL results for charting.
+// PromQL results have exactly: timestamp, metric, and value columns.
+func (m PromqlModel) extractChartData() []promqlChartSeries {
+	if len(m.dataRows) < 2 {
+		return nil
+	}
+
+	seriesByKey := make(map[string]*promqlChartSeries)
+	var order []string
+	for _, row := range m.dataRows {
+		timeStr, ok := chartRowTime(row)
+		if !ok {
+			continue
+		}
+
+		value, ok := chartRowValue(row)
+		if !ok {
+			return nil
+		}
+
+		metricLabel := "value"
+		if met, ok := row.Data[promqlMetricKey]; ok {
+			if metStr, ok := met.(string); ok && metStr != "" {
+				metricLabel = metStr
+			}
+		}
+
+		key := promqlChartLabelSet(metricLabel)
+		if _, ok := seriesByKey[key]; !ok {
+			order = append(order, key)
+			seriesByKey[key] = &promqlChartSeries{
+				label: metricLabel,
+			}
+		}
+		seriesByKey[key].times = append(seriesByKey[key].times, timeStr)
+		seriesByKey[key].values = append(seriesByKey[key].values, value)
+	}
+
+	var out []promqlChartSeries
+	for _, key := range order {
+		series := seriesByKey[key]
+		if len(series.values) >= 2 {
+			out = append(out, *series)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func chartRowTime(row table.Row) (string, bool) {
+	if timeVal, ok := row.Data[promqlTimestampFullKey]; ok {
+		return fmt.Sprintf("%v", timeVal), true
+	}
+	if timeVal, ok := row.Data[promqlTimestampKey]; ok {
+		return fmt.Sprintf("%v", timeVal), true
+	}
+	return "", false
+}
+
+func chartRowValue(row table.Row) (float64, bool) {
+	val, ok := row.Data[promqlValueKey]
+	if !ok {
+		return 0, false
+	}
+	switch v := val.(type) {
+	case float64:
+		return v, true
+	case string:
+		f, err := strconv.ParseFloat(v, 64)
+		return f, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func promqlChartLabelSet(metricLabel string) string {
+	open := strings.Index(metricLabel, "{")
+	close := strings.LastIndex(metricLabel, "}")
+	if open >= 0 && close > open {
+		return metricLabel[open+1 : close]
+	}
+	return metricLabel
+}
+
+func aggregateChartSeries(series []promqlChartSeries) promqlChartSeries {
+	type aggregatePoint struct {
+		t     time.Time
+		value float64
+		count int
+	}
+
+	pointsByTime := make(map[int64]aggregatePoint)
+	for _, s := range series {
+		for i, timeStr := range s.times {
+			if i >= len(s.values) {
+				break
+			}
+			t, ok := parsePromqlChartTime(timeStr)
+			if !ok {
+				continue
+			}
+
+			key := t.UnixNano()
+			point := pointsByTime[key]
+			point.t = t
+			point.value += s.values[i]
+			point.count++
+			pointsByTime[key] = point
+		}
+	}
+
+	points := make([]aggregatePoint, 0, len(pointsByTime))
+	for _, point := range pointsByTime {
+		points = append(points, point)
+	}
+	sort.Slice(points, func(i, j int) bool {
+		return points[i].t.Before(points[j].t)
+	})
+
+	out := promqlChartSeries{label: "average"}
+	for _, point := range points {
+		out.times = append(out.times, point.t.Format("2006-01-02T15:04:05-07:00"))
+		out.values = append(out.values, point.value/float64(point.count))
+	}
+	return out
+}
+
+func parsePromqlChartTimes(values []string) []time.Time {
+	times := make([]time.Time, 0, len(values))
+	for _, value := range values {
+		if t, ok := parsePromqlChartTime(value); ok {
+			times = append(times, t)
+		} else {
+			return nil
+		}
+	}
+	return times
+}
+
+func parsePromqlChartTime(value string) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, false
+	}
+
+	zoneLayouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+	}
+	for _, layout := range zoneLayouts {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t.In(time.Local), true
+		}
+	}
+
+	localLayouts := []string{
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
+		"15:04:05",
+		"15:04",
+	}
+	for _, layout := range localLayouts {
+		if t, err := time.ParseInLocation(layout, value, time.Local); err == nil {
+			return t, true
+		}
+	}
+
+	return time.Time{}, false
+}
+
+func formatChartTime12h(t time.Time) string {
+	return t.Format("3:04pm")
+}
+
+func formatChartRangeTime(t time.Time, duration time.Duration) string {
+	if isDateChartRange(duration) {
+		return t.Format("Jan 2, 2006")
+	}
+	return formatChartTime12h(t)
+}
+
+func isDateChartRange(duration time.Duration) bool {
+	return duration >= 48*time.Hour
+}
+
+func formatCompactChartValue(value float64) string {
+	absValue := math.Abs(value)
+	if absValue >= 1000000 {
+		formatted := fmt.Sprintf("%.1fM", value/1000000)
+		return strings.Replace(formatted, ".0M", "M", 1)
+	}
+	if absValue >= 1000 {
+		formatted := fmt.Sprintf("%.1fk", value/1000)
+		return strings.Replace(formatted, ".0k", "k", 1)
+	}
+
+	formatted := fmt.Sprintf("%.1f", value)
+	return strings.TrimSuffix(formatted, ".0")
+}
+
+func (m PromqlModel) chartTimeRangeTitle() string {
+	series := m.extractChartData()
+	if len(series) == 0 {
+		return ""
+	}
+	aggregatedSeries := aggregateChartSeries(series)
+	parsedTimes := parsePromqlChartTimes(aggregatedSeries.times)
+	if len(parsedTimes) == 0 {
+		return ""
+	}
+	duration := m.chartSelectedDuration(parsedTimes[0], parsedTimes[len(parsedTimes)-1])
+	return fmt.Sprintf("📊 %s → %s",
+		formatChartRangeTime(parsedTimes[0], duration),
+		formatChartRangeTime(parsedTimes[len(parsedTimes)-1], duration))
+}
+
+func (m PromqlModel) chartSelectedDuration(fallbackStart, fallbackEnd time.Time) time.Duration {
+	start := m.timeRange.start.Time()
+	end := m.timeRange.end.Time()
+	if end.After(start) {
+		return end.Sub(start)
+	}
+	return fallbackEnd.Sub(fallbackStart)
+}
+
+func (m *PromqlModel) rebuildChart() {
+	chart, ok := m.buildChart(m.width-2, m.height-8)
+	m.tsChart = chart
+	m.tsChartReady = ok
+}
+
+func (m PromqlModel) chartTimePoints() []timeserieslinechart.TimePoint {
+	series := m.extractChartData()
+	if len(series) == 0 {
+		return nil
+	}
+
+	aggregatedSeries := aggregateChartSeries(series)
+	parsedTimes := parsePromqlChartTimes(aggregatedSeries.times)
+	if len(aggregatedSeries.values) < 2 || len(parsedTimes) != len(aggregatedSeries.values) {
+		return nil
+	}
+
+	points := make([]timeserieslinechart.TimePoint, 0, len(aggregatedSeries.values))
+	for i, value := range aggregatedSeries.values {
+		points = append(points, timeserieslinechart.TimePoint{
+			Time:  parsedTimes[i],
+			Value: value,
+		})
+	}
+	return points
+}
+
+func (m PromqlModel) buildChart(width, height int) (timeserieslinechart.Model, bool) {
+	points := m.chartTimePoints()
+	if len(points) < 2 {
+		return timeserieslinechart.Model{}, false
+	}
+
+	if width < 20 {
+		width = 20
+	}
+	if height < 8 {
+		height = 8
+	}
+
+	p := ui.Active
+	axisStyle := lipgloss.NewStyle().Foreground(p.Faint)
+	labelStyle := lipgloss.NewStyle().Foreground(p.Faint)
+	lineStyle := lipgloss.NewStyle().Foreground(p.Accent)
+	yAxis := chartYAxisScale(points, height)
+	timeRange := m.chartSelectedDuration(points[0].Time, points[len(points)-1].Time)
+
+	chart := timeserieslinechart.New(
+		width,
+		height,
+		timeserieslinechart.WithAxesStyles(axisStyle, labelStyle),
+		timeserieslinechart.WithLineStyle(runes.ThinLineStyle),
+		timeserieslinechart.WithStyle(lineStyle),
+		timeserieslinechart.WithXYSteps(chartXAxisStep(width), yAxis.rowStep),
+		timeserieslinechart.WithTimeRange(points[0].Time, points[len(points)-1].Time),
+		timeserieslinechart.WithYRange(yAxis.min, yAxis.max),
+		timeserieslinechart.WithXLabelFormatter(func(_ int, value float64) string {
+			return ""
+		}),
+		timeserieslinechart.WithYLabelFormatter(func(_ int, value float64) string {
+			return formatCompactChartValue(value)
+		}),
+	)
+	for _, point := range points {
+		chart.Push(point)
+	}
+	chart.Draw()
+	m.drawChartXAxisLabels(&chart, points, timeRange)
+	m.drawChartCursor(&chart, points)
+
+	return chart, true
+}
+
+func chartXAxisStep(width int) int {
+	step := width / 8
+	if step < 8 {
+		return 8
+	}
+	return step
+}
+
+const chartXAxisLabelCount = 8
+
+type chartYAxisConfig struct {
+	min     float64
+	max     float64
+	rowStep int
+}
+
+func chartYAxisScale(points []timeserieslinechart.TimePoint, height int) chartYAxisConfig {
+	minValue := points[0].Value
+	maxValue := points[0].Value
+	for _, point := range points[1:] {
+		if point.Value < minValue {
+			minValue = point.Value
+		}
+		if point.Value > maxValue {
+			maxValue = point.Value
+		}
+	}
+
+	dataRange := maxValue - minValue
+	if dataRange == 0 {
+		dataRange = math.Abs(maxValue) * 0.05
+		if dataRange == 0 {
+			dataRange = 1
+		}
+		minValue -= dataRange / 2
+		maxValue += dataRange / 2
+	}
+
+	graphHeight := height - 2
+	if graphHeight < 1 {
+		graphHeight = 1
+	}
+	rowStep := chartYAxisRowStep(graphHeight)
+	targetIntervals := float64(graphHeight) / float64(rowStep)
+	if targetIntervals < 1 {
+		targetIntervals = 1
+	}
+
+	padding := dataRange * 0.05
+	if padding == 0 {
+		padding = 1
+	}
+	paddedMin := minValue - padding
+	paddedMax := maxValue + padding
+	step := niceChartValueStep((paddedMax - paddedMin) / targetIntervals)
+	niceMin := math.Floor(paddedMin/step) * step
+	niceMax := niceMin + step*float64(graphHeight)/float64(rowStep)
+
+	for niceMax < paddedMax {
+		step = nextNiceChartValueStep(step)
+		niceMin = math.Floor(paddedMin/step) * step
+		niceMax = niceMin + step*float64(graphHeight)/float64(rowStep)
+	}
+
+	return chartYAxisConfig{
+		min:     niceMin,
+		max:     niceMax,
+		rowStep: rowStep,
+	}
+}
+
+func chartYAxisRowStep(graphHeight int) int {
+	switch {
+	case graphHeight >= 22:
+		return 2
+	case graphHeight >= 14:
+		return 3
+	default:
+		return 4
+	}
+}
+
+func niceChartValueStep(step float64) float64 {
+	if step <= 0 {
+		return 1
+	}
+
+	magnitude := math.Pow(10, math.Floor(math.Log10(step)))
+	normalized := step / magnitude
+
+	switch {
+	case normalized <= 1:
+		return magnitude
+	case normalized <= 2:
+		return 2 * magnitude
+	case normalized <= 2.5:
+		return 2.5 * magnitude
+	case normalized <= 5:
+		return 5 * magnitude
+	default:
+		return 10 * magnitude
+	}
+}
+
+func nextNiceChartValueStep(step float64) float64 {
+	return niceChartValueStep(step * 1.01)
+}
+
+func (m PromqlModel) selectedChartPointIndex(points []timeserieslinechart.TimePoint) (int, bool) {
+	if !m.chartHover || len(points) == 0 {
+		return 0, false
+	}
+	idx := m.chartCursor
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(points) {
+		idx = len(points) - 1
+	}
+	return idx, true
+}
+
+func (m *PromqlModel) moveChartCursor(delta int) {
+	points := m.chartTimePoints()
+	if len(points) == 0 {
+		return
+	}
+	if !m.chartHover {
+		m.chartCursor = 0
+		if delta < 0 {
+			m.chartCursor = len(points) - 1
+		} else if delta > 0 && len(points) > 1 {
+			m.chartCursor = 1
+		}
+		m.chartHover = true
+		return
+	}
+
+	current := m.chartCursor
+	if current < 0 {
+		current = 0
+	}
+	if current >= len(points) {
+		current = len(points) - 1
+	}
+
+	direction := 1
+	if delta < 0 {
+		direction = -1
+	}
+	graphWidth := m.chartCursorGraphWidth()
+	first := points[0].Time
+	last := points[len(points)-1].Time
+	currentX := chartGraphX(points[current].Time, first, last, graphWidth)
+	next := current
+	for {
+		next += direction
+		if next < 0 {
+			next = 0
+			break
+		}
+		if next >= len(points) {
+			next = len(points) - 1
+			break
+		}
+		if chartGraphX(points[next].Time, first, last, graphWidth) != currentX {
+			break
+		}
+	}
+	m.chartCursor = next
+}
+
+func (m PromqlModel) chartCursorGraphWidth() int {
+	if m.tsChartReady && m.tsChart.GraphWidth() > 0 {
+		return m.tsChart.GraphWidth()
+	}
+	width := m.width - 4
+	if width < 20 {
+		width = 20
+	}
+	chart, ok := m.buildChart(width, m.height-8)
+	if ok && chart.GraphWidth() > 0 {
+		return chart.GraphWidth()
+	}
+	return width
+}
+
+func chartGraphX(current, first, last time.Time, graphWidth int) int {
+	if graphWidth <= 0 {
+		return 0
+	}
+
+	total := last.Sub(first)
+	if total <= 0 {
+		return 0
+	}
+
+	elapsed := current.Sub(first)
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	if elapsed > total {
+		elapsed = total
+	}
+
+	return int(math.Round(float64(elapsed) / float64(total) * float64(graphWidth)))
+}
+
+func (m PromqlModel) drawChartCursor(chart *timeserieslinechart.Model, points []timeserieslinechart.TimePoint) {
+	idx, ok := m.selectedChartPointIndex(points)
+	if !ok {
+		return
+	}
+
+	p := ui.Active
+	point := points[idx]
+	x := chartCursorCanvasX(chart, point.Time)
+	y := chartCursorCanvasY(chart, point.Value)
+	cursorStyle := lipgloss.NewStyle().Foreground(p.Faint)
+	pointStyle := lipgloss.NewStyle().Foreground(p.Accent)
+
+	for row := 0; row < chart.Origin().Y; row++ {
+		chart.Canvas.SetCell(canvas.Point{X: x, Y: row}, canvas.NewCellWithStyle(runes.LineVertical, cursorStyle))
+	}
+	chart.Canvas.SetCell(canvas.Point{X: x, Y: y}, canvas.NewCellWithStyle('●', pointStyle))
+}
+
+func chartCursorCanvasX(chart *timeserieslinechart.Model, t time.Time) int {
+	x := chartGraphX(t, time.Unix(int64(chart.ViewMinX()), 0), time.Unix(int64(chart.ViewMaxX()), 0), chart.GraphWidth())
+	return chart.Origin().X + x
+}
+
+func chartCursorCanvasY(chart *timeserieslinechart.Model, value float64) int {
+	dy := chart.ViewMaxY() - chart.ViewMinY()
+	if dy <= 0 {
+		return chart.Origin().Y
+	}
+
+	y := int(math.Round((value - chart.ViewMinY()) * float64(chart.Origin().Y) / dy))
+	if y < 0 {
+		y = 0
+	}
+	if y > chart.Origin().Y {
+		y = chart.Origin().Y
+	}
+	return chart.Origin().Y - y
+}
+
+func (m PromqlModel) drawChartXAxisLabels(chart *timeserieslinechart.Model, points []timeserieslinechart.TimePoint, duration time.Duration) {
+	if len(points) < 2 || chart.GraphWidth() <= 0 || chart.Origin().Y+1 >= chart.Height() {
+		return
+	}
+
+	p := ui.Active
+	labelStyle := lipgloss.NewStyle().Foreground(p.Faint)
+	labelY := chart.Origin().Y + 1
+	for col := 0; col < chart.Width(); col++ {
+		chart.Canvas.SetCell(canvas.Point{X: col, Y: labelY}, canvas.NewCellWithStyle(' ', labelStyle))
+	}
+
+	first := points[0].Time
+	last := points[len(points)-1].Time
+	total := last.Sub(first)
+	if total <= 0 {
+		return
+	}
+
+	for i := 0; i < chartXAxisLabelCount; i++ {
+		ratio := float64(i) / float64(chartXAxisLabelCount-1)
+		t := first.Add(time.Duration(ratio * float64(total)))
+		label := formatChartAxisLabel(t, duration, chart.GraphWidth())
+		x := chart.Origin().X + int(math.Round(ratio*float64(chart.GraphWidth())))
+		placeChartCanvasLabel(chart, labelY, x, label, labelStyle)
+	}
+}
+
+func formatChartAxisLabel(t time.Time, duration time.Duration, graphWidth int) string {
+	if isDateChartRange(duration) && graphWidth < chartXAxisLabelCount*12 {
+		return t.Format("Jan 2")
+	}
+	return formatChartRangeTime(t, duration)
+}
+
+func placeChartCanvasLabel(chart *timeserieslinechart.Model, y int, x int, label string, style lipgloss.Style) {
+	if label == "" {
+		return
+	}
+	start := x
+	if start+len([]rune(label)) > chart.Width() {
+		start = chart.Width() - len([]rune(label))
+	}
+	if start < chart.Origin().X {
+		start = chart.Origin().X
+	}
+	chart.Canvas.SetStringWithStyle(canvas.Point{X: start, Y: y}, label, style)
+}
+
+func (m PromqlModel) renderChartInspector(width int, points []timeserieslinechart.TimePoint) string {
+	idx, ok := m.selectedChartPointIndex(points)
+	if !ok {
+		return ""
+	}
+
+	p := ui.Active
+	point := points[idx]
+	dot := lipgloss.NewStyle().Foreground(p.Accent).Render("●")
+	timeText := lipgloss.NewStyle().Foreground(p.Body).Render(point.Time.Format("3:04 PM, Jan 2, 2006"))
+	separator := lipgloss.NewStyle().Foreground(p.Faint).Render("|")
+	name := lipgloss.NewStyle().Foreground(p.Faint).Render("avg")
+	value := lipgloss.NewStyle().Foreground(p.Body).Bold(true).Render(formatCompactChartValue(point.Value))
+	inspector := fmt.Sprintf("%s  %s  %s %s %s", timeText, separator, dot, name, value)
+	if lipgloss.Width(inspector) > width {
+		return lipgloss.NewStyle().MaxWidth(width).Render(inspector)
+	}
+	return inspector
+}
+
+// renderChart renders the aggregated PromQL time series using ntcharts.
+func (m PromqlModel) renderChart(width, height int) string {
+	p := ui.Active
+
+	points := m.chartTimePoints()
+	inspector := m.renderChartInspector(width, points)
+	chartHeight := height - 1
+	if chartHeight < 1 {
+		chartHeight = 1
+	}
+	chart := m.tsChart
+	ok := m.tsChartReady
+	if ok {
+		chart.Resize(width, chartHeight)
+		chart.Draw()
+		if len(points) >= 2 {
+			m.drawChartXAxisLabels(&chart, points, m.chartSelectedDuration(points[0].Time, points[len(points)-1].Time))
+		}
+		m.drawChartCursor(&chart, points)
+	} else {
+		chart, ok = m.buildChart(width, chartHeight)
+	}
+	if !ok {
+		series := m.extractChartData()
+		message := "not enough data points to plot"
+		if len(series) == 0 {
+			message = "no numeric data to plot"
+		}
+		msg := lipgloss.NewStyle().Foreground(p.Faint).Render(message)
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, msg,
+			lipgloss.WithWhitespaceChars(" "))
+	}
+
+	chartOutput := strings.TrimRight(chart.View(), "\n")
+	if chartOutput == "" {
+		errMsg := lipgloss.NewStyle().Foreground(p.Err).Render("chart error: failed to generate chart")
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, errMsg,
+			lipgloss.WithWhitespaceChars(" "))
+	}
+
+	legendTextStyle := lipgloss.NewStyle().Foreground(p.Faint)
+	legendDotStyle := lipgloss.NewStyle().Foreground(p.Accent)
+	legend := fmt.Sprintf("%s %s", legendDotStyle.Render("●"), legendTextStyle.Render("avg"))
+	legendWidth := lipgloss.Width(legend)
+	inspectorWidth := lipgloss.Width(inspector)
+	gap := width - inspectorWidth - legendWidth
+	if gap < 1 {
+		gap = 1
+	}
+	legendContent := inspector + strings.Repeat(" ", gap) + legend
+	if inspector == "" {
+		legendContent = legend
+	}
+	legendRow := lipgloss.NewStyle().
+		Width(width).
+		Align(lipgloss.Right).
+		Render(legendContent)
+
+	parts := []string{legendRow, chartOutput}
+	body := strings.TrimRight(lipgloss.JoinVertical(lipgloss.Left, parts...), "\n")
+
+	styled := lipgloss.NewStyle().
+		Foreground(p.Body).
+		Width(width).
+		Render(body)
+
+	return strings.TrimRight(styled, "\n")
 }
