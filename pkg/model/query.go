@@ -26,9 +26,9 @@ import (
 	"net/url"
 	"os"
 	"pb/pkg/config"
+	"pb/pkg/datasets"
 	"pb/pkg/iterator"
 	"pb/pkg/ui"
-	"sort"
 	"strings"
 	"time"
 
@@ -39,16 +39,19 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	table "github.com/evertras/bubble-table/table"
+	"github.com/muesli/reflow/truncate"
 	"golang.org/x/exp/slices"
 	"golang.org/x/term"
 )
 
 const (
-	// Trimmed display width — HH:MM:SS = 8 cells + slack.
-	dateTimeWidth = 10
+	dateTimeWidth = len("TIME [LOCAL]")
 	dateTimeKey   = "p_timestamp"
 	tagKey        = "p_tags"
 	metadataKey   = "p_metadata"
+
+	sqlControlTimeDisplayWidth = len("02 Jun 2026, 13:25 | UTC+05:30")
+	sqlControlsMinWidth        = sqlControlTimeDisplayWidth + 4 // border + row prefix
 )
 
 // Theme-derived styles. All palette atoms come from pkg/ui — to swap a
@@ -61,19 +64,6 @@ var (
 	StandardSecondary = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Mute })
 
 	chromeBorder = ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Border })
-
-	borderedStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder(), true).
-			BorderForeground(chromeBorder).
-			Padding(0)
-
-	// Focused pane: single rounded border in brand accent. No double
-	// border (read as "alert" in TUI) — accent color carries the focus
-	// signal on its own.
-	borderedFocusStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder(), true).
-				BorderForeground(FocusPrimary).
-				Padding(0)
 
 	baseStyle = lipgloss.NewStyle().BorderForeground(chromeBorder)
 	// Header: bold + Accent fg, no background fill. Background tints
@@ -124,11 +114,11 @@ var (
 		InnerDivider: "│",
 	}
 
-	QueryNavigationMap = []string{"query", "dataset", "column", "time", "table"}
+	queryNavigationMap = []string{"query", "time", "dataset", "columns", "table"}
 )
 
 func sqlPageSize(totalH, bottomH int) int {
-	const topH = 14
+	const topH = 12
 	av := totalH - topH - bottomH
 	if av < 6 {
 		av = 6
@@ -179,6 +169,7 @@ type QueryModel struct {
 	table         table.Model
 	query         textarea.Model
 	timeRange     TimeInputModel
+	timeRangeEdit TimeInputModel
 	profile       config.Profile
 	help          help.Model
 	status        StatusBar
@@ -206,6 +197,7 @@ type QueryModel struct {
 	filteredColumns   []string
 	columnSelectedIdx int
 	columnsLoading    bool
+	columnsDrawerOpen bool
 
 	schema []string
 }
@@ -221,11 +213,77 @@ func (m *QueryModel) focusSelected() {
 		m.query.Focus()
 	case "table":
 		m.table = m.table.Focused(true)
+	case "columns":
+		m.columnFilter.Focus()
 	}
 }
 
-func (m *QueryModel) currentFocus() string {
-	return QueryNavigationMap[m.focused]
+func (m QueryModel) focusOrder() []string {
+	return queryNavigationMap
+}
+
+func (m QueryModel) currentFocus() string {
+	order := m.focusOrder()
+	if len(order) == 0 {
+		return "query"
+	}
+	if m.focused < 0 {
+		return order[0]
+	}
+	if m.focused >= len(order) {
+		return order[len(order)-1]
+	}
+	return order[m.focused]
+}
+
+func (m *QueryModel) focusPane(name string) {
+	for i, pane := range m.focusOrder() {
+		if pane == name {
+			m.focused = i
+			m.focusSelected()
+			return
+		}
+	}
+	m.focused = 0
+	m.focusSelected()
+}
+
+func (m *QueryModel) insertSelectedColumn() {
+	if len(m.filteredColumns) == 0 {
+		return
+	}
+	if m.columnSelectedIdx < 0 {
+		m.columnSelectedIdx = 0
+	}
+	if m.columnSelectedIdx >= len(m.filteredColumns) {
+		m.columnSelectedIdx = len(m.filteredColumns) - 1
+	}
+	m.selectedColumn = m.filteredColumns[m.columnSelectedIdx]
+	escaped := strings.ReplaceAll(m.selectedColumn, `"`, `""`)
+	m.query.InsertString(`"` + escaped + `" `)
+	m.focusPane("query")
+}
+
+func (m *QueryModel) toggleColumnsDrawer() tea.Cmd {
+	m.columnsDrawerOpen = !m.columnsDrawerOpen
+	if !m.columnsDrawerOpen {
+		m.focusPane("columns")
+		return nil
+	}
+
+	selected := m.dataset
+	if selected == "" {
+		if extracted := extractDataset(m.query.Value()); extracted != "—" && extracted != "" {
+			selected = extracted
+			m.dataset = selected
+		}
+	}
+	m.focusPane("columns")
+	if selected != "" && len(m.allColumns) == 0 && !m.columnsLoading {
+		m.columnsLoading = true
+		return fetchStreamSchema(m.profile, selected)
+	}
+	return nil
 }
 
 func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime time.Time) QueryModel {
@@ -317,21 +375,22 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 
 	hasQuery := strings.TrimSpace(queryStr) != ""
 	model := QueryModel{
-		width:           w,
-		height:          h,
-		table:           table,
-		query:           query,
-		timeRange:       inputs,
-		overlay:         overlayNone,
-		profile:         profile,
-		help:            help,
-		spinner:         sp,
-		loading:         hasQuery,
-		hasQueried:      hasQuery,
-		queryIterator:   nil,
-		status:          status,
-		spotlightFilter: sf,
-		columnFilter:    cf,
+		width:             w,
+		height:            h,
+		table:             table,
+		query:             query,
+		timeRange:         inputs,
+		overlay:           overlayNone,
+		profile:           profile,
+		help:              help,
+		spinner:           sp,
+		loading:           hasQuery,
+		hasQueried:        hasQuery,
+		queryIterator:     nil,
+		status:            status,
+		spotlightFilter:   sf,
+		columnFilter:      cf,
+		columnsDrawerOpen: true,
 	}
 	return model
 }
@@ -392,8 +451,12 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
+			if m.columnsDrawerOpen && m.dataset != "" && len(m.allColumns) == 0 && !m.columnsLoading {
+				m.columnsLoading = true
+				cmds = append(cmds, fetchStreamSchema(m.profile, m.dataset))
+			}
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case FetchData:
 		m.loading = false
@@ -409,8 +472,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			bh := lipgloss.Height(buildBottomBar(m, m.width))
 			m.table = m.table.WithPageSize(sqlPageSize(m.height, bh))
 			// Move focus to results table after a successful fetch.
-			m.focused = 4
-			m.focusSelected()
+			m.focusPane("table")
 		} else {
 			m.dataRows = []table.Row{}
 			m.table = m.table.WithRows([]table.Row{})
@@ -443,6 +505,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						// dataset changed — reset column state
 						m.dataset = selected
 						m.selectedColumn = ""
+						m.columnFilter.SetValue("")
 						m.allColumns = []string{}
 						m.filteredColumns = []string{}
 					}
@@ -458,8 +521,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.overlay = overlayNone
 				m.spotlightFilter.SetValue("")
 				m.spotlightFilter.Blur()
-				m.focused = 0 // focus query editor after dataset select
-				m.focusSelected()
+				m.focusPane("query")
 				return m, tea.Batch(cmds...)
 
 			case tea.KeyUp:
@@ -535,6 +597,10 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// special behavior on main page
 		if m.overlay == overlayNone {
+			if msg.String() == "ctrl+l" {
+				return m, m.toggleColumnsDrawer()
+			}
+
 			if msg.Type == tea.KeyCtrlD {
 				m.overlay = overlayDataset
 				m.spotlightFilter.Focus()
@@ -549,20 +615,24 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, fetchAllStreams(m.profile)
 			}
 
-			if msg.Type == tea.KeyEnter && m.currentFocus() == "column" {
-				m.overlay = overlayColumn
-				m.columnFilter.Focus()
+			if msg.Type == tea.KeyEnter && m.currentFocus() == "columns" {
+				if !m.columnsDrawerOpen {
+					return m, m.toggleColumnsDrawer()
+				}
+				m.insertSelectedColumn()
 				return m, nil
 			}
 
 			if msg.Type == tea.KeyEnter && m.currentFocus() == "time" {
+				m.timeRangeEdit = m.timeRange
+				m.timeRangeEdit.SyncPreset()
 				m.overlay = overlayInputs
 				return m, nil
 			}
 
 			if msg.Type == tea.KeyTab {
 				m.focused++
-				if m.focused > len(QueryNavigationMap)-1 {
+				if m.focused > len(m.focusOrder())-1 {
 					m.focused = 0
 				}
 				m.focusSelected()
@@ -572,22 +642,45 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Type == tea.KeyShiftTab {
 				m.focused--
 				if m.focused < 0 {
-					m.focused = len(QueryNavigationMap) - 1
+					m.focused = len(m.focusOrder()) - 1
 				}
 				m.focusSelected()
 				return m, nil
 			}
 
-			// up/down arrows navigate between dataset and column rows
-			if m.currentFocus() == "dataset" && msg.Type == tea.KeyDown {
-				m.focused = 2 // column
-				m.focusSelected()
-				return m, nil
-			}
-			if m.currentFocus() == "column" && msg.Type == tea.KeyUp {
-				m.focused = 1 // dataset
-				m.focusSelected()
-				return m, nil
+			if m.currentFocus() == "columns" && m.columnsDrawerOpen {
+				switch msg.Type {
+				case tea.KeyUp:
+					if m.columnSelectedIdx > 0 {
+						m.columnSelectedIdx--
+					}
+					return m, nil
+				case tea.KeyDown:
+					if m.columnSelectedIdx < len(m.filteredColumns)-1 {
+						m.columnSelectedIdx++
+					}
+					return m, nil
+				case tea.KeyRunes:
+					m.columnFilter.SetValue(m.columnFilter.Value() + string(msg.Runes))
+					m.filteredColumns = filterDatasets(m.allColumns, m.columnFilter.Value())
+					m.columnSelectedIdx = 0
+					return m, nil
+				case tea.KeyBackspace:
+					value := []rune(m.columnFilter.Value())
+					if len(value) > 0 {
+						m.columnFilter.SetValue(string(value[:len(value)-1]))
+						m.filteredColumns = filterDatasets(m.allColumns, m.columnFilter.Value())
+						m.columnSelectedIdx = 0
+					}
+					return m, nil
+				case tea.KeyEsc:
+					if m.columnFilter.Value() != "" {
+						m.columnFilter.SetValue("")
+						m.filteredColumns = m.allColumns
+						m.columnSelectedIdx = 0
+						return m, nil
+					}
+				}
 			}
 		}
 
@@ -601,6 +694,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if msg.Type == tea.KeyEnter {
+				m.timeRange = m.timeRangeEdit
 				m.overlay = overlayNone
 				m.focusSelected()
 				m.status.Error = ""
@@ -647,7 +741,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				cmds = append(cmds, cmd)
 			case overlayInputs:
-				m.timeRange, cmd = m.timeRange.Update(msg)
+				m.timeRangeEdit, cmd = m.timeRangeEdit.Update(msg)
 				cmds = append(cmds, cmd)
 			}
 		}
@@ -674,22 +768,21 @@ func (m QueryModel) View() string {
 	bottomView := buildBottomBar(m, m.width)
 	bottomHeight := lipgloss.Height(bottomView)
 
-	// ── 3. TOP row: editor (wide) + date (narrow). Plain rectangles,
-	// label-only chrome. Date pane stays compact per mock.
-	// Sidebar holds DATASET + FROM + TO = 8 content rows; topH must
-	// stay >= 11 (innerH = 9 fits 8 + spare) or the sidebar overflows
-	// and pushes the top border off-screen.
-	// Sidebar width matches PromQL so the two views read symmetric.
-	sidebarW := 30
+	// ── 3. TOP row: editor (wide) + controls (narrow). Plain rectangles,
+	// label-only chrome. Controls mirror Prism order: time first, dataset below.
+	// Sidebar is wide enough to show formatted time without truncating:
+	// "02 Jun 2026, 11:25 AM | UTC+05:30".
+	sidebarW := sqlControlsMinWidth
 	if m.width >= 140 {
-		sidebarW = 34
-	}
-	if m.width < 100 {
-		sidebarW = 26
+		sidebarW = sqlControlsMinWidth + 3
 	}
 
-	// topH = dateBox(7) + combined dataset+column box(7) = 14
-	const topH = 14
+	bodyH := m.height - crumbsHeight - bottomHeight
+	if bodyH < 12 {
+		bodyH = 12
+	}
+	const editorH = 12
+	fullHeightControls := m.columnsDrawerOpen && !m.columnsLoading && len(m.filteredColumns) > 0
 
 	// editorW reserves 1 col for the horizontal gap between editor
 	// and sidebar, so the two │ borders aren't flush against each other.
@@ -699,12 +792,12 @@ func (m QueryModel) View() string {
 		sidebarW = m.width - editorW - 1
 	}
 	m.query.SetWidth(editorW - 6)
-	editorBodyH := topH - 4 // border(2) + title(1) + spacer(1)
+	editorBodyH := editorH - 4 // border(2) + title(1) + spacer(1)
 	if editorBodyH < 1 {
 		editorBodyH = 1
 	}
 	m.query.SetHeight(editorBodyH)
-	editorPane := renderEditorPane(m.query.View(), editorW, topH, m.currentFocus() == "query")
+	editorPane := renderEditorPane(m.query.View(), editorW, editorH, m.currentFocus() == "query")
 
 	// Prefer the explicitly selected dataset; fall back to parsing the FROM clause.
 	dataset := m.dataset
@@ -717,38 +810,41 @@ func (m QueryModel) View() string {
 		dataset = "select-dataset"
 	}
 
-	// Two stacked sidebar boxes — DATE on top, combined DATASET+COLUMN below.
-	dateBox := renderSQLDateBox(
-		m.timeRange.start.Value(),
-		m.timeRange.end.Value(),
-		sidebarW, 7,
-		m.currentFocus() == "time",
-	)
-	colLabel := m.selectedColumn
-	if colLabel == "" {
-		colLabel = "<select column>"
+	controlsH := editorH
+	if fullHeightControls {
+		controlsH = bodyH
 	}
-	datasetColumnBox := renderSQLDatasetColumnBox(
-		dataset, colLabel, m.columnsLoading,
-		sidebarW, 7,
+	controlsPane := renderSQLControlsBox(
+		formatSQLControlTime(m.timeRange.start.Time(), m.timeRange.DisplayMode()),
+		formatSQLControlTime(m.timeRange.end.Time(), m.timeRange.DisplayMode()),
+		dataset,
+		m.filteredColumns,
+		m.columnSelectedIdx,
+		m.columnFilter.Value(),
+		m.columnsDrawerOpen,
+		m.columnsLoading,
+		sidebarW,
+		controlsH,
 		m.currentFocus(),
+		m.timeRange.DisplayMode(),
 	)
-	sidebarPane := lipgloss.JoinVertical(lipgloss.Left, datasetColumnBox, dateBox)
-
-	gap := lipgloss.NewStyle().Width(1).Height(topH).Render("")
-	topSection := lipgloss.JoinHorizontal(lipgloss.Top, editorPane, gap, sidebarPane)
 
 	// ── 4. Results / table area ───────────────────────────────────────
-	availH := m.height - crumbsHeight - topH - bottomHeight
+	availH := bodyH - editorH
 	if availH < 6 {
 		availH = 6
 	}
+	resultsH := availH
+	resultsW := m.width
+	if fullHeightControls {
+		resultsW = editorW
+	}
 	// Results pane border (2) + label row (1) = 3 rows of chrome.
-	resultsInnerH := availH - 3
+	resultsInnerH := resultsH - 3
 	if resultsInnerH < 3 {
 		resultsInnerH = 3
 	}
-	resultsInnerW := m.width - 4 // border(2) + h-padding(2)
+	resultsInnerW := resultsW - 4 // border(2) + h-padding(2)
 	if resultsInnerW < 10 {
 		resultsInnerW = 10
 	}
@@ -845,16 +941,24 @@ func (m QueryModel) View() string {
 		inner = strings.Join(lines, "\n")
 	}
 	// rowCount=0: row info lives in the footer line inside the pane body.
-	resultsPane := renderResultsPane(inner, m.width, availH, 0, m.currentFocus() == "table")
+	resultsPane := renderResultsPane(inner, resultsW, resultsH, 0, m.currentFocus() == "table")
+	resultsSection := resultsPane
 
 	// ── 5. Compose body or overlay ────────────────────────────────────
-	body := lipgloss.JoinVertical(lipgloss.Left, topSection, resultsPane)
+	topGap := lipgloss.NewStyle().Width(1).Height(editorH).Render("")
+	topSection := lipgloss.JoinHorizontal(lipgloss.Top, editorPane, topGap, controlsPane)
+	body := lipgloss.JoinVertical(lipgloss.Left, topSection, resultsSection)
+	if fullHeightControls {
+		leftSection := lipgloss.JoinVertical(lipgloss.Left, editorPane, resultsSection)
+		sideGap := lipgloss.NewStyle().Width(1).Height(bodyH).Render("")
+		body = lipgloss.JoinHorizontal(lipgloss.Top, leftSection, sideGap, controlsPane)
+	}
 	var mainView string
 	switch m.overlay {
 	case overlayNone:
 		mainView = body
 	case overlayInputs:
-		timeView := m.timeRange.View()
+		timeView := m.timeRangeEdit.View()
 		mainView = lipgloss.Place(m.width, m.height-crumbsHeight-bottomHeight,
 			lipgloss.Center, lipgloss.Center, timeView,
 			lipgloss.WithWhitespaceChars(" "),
@@ -880,10 +984,11 @@ func (m QueryModel) View() string {
 	return lipgloss.NewStyle().Width(m.width).Render(render)
 }
 
-// renderEditorPane draws a flat rectangle with a single label row
-// (Faint, top-left) and body below. NormalBorder per design — matches
-// the wireframe "plain rectangle with label inside" idiom.
 func renderEditorPane(body string, width, height int, focused bool) string {
+	return renderTitledPane("EDITOR", body, width, height, focused)
+}
+
+func renderTitledPane(title, body string, width, height int, focused bool) string {
 	p := ui.Active
 	borderColor := p.Border
 	titleFg := p.Faint
@@ -899,174 +1004,263 @@ func renderEditorPane(body string, width, height int, focused bool) string {
 	if innerH < 3 {
 		innerH = 3
 	}
-	title := lipgloss.NewStyle().Foreground(titleFg).Bold(focused).Render("EDITOR")
-	titleRow := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(title)
-	spacer := lipgloss.NewStyle().Width(innerW).Render("")
-	bodyPane := lipgloss.NewStyle().
-		Width(innerW).
-		Height(innerH-2).
-		Padding(0, 1).
-		Render(body)
-	stack := lipgloss.JoinVertical(lipgloss.Left, titleRow, spacer, bodyPane)
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(borderColor).
-		Render(stack)
+	borderStyle := lipgloss.NewStyle().Foreground(borderColor)
+	titleStyle := lipgloss.NewStyle().Foreground(titleFg).Bold(focused)
+	lines := []string{paneRule("┌", "┐", title, width, borderStyle, titleStyle)}
+	lines = append(lines, paneBodyLines(body, width, innerH, borderStyle)...)
+	lines = append(lines, borderStyle.Render("└"+strings.Repeat("─", innerW)+"┘"))
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
-// renderSQLDatasetColumnBox draws a single sidebar card with both DATASET and
-// COLUMN rows. focusedOn is "dataset", "column", or "" (neither focused).
-// The active-rail highlight tracks which row is focused independently.
-func renderSQLDatasetColumnBox(dataset, column string, columnsLoading bool, width, height int, focusedOn string) string {
+func paneRule(left, right, title string, width int, borderStyle, titleStyle lipgloss.Style) string {
+	if width < 2 {
+		width = 2
+	}
+	if title == "" {
+		return borderStyle.Render(left + strings.Repeat("─", width-2) + right)
+	}
+	label := " " + title + " "
+	prefix := left + "──"
+	fill := width - lipgloss.Width(prefix) - lipgloss.Width(label) - lipgloss.Width(right)
+	if fill < 0 {
+		fill = 0
+		titleW := width - lipgloss.Width(prefix) - lipgloss.Width(right) - 2
+		if titleW < 1 {
+			titleW = 1
+		}
+		label = " " + ui.Truncate(title, titleW) + " "
+	}
+	return borderStyle.Render(prefix) + titleStyle.Render(label) + borderStyle.Render(strings.Repeat("─", fill)+right)
+}
+
+func paneBodyLines(body string, width, height int, borderStyle lipgloss.Style) []string {
+	innerW := width - 2
+	if innerW < 1 {
+		innerW = 1
+	}
+	textW := innerW - 2
+	if textW < 1 {
+		textW = 1
+	}
+	lines := strings.Split(body, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	out := make([]string, 0, height)
+	for _, line := range lines {
+		if lipgloss.Width(line) > textW {
+			line = truncate.String(line, uint(textW))
+		}
+		pad := textW - lipgloss.Width(line)
+		if pad < 0 {
+			pad = 0
+		}
+		out = append(out, borderStyle.Render("│")+" "+line+strings.Repeat(" ", pad)+" "+borderStyle.Render("│"))
+	}
+	return out
+}
+
+// renderSQLControlsBox draws the merged SQL sidebar control panel.
+// Order is intentionally TIME first, then DATASET and inline COLUMNS below.
+func renderSQLControlsBox(start, end, dataset string, columns []string, columnIdx int, columnFilter string, columnsOpen, columnsLoading bool, width, height int, focusedOn string, displayMode TimeDisplayMode) string {
 	p := ui.Active
 	innerW := width - 2
 	if innerW < 4 {
 		innerW = 4
-	}
-	innerH := height - 2
-	if innerH < 1 {
-		innerH = 1
 	}
 
 	rail := lipgloss.NewStyle().Background(p.Active).Render(" ")
 	dim := lipgloss.NewStyle().Foreground(p.Faint)
 	body := lipgloss.NewStyle().Foreground(p.Body)
-	ghost := lipgloss.NewStyle().Foreground(p.Ghost).Italic(true)
 	active := lipgloss.NewStyle().Foreground(p.Active).Bold(true)
-
-	// DATASET row
-	dsLabel, dsPrefix := dim, "  "
-	if focusedOn == "dataset" {
-		dsLabel = active
-		dsPrefix = rail + " "
-	}
-
-	// COLUMN row
-	colLabel, colPrefix := dim, "  "
-	if focusedOn == "column" {
-		colLabel = active
-		colPrefix = rail + " "
-	}
-	colDisplay := column
-	colValStyle := body
-	if columnsLoading {
-		colDisplay = "loading…"
-		colValStyle = ghost
-	} else if column == "<select column>" {
-		colValStyle = ghost
-	}
-
-	maxVal := innerW - lipgloss.Width(dsPrefix)
-	if maxVal < 4 {
-		maxVal = 4
-	}
-	lines := []string{
-		dsPrefix + dsLabel.Render("DATASET"),
-		dsPrefix + body.Render(ui.Truncate(dataset, maxVal)),
-		"",
-		colPrefix + colLabel.Render("COLUMN"),
-		colPrefix + colValStyle.Render(ui.Truncate(colDisplay, maxVal)),
-	}
-	content := lipgloss.NewStyle().
-		Width(innerW).
-		Height(innerH).
-		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
-
+	sectionFocused := focusedOn == "time" || focusedOn == "dataset" || focusedOn == "columns"
 	borderColor := p.Border
-	if focusedOn == "dataset" || focusedOn == "column" {
+	if sectionFocused {
 		borderColor = p.BorderHi
 	}
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(borderColor).
-		Render(content)
-}
+	borderStyle := lipgloss.NewStyle().Foreground(borderColor)
+	timeTitleStyle := lipgloss.NewStyle().Foreground(p.Faint)
+	if focusedOn == "time" {
+		timeTitleStyle = lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
+	}
+	datasetTitleStyle := lipgloss.NewStyle().Foreground(p.Faint)
+	if focusedOn == "dataset" {
+		datasetTitleStyle = lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
+	}
+	columnsTitleStyle := lipgloss.NewStyle().Foreground(p.Faint)
+	if focusedOn == "columns" {
+		columnsTitleStyle = lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
+	}
 
-// renderSQLDateBox draws the bottom SQL sidebar card: FROM + TO.
-// Focused state uses the Active (sky-blue) rail + bold label
-// convention shared with PromQL.
-func renderSQLDateBox(start, end string, width, height int, focused bool) string {
-	p := ui.Active
-	innerW := width - 2
-	if innerW < 4 {
-		innerW = 4
-	}
-	innerH := height - 2
-	if innerH < 1 {
-		innerH = 1
-	}
-	dim := lipgloss.NewStyle().Foreground(p.Faint)
-	val := lipgloss.NewStyle().Foreground(p.Body)
-	label := dim
-	prefix := "  "
-	if focused {
-		label = lipgloss.NewStyle().Foreground(p.Active).Bold(true)
-		prefix = lipgloss.NewStyle().Background(p.Active).Render(" ") + " "
-	}
-	valW := innerW - 2 // 2 for prefix
+	valW := innerW - 2
 	if valW < 4 {
 		valW = 4
 	}
-	lines := []string{
-		prefix + label.Render("FROM"),
-		prefix + val.Render(ui.Truncate(start, valW)),
-		"",
-		prefix + label.Render("TO"),
-		prefix + val.Render(ui.Truncate(end, valW)),
+	row := func(focus, label, value string, valueStyle lipgloss.Style, truncate bool) []string {
+		labelStyle := dim
+		prefix := "  "
+		if focusedOn == focus {
+			labelStyle = active
+			prefix = rail + " "
+		}
+		display := value
+		if truncate {
+			display = ui.Truncate(value, valW)
+		}
+		return []string{
+			prefix + labelStyle.Render(label),
+			prefix + valueStyle.Render(display),
+		}
 	}
-	body := lipgloss.NewStyle().
-		Width(innerW).
-		Height(innerH).
-		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(p.Border).
-		Render(body)
+
+	truncateTime := valW < sqlControlTimeDisplayWidth
+	timeLines := []string{}
+	timeLines = append(timeLines, row("time", "FROM", start, body, truncateTime)...)
+	timeLines = append(timeLines, row("time", "TO", end, body, truncateTime)...)
+	timeLines = append(timeLines, "")
+
+	datasetPrefix := "  "
+	datasetStyle := body
+	if focusedOn == "dataset" {
+		datasetPrefix = rail + " "
+		datasetStyle = active
+	}
+	datasetLines := []string{
+		datasetPrefix + datasetStyle.Render(ui.Truncate(dataset, valW)),
+		"",
+	}
+
+	columnsTitle := fmt.Sprintf("COLUMNS (%d)", len(columns))
+	columnSectionH := height - 4 - len(timeLines) - len(datasetLines) // top + 2 dividers + bottom
+	if columnSectionH < 1 {
+		columnSectionH = 1
+	}
+	listAvailable := columnSectionH
+	footerH := 0
+	if columnsOpen && listAvailable > 1 {
+		footerH = 1
+		listAvailable--
+	}
+	if listAvailable < 1 {
+		listAvailable = 1
+	}
+	var columnLines []string
+	if !columnsOpen {
+		columnLines = append(columnLines, "  "+dim.Render("Show columns"))
+	} else if columnsLoading {
+		columnLines = append(columnLines, "  "+dim.Render("loading columns..."))
+	} else if len(columns) == 0 {
+		columnLines = append(columnLines, "  "+dim.Render("no columns"))
+	} else {
+		if columnIdx < 0 {
+			columnIdx = 0
+		}
+		if columnIdx >= len(columns) {
+			columnIdx = len(columns) - 1
+		}
+		listH := listAvailable
+		if listH < 1 {
+			listH = 1
+		}
+		startIdx := 0
+		if columnIdx >= listH {
+			startIdx = columnIdx - listH + 1
+		}
+		if startIdx+listH > len(columns) {
+			startIdx = len(columns) - listH
+			if startIdx < 0 {
+				startIdx = 0
+			}
+		}
+		for i := startIdx; i < startIdx+listH && i < len(columns); i++ {
+			col := ui.Truncate(columns[i], valW)
+			if focusedOn == "columns" && i == columnIdx {
+				columnLines = append(columnLines, highlightStyle.Width(valW).Render(col))
+			} else {
+				columnLines = append(columnLines, "  "+body.Render(col))
+			}
+		}
+	}
+	for len(columnLines) < listAvailable {
+		columnLines = append(columnLines, "")
+	}
+	if footerH == 1 {
+		columnLines = append(columnLines, renderColumnFilterFooter(columnFilter, columnIdx, len(columns), valW, focusedOn == "columns"))
+	}
+
+	lines := []string{
+		paneRule("┌", "┐", "TIME RANGE "+formatResultTimeLabel(displayMode), width, borderStyle, timeTitleStyle),
+	}
+	lines = append(lines, paneBodyLines(lipgloss.JoinVertical(lipgloss.Left, timeLines...), width, len(timeLines), borderStyle)...)
+	lines = append(lines, paneRule("├", "┤", "DATASET", width, borderStyle, datasetTitleStyle))
+	lines = append(lines, paneBodyLines(lipgloss.JoinVertical(lipgloss.Left, datasetLines...), width, len(datasetLines), borderStyle)...)
+	lines = append(lines, paneRule("├", "┤", columnsTitle, width, borderStyle, columnsTitleStyle))
+	lines = append(lines, paneBodyLines(lipgloss.JoinVertical(lipgloss.Left, columnLines...), width, columnSectionH, borderStyle)...)
+	lines = append(lines, borderStyle.Render("└"+strings.Repeat("─", innerW)+"┘"))
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+func renderColumnFilterFooter(columnFilter string, columnIdx, total, width int, focused bool) string {
+	p := ui.Active
+	dim := lipgloss.NewStyle().Foreground(p.Faint)
+	body := lipgloss.NewStyle().Foreground(p.Body)
+
+	count := "0/0"
+	if total > 0 {
+		current := columnIdx + 1
+		if current < 1 {
+			current = 1
+		}
+		if current > total {
+			current = total
+		}
+		count = fmt.Sprintf("%d/%d", current, total)
+	}
+
+	cursor := ""
+	cursorW := 0
+	if focused {
+		cursor = lipgloss.NewStyle().
+			Background(p.Cursor).
+			Foreground(p.InvertText).
+			Render(" ")
+		cursorW = 1
+	}
+
+	prefix := "filter: "
+	countW := lipgloss.Width(count)
+	filterW := width - lipgloss.Width(prefix) - countW - cursorW - 1
+	if filterW < 0 {
+		filterW = 0
+	}
+	left := dim.Render(prefix) + body.Render(ui.Truncate(columnFilter, filterW)) + cursor
+	right := dim.Render(count)
+	pad := width - lipgloss.Width(left) - lipgloss.Width(right)
+	if pad < 1 {
+		pad = 1
+	}
+	return left + strings.Repeat(" ", pad) + right
+}
+
+func formatSQLControlTime(t time.Time, mode TimeDisplayMode) string {
+	if mode == TimeDisplayUTC {
+		return t.UTC().Format("02 Jan 2006, 15:04 | UTC")
+	}
+	return t.Format("02 Jan 2006, 15:04 | UTC-07:00")
 }
 
 // renderResultsPane wraps the table (or empty-state / loading / error
 // body) in a flat rectangle with a single label row. Row count appears
 // dim-right of the label when there is data.
 func renderResultsPane(body string, width, height, rowCount int, focused bool) string {
-	p := ui.Active
-	borderColor := p.Border
-	titleFg := p.Faint
-	if focused {
-		borderColor = p.BorderHi
-		titleFg = p.Accent
-	}
-	innerW := width - 2
-	if innerW < 4 {
-		innerW = 4
-	}
-	innerH := height - 2
-	if innerH < 3 {
-		innerH = 3
-	}
-	left := lipgloss.NewStyle().Foreground(titleFg).Bold(focused).Render("RESULTS")
-	var right string
+	title := "RESULTS"
 	if rowCount > 0 {
-		right = lipgloss.NewStyle().
-			Foreground(p.Faint).
-			Render(fmt.Sprintf("%d rows", rowCount))
+		title = fmt.Sprintf("RESULTS (%d rows)", rowCount)
 	}
-	gap := innerW - lipgloss.Width(left) - lipgloss.Width(right) - 2
-	if gap < 1 {
-		gap = 1
-	}
-	titleRow := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(
-		left + strings.Repeat(" ", gap) + right,
-	)
-	bodyPane := lipgloss.NewStyle().
-		Width(innerW).
-		Height(innerH-1).
-		Padding(0, 1).
-		Render(body)
-	stack := lipgloss.JoinVertical(lipgloss.Left, titleRow, bodyPane)
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(borderColor).
-		Render(stack)
+	return renderTitledPane(title, body, width, height, focused)
 }
 
 // buildBottomBar — single combined help+status row. Left side carries
@@ -1150,10 +1344,15 @@ func queryKeysForFocus(m QueryModel) []ui.KeyHint {
 	}
 	switch m.overlay {
 	case overlayInputs:
+		upDownLabel := "Adjust"
+		if m.timeRangeEdit.currentFocus() == "list" {
+			upDownLabel = "Preset"
+		} else if m.timeRangeEdit.currentFocus() == "display" {
+			upDownLabel = "Display time"
+		}
 		return []ui.KeyHint{
-			{Key: "<↑/↓>", Label: "Preset"},
-			{Key: "<tab>", Label: "Field"},
-			{Key: "<ctrl-{>", Label: "End → now"},
+			{Key: "<↑/↓>", Label: upDownLabel},
+			{Key: "<tab>", Label: "Switch pane"},
 			{Key: "<enter>", Label: "Apply"},
 			{Key: "<esc>", Label: "Cancel"},
 		}
@@ -1164,10 +1363,16 @@ func queryKeysForFocus(m QueryModel) []ui.KeyHint {
 			{Key: "<enter>", Label: "Open selector"},
 			{Key: "<ctrl-d>", Label: "Open selector"},
 		}, common...)
-	case "column":
+	case "columns":
+		if m.columnsDrawerOpen {
+			return append([]ui.KeyHint{
+				{Key: "<↑/↓>", Label: "Column"},
+				{Key: "<enter>", Label: "Insert"},
+				{Key: "<type>", Label: "Filter"},
+			}, common...)
+		}
 		return append([]ui.KeyHint{
-			{Key: "<enter>", Label: "Open selector"},
-			{Key: "<ctrl-d>", Label: "Dataset"},
+			{Key: "<enter>", Label: "Show columns"},
 		}, common...)
 	case "time":
 		return append([]ui.KeyHint{
@@ -1182,22 +1387,58 @@ func queryKeysForFocus(m QueryModel) []ui.KeyHint {
 	return common
 }
 
-// trimTimestampToHMS extracts the HH:MM:SS portion of an RFC3339-ish
-// timestamp (or any string containing `T<time>`). Used to keep the
-// timestamp column narrow in the results table. Full value is still
-// stored — only the display string is trimmed.
-func trimTimestampToHMS(s string) string {
-	// Look for `T` separator (RFC3339) — take what follows, then crop
-	// at the first dot or zone marker.
-	t := strings.IndexByte(s, 'T')
+func formatResultTimeLabel(mode TimeDisplayMode) string {
+	if mode == TimeDisplayUTC {
+		return "[UTC]"
+	}
+	return "[LOCAL]"
+}
+
+func formatTimestampToDisplayHMS(value string, loc *time.Location, mode TimeDisplayMode) string {
+	if loc == nil {
+		loc = time.Local
+	}
+	if t, ok := parseTimestamp(value); ok {
+		if mode == TimeDisplayUTC {
+			return t.UTC().Format("15:04:05")
+		}
+		return t.In(loc).Format("15:04:05")
+	}
+	return trimTimestampToHMS(value)
+}
+
+func parseTimestamp(value string) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t, true
+		}
+	}
+	for _, layout := range []string{
+		"2006-01-02T15:04:05.999999999",
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05",
+	} {
+		if t, err := time.ParseInLocation(layout, value, time.UTC); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func trimTimestampToHMS(value string) string {
+	t := strings.IndexByte(value, 'T')
 	if t < 0 {
-		// Fallback: try a space (some formats use space, not T).
-		t = strings.IndexByte(s, ' ')
+		t = strings.IndexByte(value, ' ')
 	}
-	if t < 0 || t+1 >= len(s) {
-		return s
+	if t < 0 || t+1 >= len(value) {
+		return value
 	}
-	rest := s[t+1:]
+	rest := value[t+1:]
 	for i, c := range rest {
 		if c == '.' || c == 'Z' || c == '+' || c == '-' {
 			return rest[:i]
@@ -1207,6 +1448,75 @@ func trimTimestampToHMS(s string) string {
 		return rest[:8]
 	}
 	return rest
+}
+
+func ensureDefaultSQLLimit(query string) string {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" || hasTopLevelSQLLimit(trimmed) {
+		return query
+	}
+	suffix := ""
+	if strings.HasSuffix(trimmed, ";") {
+		trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, ";"))
+		suffix = ";"
+	}
+	return trimmed + " LIMIT 500" + suffix
+}
+
+func hasTopLevelSQLLimit(query string) bool {
+	depth := 0
+	for i := 0; i < len(query); {
+		switch query[i] {
+		case '\'':
+			i++
+			for i < len(query) {
+				if query[i] == '\'' {
+					i++
+					if i < len(query) && query[i] == '\'' {
+						i++
+						continue
+					}
+					break
+				}
+				i++
+			}
+		case '"':
+			i++
+			for i < len(query) {
+				if query[i] == '"' {
+					i++
+					break
+				}
+				i++
+			}
+		case '(':
+			depth++
+			i++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+			i++
+		default:
+			if depth == 0 && isSQLLimitTokenAt(query, i) {
+				return true
+			}
+			i++
+		}
+	}
+	return false
+}
+
+func isSQLLimitTokenAt(query string, idx int) bool {
+	const token = "limit"
+	if idx+len(token) > len(query) || !strings.EqualFold(query[idx:idx+len(token)], token) {
+		return false
+	}
+	if idx > 0 && isIdentChar(rune(query[idx-1])) {
+		return false
+	}
+	next := idx + len(token)
+	return next >= len(query) || !isIdentChar(rune(query[next]))
 }
 
 // parseableASCIIArt is the block-letter wordmark shown in the empty
@@ -1377,6 +1687,7 @@ func IteratorPrev(iter *iterator.QueryIterator[QueryData, FetchResult]) tea.Cmd 
 func fetchData(client *http.Client, profile *config.Profile, query string, startTime string, endTime string) (data QueryData, res FetchResult, errMsg string) {
 	data = QueryData{}
 	res = fetchErr
+	query = ensureDefaultSQLLimit(query)
 
 	body, err := json.Marshal(map[string]string{
 		"query":     query,
@@ -1444,11 +1755,11 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 
 	// Build column specs: timestamp pinned left, p_tags/p_metadata pinned right.
 	var specs []colSpec
+	resultLoc := m.timeRange.start.Time().Location()
+	resultTimeLabel := formatResultTimeLabel(m.timeRange.DisplayMode())
 
 	if slices.Contains(data.schema, dateTimeKey) {
-		// Display label "time" — full p_timestamp gets truncated to
-		// `P_TIMESTA…` at width 10. Short label fits cleanly.
-		specs = append(specs, colSpec{key: dateTimeKey, title: "time", width: dateTimeWidth, fixed: true})
+		specs = append(specs, colSpec{key: dateTimeKey, title: "time " + resultTimeLabel, width: dateTimeWidth, fixed: true})
 	}
 
 	for _, title := range data.schema {
@@ -1520,10 +1831,8 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 
 	m.dataRows = make([]table.Row, len(data.data))
 	for i, rowJSON := range data.data {
-		// Mutate timestamp display in-place — HH:MM:SS only. Full value
-		// stays accessible when the row is expanded.
 		if ts, ok := rowJSON[dateTimeKey].(string); ok {
-			rowJSON[dateTimeKey] = trimTimestampToHMS(ts)
+			rowJSON[dateTimeKey] = formatTimestampToDisplayHMS(ts, resultLoc, m.timeRange.DisplayMode())
 		}
 		m.dataRows[i] = table.NewRow(rowJSON)
 	}
@@ -1580,64 +1889,15 @@ func countDigits(num int) int {
 	return numDigits
 }
 
-// fetchAllStreams fetches every log stream from the server and returns them
-// as a datasetListMsg. Used by the SQL dataset spotlight (all streams are
-// valid SQL targets, unlike PromQL which prefers "metrics" streams).
+// fetchAllStreams fetches Prism's dataset metadata and keeps log datasets,
+// matching the web UI's Logs section.
 func fetchAllStreams(profile config.Profile) tea.Cmd {
 	return func() tea.Msg {
-		reqURL, err := url.JoinPath(profile.URL, "api/v1/logstream")
+		items, err := datasets.FetchHomeDatasets(profile)
 		if err != nil {
 			return datasetListMsg{errMsg: err.Error()}
 		}
-		client := &http.Client{Timeout: 15 * time.Second}
-		req, err := http.NewRequest("GET", reqURL, nil)
-		if err != nil {
-			return datasetListMsg{errMsg: err.Error()}
-		}
-		if profile.Token != "" {
-			req.Header.Set("Authorization", "Bearer "+profile.Token)
-		} else {
-			req.SetBasicAuth(profile.Username, profile.Password)
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return datasetListMsg{errMsg: err.Error()}
-		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-		var items []struct {
-			Name       string `json:"name"`
-			StreamType string `json:"stream_type"`
-		}
-		if err := json.Unmarshal(body, &items); err != nil {
-			return datasetListMsg{errMsg: err.Error()}
-		}
-		// Prefer server-side stream_type (matches exactly what the UI shows).
-		// Fall back to name-based exclusion only for servers that don't
-		// return stream_type — never return everything unfiltered.
-		hasType := false
-		for _, item := range items {
-			if item.StreamType != "" {
-				hasType = true
-				break
-			}
-		}
-		datasets := make([]string, 0, len(items))
-		for _, item := range items {
-			if hasType {
-				if item.StreamType != "UserDefined" {
-					continue
-				}
-			} else {
-				low := strings.ToLower(item.Name)
-				if strings.Contains(low, "traces") || strings.Contains(low, "metrics") {
-					continue
-				}
-			}
-			datasets = append(datasets, item.Name)
-		}
-		sort.Strings(datasets)
-		return datasetListMsg{datasets: datasets}
+		return datasetListMsg{datasets: datasets.NamesByType(items, datasets.TypeLogs)}
 	}
 }
 

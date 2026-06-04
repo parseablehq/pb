@@ -275,9 +275,11 @@ var SetUserRoleCmd = &cobra.Command{
 }
 
 var ListUserCmd = &cobra.Command{
-	Use:     "list",
-	Short:   "List all users",
-	Example: "  pb user list",
+	Use:          "list",
+	Aliases:      []string{"ls"},
+	Short:        "List all users",
+	Example:      "  pb user list",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		startTime := time.Now()
 		cmd.Annotations = make(map[string]string)
@@ -347,39 +349,103 @@ var ListUserCmd = &cobra.Command{
 		}
 
 		if outputFormat == "text" {
-			fmt.Println()
-			for idx, user := range users {
-				roles := roleResponses[idx]
-				if roles.err == nil {
-					roleList := strings.Join(roles.data, ", ")
-					fmt.Printf("%s, %s\n", user.ID, roleList)
-				} else {
-					fmt.Printf("%s, error: %v\n", user.ID, roles.err)
-				}
-			}
-			fmt.Println()
+			printUserRoleTable(users, roleResponses)
 			cmd.Annotations["error"] = "none"
 			return nil
 		}
 
-		fmt.Println()
-		for idx, user := range users {
-			roles := roleResponses[idx]
-			fmt.Print("• ")
-			fmt.Println(StandardStyleBold.Bold(true).Render(user.ID))
-			if roles.err == nil {
-				for _, role := range roles.data {
-					fmt.Println(lipgloss.NewStyle().PaddingLeft(3).Render(role))
-				}
-			} else {
-				fmt.Println(roles.err)
-			}
-		}
-		fmt.Println()
+		printUserRoleTable(users, roleResponses)
 
 		cmd.Annotations["error"] = "none"
 		return nil
 	},
+}
+
+func printUserRoleTable(users []UserData, roleResponses []struct {
+	data []string
+	err  error
+}) {
+	const maxUserWidth = 64
+	userHeader := "USER"
+	rolesHeader := "ROLES"
+	userWidth := lipgloss.Width(userHeader)
+	for _, user := range users {
+		width := lipgloss.Width(user.ID)
+		if width > maxUserWidth {
+			width = maxUserWidth
+		}
+		if width > userWidth {
+			userWidth = width
+		}
+	}
+
+	headerStyle := SelectedStyle.Bold(true)
+	bodyStyle := StandardStyle
+	mutedStyle := StandardStyleAlt
+	ruleStyle := StandardStyleRule
+	leaderStyle := StandardStyleRule
+	roleColumn := userWidth + 4
+
+	fmt.Println()
+	fmt.Printf("%s%s\n",
+		headerStyle.Render(padRight(userHeader, roleColumn)),
+		headerStyle.Render(rolesHeader),
+	)
+	fmt.Printf("%s%s\n",
+		ruleStyle.Render(strings.Repeat("─", roleColumn)),
+		ruleStyle.Render(strings.Repeat("─", lipgloss.Width(rolesHeader))),
+	)
+	for idx, user := range users {
+		roles := roleResponses[idx]
+		roleText := "-"
+		roleStyle := bodyStyle
+		if roles.err != nil {
+			roleText = fmt.Sprintf("error: %v", roles.err)
+			roleStyle = mutedStyle
+		} else if len(roles.data) > 0 {
+			roleText = strings.Join(roles.data, ", ")
+		} else {
+			roleStyle = mutedStyle
+		}
+		userCell := truncateCell(user.ID, maxUserWidth)
+		leaderWidth := roleColumn - lipgloss.Width(userCell) - 1
+		if leaderWidth < 2 {
+			leaderWidth = 2
+		}
+
+		fmt.Printf("%s %s %s\n",
+			bodyStyle.Render(userCell),
+			leaderStyle.Render(strings.Repeat(".", leaderWidth)),
+			roleStyle.Render(roleText),
+		)
+	}
+	fmt.Println()
+}
+
+func padRight(value string, width int) string {
+	padding := width - lipgloss.Width(value)
+	if padding < 0 {
+		padding = 0
+	}
+	return value + strings.Repeat(" ", padding)
+}
+
+func truncateCell(value string, width int) string {
+	if lipgloss.Width(value) <= width {
+		return value
+	}
+	if width <= 1 {
+		return "…"
+	}
+	out := ""
+	for _, r := range value {
+		next := out + string(r)
+		if lipgloss.Width(next)+1 > width {
+			break
+		}
+		out = next
+	}
+	return out + "…"
 }
 
 func fetchUsers(client *internalHTTP.HTTPClient) (res []UserData, err error) {

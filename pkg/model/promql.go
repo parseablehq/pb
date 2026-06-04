@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"os"
 	"pb/pkg/config"
+	"pb/pkg/datasets"
 	"pb/pkg/ui"
 	"regexp"
 	"sort"
@@ -54,7 +55,7 @@ const (
 	promqlTimestampFullKey = "_timestamp_full"
 	promqlMetricKey        = "metric"
 	promqlValueKey         = "value"
-	promqlTimestampWidth   = 10 // matches SQL dateTimeWidth (HH:MM:SS + slack)
+	promqlTimestampWidth   = len("TIME [LOCAL]")
 	promqlAutoStep         = "auto"
 	promqlModeRange        = "range"
 	promqlModeInstant      = "instant"
@@ -71,7 +72,7 @@ const (
 const overlayDataset uint = 2
 const overlayBuilder uint = 3
 
-var PromqlNavigationMap = []string{"query", "dataset", "step", "time", "table"}
+var PromqlNavigationMap = []string{"query", "time", "dataset", "step", "table"}
 
 var (
 	promqlStepPattern      = regexp.MustCompile(`^(?:[0-9]+(?:ms|s|m|h|d|w|y))+$`)
@@ -151,6 +152,7 @@ type PromqlModel struct {
 	table         table.Model
 	query         textarea.Model
 	timeRange     TimeInputModel
+	timeRangeEdit TimeInputModel
 	profile       config.Profile
 	help          help.Model
 	status        StatusBar
@@ -316,8 +318,7 @@ func (m PromqlModel) isBothMode() bool {
 
 func NewPromqlModel(profile config.Profile, expr string, startTime, endTime time.Time, step, dataset string, instant bool) PromqlModel {
 	w, h, _ := term.GetSize(int(os.Stdout.Fd()))
-	// The legacy `pb query run -i --promql` path still passes "1m" as its
-	// cobra default. Keep the TUI default aligned with PromQL's auto step.
+	// Keep the TUI default aligned with PromQL's auto step.
 	if strings.TrimSpace(step) == "" || step == "1m" {
 		step = promqlAutoStep
 	}
@@ -327,7 +328,7 @@ func NewPromqlModel(profile config.Profile, expr string, startTime, endTime time
 	mode := initialPromqlMode(instant)
 
 	columns := []table.Column{
-		table.NewColumn(promqlTimestampKey, "TIMESTAMP", promqlTimestampWidth),
+		table.NewColumn(promqlTimestampKey, "TIME "+formatResultTimeLabel(inputs.DisplayMode()), promqlTimestampWidth),
 		table.NewFlexColumn(promqlMetricKey, "METRIC", 1),
 		table.NewColumn(promqlValueKey, "VALUE", 14),
 	}
@@ -459,7 +460,7 @@ func (m PromqlModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.spinner.Tick}
 	if strings.TrimSpace(m.query.Value()) != "" && m.dataset != "" {
 		cmds = append(cmds, NewPromqlModeFetchTask(m.profile, m.query.Value(), m.dataset, m.step,
-			m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.mode))
+			m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.mode, m.timeRange.DisplayMode()))
 	}
 	if m.dataset != "" {
 		cmds = append(cmds, fetchCacheMetrics(m.profile, m.dataset))
@@ -523,7 +524,7 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.spinner.Tick,
 						fetchCacheMetrics(m.profile, m.dataset),
 						NewPromqlModeFetchTask(m.profile, m.query.Value(), m.dataset, m.step,
-							m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.mode),
+							m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.mode, m.timeRange.DisplayMode()),
 					)
 				}
 				return m, fetchCacheMetrics(m.profile, m.dataset)
@@ -932,6 +933,7 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if msg.Type == tea.KeyEnter {
+				m.timeRange = m.timeRangeEdit
 				m.overlay = overlayNone
 				m.focusSelected()
 				m.normalizeStepForRun()
@@ -941,9 +943,9 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.hasQueried = true
 				return m, tea.Batch(m.spinner.Tick,
 					NewPromqlModeFetchTask(m.profile, m.query.Value(), m.dataset, m.step,
-						m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.mode))
+						m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.mode, m.timeRange.DisplayMode()))
 			}
-			m.timeRange, cmd = m.timeRange.Update(msg)
+			m.timeRangeEdit, cmd = m.timeRangeEdit.Update(msg)
 			return m, cmd
 		}
 
@@ -998,6 +1000,8 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Enter on time → open time overlay
 		if msg.Type == tea.KeyEnter && m.currentFocus() == "time" {
+			m.timeRangeEdit = m.timeRange
+			m.timeRangeEdit.SyncPreset()
 			m.overlay = overlayInputs
 			return m, nil
 		}
@@ -1025,7 +1029,7 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.hasQueried = true
 			return m, tea.Batch(m.spinner.Tick,
 				NewPromqlModeFetchTask(m.profile, m.query.Value(), m.dataset, m.step,
-					m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.mode))
+					m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.mode, m.timeRange.DisplayMode()))
 		}
 
 		// Space on step panel cycles range/instant/both mode.
@@ -1053,7 +1057,7 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.hasQueried = true
 				return m, tea.Batch(m.spinner.Tick,
 					NewPromqlModeFetchTask(m.profile, m.query.Value(), m.dataset, m.step,
-						m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.mode))
+						m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.mode, m.timeRange.DisplayMode()))
 			}
 			return m, nil
 		}
@@ -1138,7 +1142,7 @@ func (m *PromqlModel) runQueryFromBuilder(expr string) (PromqlModel, tea.Cmd) {
 	m.hasQueried = true
 	return *m, tea.Batch(m.spinner.Tick,
 		NewPromqlModeFetchTask(m.profile, m.query.Value(), m.dataset, m.step,
-			m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.mode))
+			m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.mode, m.timeRange.DisplayMode()))
 }
 
 func (m *PromqlModel) openBuilderOverlay() tea.Cmd {
@@ -1366,12 +1370,9 @@ func (m PromqlModel) View() string {
 	bottomHeight := lipgloss.Height(bottomView)
 
 	topH := 13
-	sidebarW := 30
+	sidebarW := sqlControlsMinWidth
 	if m.width >= 140 {
-		sidebarW = 34
-	}
-	if m.width < 100 {
-		sidebarW = 26
+		sidebarW = sqlControlsMinWidth + 3
 	}
 	// editorW reserves 1 col for the horizontal gap between editor
 	// and sidebar so the two `│` borders aren't flush against each
@@ -1408,33 +1409,28 @@ func (m PromqlModel) View() string {
 	editorFocused := m.currentFocus() == "query"
 	editorPane := renderPromqlEditorPane(editorBody, editorW, topH, editorFocused, m.queryMode == "builder")
 
-	rangeMode := m.mode
 	stepHi := m.currentFocus() == "step"
-	dsHi := m.currentFocus() == "dataset"
 	dataset := m.dataset
 	if dataset == "" {
 		dataset = "select-dataset"
 	}
-	timeHi := m.currentFocus() == "time"
-	// Two stacked sidebar boxes. Borders touch — same zero-gap join
-	// used between the top section and the results pane.
-	// Controls (7 rows) + Date (6 rows) = 13 = topH.
 	// When step is focused, pass the live textinput View() so its cursor is visible.
 	stepDisplay := m.step
 	if stepHi {
 		stepDisplay = m.stepInput.View()
 	}
-	controlsBox := renderPromqlControlsBox(
-		dataset, stepDisplay, rangeMode,
-		sidebarW, 7,
-		dsHi, stepHi, m.isInstantMode(),
+	sidebarPane := renderPromqlControlsPane(
+		formatSQLControlTime(m.timeRange.start.Time(), m.timeRange.DisplayMode()),
+		formatSQLControlTime(m.timeRange.end.Time(), m.timeRange.DisplayMode()),
+		dataset,
+		stepDisplay,
+		m.mode,
+		sidebarW,
+		topH,
+		m.currentFocus(),
+		m.isInstantMode(),
+		m.timeRange.DisplayMode(),
 	)
-	dateBox := renderPromqlDateBox(
-		m.timeRange.start.Value(), m.timeRange.end.Value(),
-		sidebarW, 6,
-		timeHi, m.isInstantMode(),
-	)
-	sidebarPane := lipgloss.JoinVertical(lipgloss.Left, controlsBox, dateBox)
 
 	gap := lipgloss.NewStyle().Width(1).Height(topH).Render("")
 	topSection := lipgloss.JoinHorizontal(lipgloss.Top, editorPane, gap, sidebarPane)
@@ -1515,7 +1511,7 @@ func (m PromqlModel) View() string {
 	case overlayNone:
 		mainView = body
 	case overlayInputs:
-		timeView := m.timeRange.View()
+		timeView := m.timeRangeEdit.View()
 		mainView = lipgloss.Place(m.width, m.height-bottomHeight,
 			lipgloss.Center, lipgloss.Center, timeView,
 			lipgloss.WithWhitespaceChars(" "),
@@ -1557,25 +1553,12 @@ func renderPromqlResultsPane(body string, width, height int, focused bool, title
 	if innerH < 3 {
 		innerH = 3
 	}
-
-	left := lipgloss.NewStyle().Foreground(titleFg).Bold(focused).Render(title)
-	gap := innerW - lipgloss.Width(left) - lipgloss.Width(right) - 2
-	if gap < 1 {
-		gap = 1
-	}
-	titleRow := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(
-		left + strings.Repeat(" ", gap) + right,
-	)
-	bodyPane := lipgloss.NewStyle().
-		Width(innerW).
-		Height(innerH-1).
-		Padding(0, 1).
-		Render(body)
-	stack := lipgloss.JoinVertical(lipgloss.Left, titleRow, bodyPane)
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(borderColor).
-		Render(stack)
+	borderStyle := lipgloss.NewStyle().Foreground(borderColor)
+	titleStyle := lipgloss.NewStyle().Foreground(titleFg).Bold(focused)
+	lines := []string{promqlPaneRule("┌", "┐", title, right, width, borderStyle, titleStyle)}
+	lines = append(lines, paneBodyLines(body, width, innerH, borderStyle)...)
+	lines = append(lines, borderStyle.Render("└"+strings.Repeat("─", innerW)+"┘"))
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
 func renderPromqlEditorPane(body string, width, height int, focused, builder bool) string {
@@ -1595,8 +1578,6 @@ func renderPromqlEditorPane(body string, width, height int, focused, builder boo
 		innerH = 3
 	}
 
-	left := lipgloss.NewStyle().Foreground(titleFg).Bold(focused).Render("EDITOR")
-
 	activeStyle := lipgloss.NewStyle().Foreground(p.Active).Bold(true)
 	idle := lipgloss.NewStyle().Foreground(p.Faint)
 	sepStyle := lipgloss.NewStyle().Foreground(p.Faint)
@@ -1608,132 +1589,134 @@ func renderPromqlEditorPane(body string, width, height int, focused, builder boo
 		right = activeStyle.Render("Code") + sep + idle.Render("Builder")
 	}
 
-	gap := innerW - lipgloss.Width(left) - lipgloss.Width(right) - 2
-	if gap < 1 {
-		gap = 1
-	}
-	titleRow := lipgloss.NewStyle().Width(innerW).Padding(0, 1).Render(
-		left + strings.Repeat(" ", gap) + right,
-	)
-	spacer := lipgloss.NewStyle().Width(innerW).Render("")
-	bodyPane := lipgloss.NewStyle().
-		Width(innerW).
-		Height(innerH-2).
-		Padding(0, 1).
-		Render(body)
-	stack := lipgloss.JoinVertical(lipgloss.Left, titleRow, spacer, bodyPane)
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(borderColor).
-		Render(stack)
+	borderStyle := lipgloss.NewStyle().Foreground(borderColor)
+	titleStyle := lipgloss.NewStyle().Foreground(titleFg).Bold(focused)
+	lines := []string{promqlPaneRule("┌", "┐", "EDITOR", right, width, borderStyle, titleStyle)}
+	lines = append(lines, paneBodyLines(body, width, innerH, borderStyle)...)
+	lines = append(lines, borderStyle.Render("└"+strings.Repeat("─", innerW)+"┘"))
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
-// sidebarStyles returns the shared label/value/rail styles used by
-// the controls and date sidebar boxes.
-func sidebarStyles() (dim, val, hi lipgloss.Style, rail string) {
-	p := ui.Active
-	dim = lipgloss.NewStyle().Foreground(p.Faint)
-	val = lipgloss.NewStyle().Foreground(p.Body)
-	hi = lipgloss.NewStyle().Foreground(p.Active).Bold(true)
-	rail = lipgloss.NewStyle().Background(p.Active).Render(" ")
-	return
-}
-
-func renderPromqlControlsBox(dataset, step, mode string, width, height int, datasetHi, stepHi, instant bool) string {
-	p := ui.Active
-	innerW := width - 2
-	if innerW < 4 {
-		innerW = 4
+func promqlPaneRule(left, right, title, rightText string, width int, borderStyle, titleStyle lipgloss.Style) string {
+	if width < 2 {
+		width = 2
 	}
-	innerH := height - 2
-	if innerH < 1 {
-		innerH = 1
+	if title == "" {
+		return borderStyle.Render(left + strings.Repeat("─", width-2) + right)
 	}
-	dim, val, hi, rail := sidebarStyles()
-	prefix := func(active bool) string {
-		if active {
-			return rail + " "
+	label := " " + title + " "
+	prefix := left + "──"
+	rightLabel := ""
+	if strings.TrimSpace(rightText) != "" {
+		rightLabel = " " + rightText + " "
+	}
+	fill := width - lipgloss.Width(prefix) - lipgloss.Width(label) - lipgloss.Width(rightLabel) - lipgloss.Width(right)
+	if fill < 0 {
+		fill = 0
+		titleW := width - lipgloss.Width(prefix) - lipgloss.Width(rightLabel) - lipgloss.Width(right) - 2
+		if titleW < 1 {
+			titleW = 1
 		}
-		return "  "
+		label = " " + ui.Truncate(title, titleW) + " "
 	}
-	dLabel := dim
-	if datasetHi {
-		dLabel = hi
-	}
-	sLabel := dim
-	if stepHi {
-		sLabel = hi
-	}
-	// When step is focused, `step` is already the textinput View() string
-	// (cursor included); render it directly to avoid stripping the cursor.
-	stepVal := val.Render(step)
-	if stepHi {
-		stepVal = step
-	}
-	// In instant mode step is irrelevant — show it greyed out with a dash.
-	if instant {
-		sLabel = lipgloss.NewStyle().Foreground(p.Ghost)
-		stepVal = lipgloss.NewStyle().Foreground(p.Ghost).Render("—")
-	}
-	modeLabel := sLabel
-	if stepHi && instant {
-		modeLabel = hi
-	}
-	lines := []string{
-		prefix(datasetHi) + dLabel.Render("DATASET"),
-		prefix(datasetHi) + val.Render(dataset),
-		"",
-		prefix(stepHi) + sLabel.Render("STEP  ") + stepVal,
-		prefix(stepHi) + modeLabel.Render("MODE  ") + val.Render(mode),
-	}
-	body := lipgloss.NewStyle().
-		Width(innerW).
-		Height(innerH).
-		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(p.Border).
-		Render(body)
+	return borderStyle.Render(prefix) + titleStyle.Render(label) + borderStyle.Render(strings.Repeat("─", fill)) + rightLabel + borderStyle.Render(right)
 }
 
-func renderPromqlDateBox(start, end string, width, height int, timeHi, instant bool) string {
+func renderPromqlControlsPane(start, end, dataset, step, mode string, width, height int, focusedOn string, instant bool, displayMode TimeDisplayMode) string {
 	p := ui.Active
 	innerW := width - 2
 	if innerW < 4 {
 		innerW = 4
 	}
-	innerH := height - 2
-	if innerH < 1 {
-		innerH = 1
+	valW := innerW - 2
+	if valW < 4 {
+		valW = 4
 	}
-	dim, val, hi, rail := sidebarStyles()
-	prefix := "  "
-	if timeHi {
-		prefix = rail + " "
+
+	rail := lipgloss.NewStyle().Background(p.Active).Render(" ")
+	dim := lipgloss.NewStyle().Foreground(p.Faint)
+	body := lipgloss.NewStyle().Foreground(p.Body)
+	active := lipgloss.NewStyle().Foreground(p.Active).Bold(true)
+	ghost := lipgloss.NewStyle().Foreground(p.Ghost)
+
+	sectionFocused := focusedOn == "time" || focusedOn == "dataset" || focusedOn == "step"
+	borderColor := p.Border
+	if sectionFocused {
+		borderColor = p.BorderHi
 	}
-	label := dim
-	if timeHi {
-		label = hi
+	borderStyle := lipgloss.NewStyle().Foreground(borderColor)
+	titleStyle := func(name string) lipgloss.Style {
+		if focusedOn == name {
+			return lipgloss.NewStyle().Foreground(p.Accent).Bold(true)
+		}
+		return lipgloss.NewStyle().Foreground(p.Faint)
 	}
-	lines := []string{}
+	row := func(focus, label, value string, valueStyle lipgloss.Style) []string {
+		prefix := "  "
+		labelStyle := dim
+		if focusedOn == focus {
+			prefix = rail + " "
+			labelStyle = active
+		}
+		return []string{
+			prefix + labelStyle.Render(label),
+			prefix + valueStyle.Render(ui.Truncate(value, valW)),
+		}
+	}
+
+	timeLines := []string{}
 	if !instant {
-		lines = append(lines,
-			prefix+label.Render("FROM"),
-			prefix+val.Render(start),
-		)
+		timeLines = append(timeLines, row("time", "FROM", start, body)...)
 	}
-	lines = append(lines,
-		prefix+label.Render("TO"),
-		prefix+val.Render(end),
-	)
-	body := lipgloss.NewStyle().
-		Width(innerW).
-		Height(innerH).
-		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(p.Border).
-		Render(body)
+	timeLines = append(timeLines, row("time", "TO", end, body)...)
+	timeLines = append(timeLines, "")
+
+	datasetPrefix := "  "
+	datasetStyle := body
+	if focusedOn == "dataset" {
+		datasetPrefix = rail + " "
+		datasetStyle = active
+	}
+	datasetLines := []string{
+		datasetPrefix + datasetStyle.Render(ui.Truncate(dataset, valW)),
+		"",
+	}
+
+	stepPrefix := "  "
+	stepLabel := dim
+	if focusedOn == "step" {
+		stepPrefix = rail + " "
+		stepLabel = active
+	}
+	stepValue := body.Render(ui.Truncate(step, valW-lipgloss.Width("STEP ")))
+	modeValue := body.Render(ui.Truncate(mode, valW-lipgloss.Width("MODE ")))
+	if focusedOn == "step" {
+		stepValue = step
+	}
+	if instant {
+		stepLabel = ghost
+		stepValue = ghost.Render("—")
+	}
+	queryLines := []string{
+		stepPrefix + stepLabel.Render("STEP ") + stepValue,
+		stepPrefix + stepLabel.Render("MODE ") + modeValue,
+	}
+
+	querySectionH := height - 4 - len(timeLines) - len(datasetLines)
+	if querySectionH < len(queryLines) {
+		querySectionH = len(queryLines)
+	}
+
+	lines := []string{
+		paneRule("┌", "┐", "TIME RANGE "+formatResultTimeLabel(displayMode), width, borderStyle, titleStyle("time")),
+	}
+	lines = append(lines, paneBodyLines(lipgloss.JoinVertical(lipgloss.Left, timeLines...), width, len(timeLines), borderStyle)...)
+	lines = append(lines, paneRule("├", "┤", "DATASET", width, borderStyle, titleStyle("dataset")))
+	lines = append(lines, paneBodyLines(lipgloss.JoinVertical(lipgloss.Left, datasetLines...), width, len(datasetLines), borderStyle)...)
+	lines = append(lines, paneRule("├", "┤", "QUERY", width, borderStyle, titleStyle("step")))
+	lines = append(lines, paneBodyLines(lipgloss.JoinVertical(lipgloss.Left, queryLines...), width, querySectionH, borderStyle)...)
+	lines = append(lines, borderStyle.Render("└"+strings.Repeat("─", innerW)+"┘"))
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
 // buildPromqlBottomBar renders shortcuts, divider, and connection status.
@@ -1817,10 +1800,15 @@ func promqlKeysForFocus(m PromqlModel) []ui.KeyHint {
 			{Key: "<esc>", Label: "Cancel"},
 		}
 	case overlayInputs:
+		upDownLabel := "Adjust"
+		if m.timeRangeEdit.currentFocus() == "list" {
+			upDownLabel = "Preset"
+		} else if m.timeRangeEdit.currentFocus() == "display" {
+			upDownLabel = "Display time"
+		}
 		return []ui.KeyHint{
-			{Key: "<↑/↓>", Label: "Preset"},
-			{Key: "<tab>", Label: "Field"},
-			{Key: "<ctrl-{>", Label: "End → now"},
+			{Key: "<↑/↓>", Label: upDownLabel},
+			{Key: "<tab>", Label: "Switch pane"},
 			{Key: "<enter>", Label: "Apply"},
 			{Key: "<esc>", Label: "Cancel"},
 		}
@@ -1986,7 +1974,7 @@ func (m *PromqlModel) updateTableColumns(_, valueWidth int) {
 		valueWidth = len(promqlValueKey)
 	}
 	columns := []table.Column{
-		table.NewColumn(promqlTimestampKey, "TIMESTAMP", promqlTimestampWidth),
+		table.NewColumn(promqlTimestampKey, "TIME "+formatResultTimeLabel(m.timeRange.DisplayMode()), promqlTimestampWidth),
 		table.NewFlexColumn(promqlMetricKey, "METRIC", 1).WithFiltered(true),
 		table.NewColumn(promqlValueKey, "VALUE", valueWidth).WithFiltered(true),
 	}
@@ -2102,10 +2090,10 @@ func NewPromqlFetchTask(profile config.Profile, expr, dataset, step, startTime, 
 	if instant {
 		mode = promqlModeInstant
 	}
-	return NewPromqlModeFetchTask(profile, expr, dataset, step, startTime, endTime, mode)
+	return NewPromqlModeFetchTask(profile, expr, dataset, step, startTime, endTime, mode, TimeDisplayLocal)
 }
 
-func NewPromqlModeFetchTask(profile config.Profile, expr, dataset, step, startTime, endTime, mode string) tea.Cmd {
+func NewPromqlModeFetchTask(profile config.Profile, expr, dataset, step, startTime, endTime, mode string, displayMode TimeDisplayMode) tea.Cmd {
 	return func() (msg tea.Msg) {
 		res := PromqlFetchData{status: fetchErr}
 		defer func() {
@@ -2126,8 +2114,8 @@ func NewPromqlModeFetchTask(profile config.Profile, expr, dataset, step, startTi
 				res.errMsg = err.Error()
 				return res
 			}
-			rows, seriesCount, metricWidth, valueWidth := promqlResultToRows(instantResult)
-			chartRows, _, _, _ := promqlResultToRows(rangeResult)
+			rows, seriesCount, metricWidth, valueWidth := promqlResultToRows(instantResult, displayMode)
+			chartRows, _, _, _ := promqlResultToRows(rangeResult, displayMode)
 			res.status = fetchOk
 			res.resultType = instantResult.Data.ResultType
 			res.chartResult = rangeResult.Data.ResultType
@@ -2145,7 +2133,7 @@ func NewPromqlModeFetchTask(profile config.Profile, expr, dataset, step, startTi
 			return res
 		}
 
-		rows, seriesCount, metricWidth, valueWidth := promqlResultToRows(result)
+		rows, seriesCount, metricWidth, valueWidth := promqlResultToRows(result, displayMode)
 		res.status = fetchOk
 		res.resultType = result.Data.ResultType
 		if result.Data.ResultType == "matrix" {
@@ -2244,7 +2232,7 @@ func promqlModelFetch(profile config.Profile, path string, params url.Values) ([
 
 // ─── data conversion ──────────────────────────────────────────────────────────
 
-func promqlResultToRows(result promqlRespModel) (rows []table.Row, seriesCount, metricWidth, valueWidth int) {
+func promqlResultToRows(result promqlRespModel, displayMode TimeDisplayMode) (rows []table.Row, seriesCount, metricWidth, valueWidth int) {
 	metricWidth = len(promqlMetricKey)
 	valueWidth = 14
 
@@ -2261,7 +2249,7 @@ func promqlResultToRows(result promqlRespModel) (rows []table.Row, seriesCount, 
 		switch result.Data.ResultType {
 		case "vector":
 			if len(series.Value) == 2 {
-				tsFull := promqlModelFormatTS(series.Value[0])
+				tsFull := promqlModelFormatTS(series.Value[0], displayMode)
 				ts := trimTimestampToHMS(tsFull)
 				val := fmt.Sprintf("%v", series.Value[1])
 				if len(val) > valueWidth {
@@ -2277,7 +2265,7 @@ func promqlResultToRows(result promqlRespModel) (rows []table.Row, seriesCount, 
 		case "matrix":
 			for _, pt := range series.Values {
 				if len(pt) == 2 {
-					tsFull := promqlModelFormatTS(pt[0])
+					tsFull := promqlModelFormatTS(pt[0], displayMode)
 					ts := trimTimestampToHMS(tsFull)
 					val := fmt.Sprintf("%v", pt[1])
 					if len(val) > valueWidth {
@@ -2316,14 +2304,21 @@ func promqlModelFormatLabels(m map[string]string) string {
 	return fmt.Sprintf("%s{%s}", name, strings.Join(labels, ", "))
 }
 
-func promqlModelFormatTS(v any) string {
+func promqlModelFormatTS(v any, displayMode TimeDisplayMode) string {
 	if f, ok := v.(float64); ok {
 		sec, frac := math.Modf(f)
 		nsec := int64(frac * float64(time.Second))
-		return time.Unix(int64(sec), nsec).In(time.Local).Format("2006-01-02T15:04:05-07:00")
+		t := time.Unix(int64(sec), nsec)
+		if displayMode == TimeDisplayUTC {
+			return t.UTC().Format("2006-01-02T15:04:05Z")
+		}
+		return t.In(time.Local).Format("2006-01-02T15:04:05-07:00")
 	}
 	if s, ok := v.(string); ok {
 		if t, parsed := parsePromqlChartTime(s); parsed {
+			if displayMode == TimeDisplayUTC {
+				return t.UTC().Format("2006-01-02T15:04:05Z")
+			}
 			return t.Format("2006-01-02T15:04:05-07:00")
 		}
 	}
@@ -2564,68 +2559,15 @@ func (m PromqlModel) renderBuilder() string {
 
 // ─── builder async commands ───────────────────────────────────────────────────
 
-// fetchMetricDatasets fetches all streams and keeps those whose name contains "metrics"
-// (case-insensitive). Falls back to all datasets when none match.
+// fetchMetricDatasets fetches Prism's dataset metadata and keeps metric
+// datasets, matching the web UI's Metrics section.
 func fetchMetricDatasets(profile config.Profile) tea.Cmd {
 	return func() tea.Msg {
-		reqURL, err := url.JoinPath(profile.URL, "api/v1/logstream")
+		items, err := datasets.FetchHomeDatasets(profile)
 		if err != nil {
 			return datasetListMsg{errMsg: err.Error()}
 		}
-		client := &http.Client{Timeout: 15 * time.Second}
-		req, err := http.NewRequest("GET", reqURL, nil)
-		if err != nil {
-			return datasetListMsg{errMsg: err.Error()}
-		}
-		if profile.Token != "" {
-			req.Header.Set("Authorization", "Bearer "+profile.Token)
-		} else {
-			req.SetBasicAuth(profile.Username, profile.Password)
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return datasetListMsg{errMsg: err.Error()}
-		}
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-
-		var items []struct {
-			Name       string `json:"name"`
-			StreamType string `json:"stream_type"`
-		}
-		if err := json.Unmarshal(body, &items); err != nil {
-			return datasetListMsg{errMsg: err.Error()}
-		}
-
-		// Prefer server-side stream_type (matches exactly what the UI shows).
-		// Fall back to name-contains-"metrics" only for servers that don't
-		// return stream_type — never return everything unfiltered.
-		hasType := false
-		for _, item := range items {
-			if item.StreamType != "" {
-				hasType = true
-				break
-			}
-		}
-		var all, typed []string
-		for _, item := range items {
-			all = append(all, item.Name)
-			if hasType {
-				if item.StreamType == "Metrics" {
-					typed = append(typed, item.Name)
-				}
-			} else {
-				if strings.Contains(strings.ToLower(item.Name), "metrics") {
-					typed = append(typed, item.Name)
-				}
-			}
-		}
-		datasets := typed
-		if len(datasets) == 0 {
-			datasets = all
-		}
-		sort.Strings(datasets)
-		return datasetListMsg{datasets: datasets}
+		return datasetListMsg{datasets: datasets.NamesByType(items, datasets.TypeMetrics)}
 	}
 }
 
@@ -2983,6 +2925,13 @@ func formatChartTime12h(t time.Time) string {
 	return t.Format("3:04pm")
 }
 
+func chartDisplayTime(t time.Time, mode TimeDisplayMode) time.Time {
+	if mode == TimeDisplayUTC {
+		return t.UTC()
+	}
+	return t.In(time.Local)
+}
+
 func formatChartRangeTime(t time.Time, duration time.Duration) string {
 	if isDateChartRange(duration) {
 		return t.Format("Jan 2, 2006")
@@ -3017,8 +2966,8 @@ func (m PromqlModel) chartTimeRangeTitle() string {
 	}
 	duration := m.chartSelectedDuration(first, last)
 	return fmt.Sprintf("📊 %s → %s",
-		formatChartRangeTime(first, duration),
-		formatChartRangeTime(last, duration))
+		formatChartRangeTime(chartDisplayTime(first, m.timeRange.DisplayMode()), duration),
+		formatChartRangeTime(chartDisplayTime(last, m.timeRange.DisplayMode()), duration))
 }
 
 func (m PromqlModel) chartSelectedDuration(fallbackStart, fallbackEnd time.Time) time.Duration {
@@ -3501,13 +3450,14 @@ func (m PromqlModel) drawChartXAxisLabels(chart *timeserieslinechart.Model, poin
 	for i := 0; i < chartXAxisLabelCount; i++ {
 		ratio := float64(i) / float64(chartXAxisLabelCount-1)
 		t := first.Add(time.Duration(ratio * float64(total)))
-		label := formatChartAxisLabel(t, duration, chart.GraphWidth())
+		label := formatChartAxisLabel(t, duration, chart.GraphWidth(), m.timeRange.DisplayMode())
 		x := chart.Origin().X + int(math.Round(ratio*float64(chart.GraphWidth())))
 		placeChartCanvasLabel(chart, labelY, x, label, labelStyle)
 	}
 }
 
-func formatChartAxisLabel(t time.Time, duration time.Duration, graphWidth int) string {
+func formatChartAxisLabel(t time.Time, duration time.Duration, graphWidth int, displayMode TimeDisplayMode) string {
+	t = chartDisplayTime(t, displayMode)
 	if isDateChartRange(duration) && graphWidth < chartXAxisLabelCount*12 {
 		return t.Format("Jan 2")
 	}
@@ -3540,7 +3490,8 @@ func (m PromqlModel) renderChartInspector(width int, points []timeserieslinechar
 	p := ui.Active
 	point := points[idx]
 	dot := lipgloss.NewStyle().Foreground(p.Accent).Render("●")
-	timeText := lipgloss.NewStyle().Foreground(p.Body).Render(point.Time.Format("3:04 PM, Jan 2, 2006"))
+	displayTime := chartDisplayTime(point.Time, m.timeRange.DisplayMode())
+	timeText := lipgloss.NewStyle().Foreground(p.Body).Render(displayTime.Format("3:04 PM, Jan 2, 2006"))
 	separator := lipgloss.NewStyle().Foreground(p.Faint).Render("|")
 	name := lipgloss.NewStyle().Foreground(p.Faint).Render("value")
 	value := lipgloss.NewStyle().Foreground(p.Body).Bold(true).Render(formatCompactChartValue(point.Value))

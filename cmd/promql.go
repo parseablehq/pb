@@ -16,6 +16,7 @@
 package cmd
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -36,12 +37,15 @@ const defaultMetricsStream = "select-dataset"
 
 // PromqlCmd is the parent command for all PromQL operations.
 var PromqlCmd = &cobra.Command{
-	Use:   "promql",
-	Short: "PromQL queries and metrics exploration",
-	Long:  "\nRun PromQL queries and explore metrics stored in a Parseable metrics stream.",
+	Use:     "promql",
+	Short:   "PromQL queries and metrics exploration",
+	Long:    "\nRun PromQL queries and explore metrics stored in a Parseable metrics stream.",
+	Example: "  pb promql run -i\n  pb promql run \"http_requests_total\" --dataset otel_metrics --from=1h -i",
 }
 
 func init() {
+	PromqlCmd.SetHelpFunc(renderPromqlHelp)
+
 	// query execution
 	PromqlCmd.AddCommand(promqlRunCmd)
 
@@ -117,6 +121,58 @@ func init() {
 	promqlTSDBCmd.Flags().StringP("output", "o", "text", "Output format: text or json")
 }
 
+func renderPromqlHelp(cmd *cobra.Command, _ []string) {
+	out := cmd.OutOrStdout()
+
+	if cmd.Long != "" {
+		fmt.Fprintln(out, cmd.Long)
+		fmt.Fprintln(out)
+	}
+
+	fmt.Fprintln(out, "Usage:")
+	fmt.Fprintf(out, "  %s\n", cmd.UseLine())
+	fmt.Fprintln(out)
+
+	if cmd.Example != "" {
+		fmt.Fprintln(out, "Examples:")
+		fmt.Fprintln(out, cmd.Example)
+		fmt.Fprintln(out)
+	}
+
+	order := []string{"run", "labels", "label-values", "series", "cardinality", "tsdb", "active-queries"}
+	commandsByName := make(map[string]*cobra.Command, len(cmd.Commands()))
+	for _, child := range cmd.Commands() {
+		commandsByName[child.Name()] = child
+	}
+
+	fmt.Fprintln(out, "Available Commands:")
+	width := 0
+	for _, name := range order {
+		if len(name) > width {
+			width = len(name)
+		}
+	}
+	for _, name := range order {
+		child, ok := commandsByName[name]
+		if !ok || (!child.IsAvailableCommand() && child.Name() != "help") {
+			continue
+		}
+		fmt.Fprintf(out, "  %-*s %s\n", width, child.Name(), child.Short)
+	}
+	fmt.Fprintln(out)
+
+	if cmd.HasAvailableLocalFlags() {
+		fmt.Fprintln(out, "Flags:")
+		var flags bytes.Buffer
+		cmd.LocalFlags().SetOutput(&flags)
+		cmd.LocalFlags().PrintDefaults()
+		fmt.Fprint(out, flags.String())
+		fmt.Fprintln(out)
+	}
+
+	fmt.Fprintf(out, "Use \"%s [command] --help\" for more information about a command.\n", cmd.CommandPath())
+}
+
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
@@ -185,9 +241,9 @@ var promqlRunCmd = &cobra.Command{
 	Use:   "run [expr]",
 	Short: "Run a PromQL query (range or instant)",
 	Long:  "\nEvaluate a PromQL expression against a Parseable metrics stream.\nDefaults to range query. Use --instant for point-in-time evaluation.",
-	Example: "  pb query promql run \"http_requests_total\" --dataset otel_metrics --from 1h\n" +
-		"  pb query promql run \"rate(http_requests_total[5m])\" --dataset otel_metrics --from 1h --step 1m\n" +
-		"  pb query promql run \"up\" --dataset otel_metrics --instant -o json",
+	Example: "  pb promql run \"http_requests_total\" --dataset otel_metrics --from 1h\n" +
+		"  pb promql run \"rate(http_requests_total[5m])\" --dataset otel_metrics --from 1h --step 1m\n" +
+		"  pb promql run \"up\" --dataset otel_metrics --instant -o json",
 	Args:    cobra.MaximumNArgs(1),
 	PreRunE: PreRunDefaultProfile,
 	RunE:    runPromqlQuery,
@@ -223,6 +279,7 @@ func runPromqlQuery(cmd *cobra.Command, args []string) error {
 	outputFmt, _ := cmd.Flags().GetString("output")
 	instant, _ := cmd.Flags().GetBool("instant")
 	interactive, _ := cmd.Flags().GetBool("interactive")
+	fromStr = promqlInteractiveFromDefault(fromStr, interactive, cmd.Flags().Changed("from"))
 
 	toTime, err := parseTimeStr(toStr)
 	if err != nil {
@@ -242,7 +299,7 @@ func runPromqlQuery(cmd *cobra.Command, args []string) error {
 
 	if strings.TrimSpace(expr) == "" {
 		fmt.Println("Please enter a PromQL expression")
-		fmt.Printf("Example:\n  pb query promql run \"http_requests_total\" --dataset otel_metrics\n  pb query promql run -i\n")
+		fmt.Printf("Example:\n  pb promql run \"http_requests_total\" --dataset otel_metrics\n  pb promql run -i\n")
 		return nil
 	}
 
@@ -308,6 +365,13 @@ func runPromqlQuery(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func promqlInteractiveFromDefault(from string, interactive, fromChanged bool) string {
+	if interactive && !fromChanged {
+		return "10m"
+	}
+	return from
+}
+
 // ---------------------------------------------------------------------------
 // 2. labels — list all label names
 // ---------------------------------------------------------------------------
@@ -315,7 +379,7 @@ func runPromqlQuery(cmd *cobra.Command, args []string) error {
 var promqlLabelsCmd = &cobra.Command{
 	Use:     "labels",
 	Short:   "List all label names in a metrics stream",
-	Example: "  pb query promql labels --stream otel_metrics",
+	Example: "  pb promql labels --dataset otel_metrics",
 	Args:    cobra.NoArgs,
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -363,7 +427,7 @@ var promqlLabelsCmd = &cobra.Command{
 var promqlLabelValuesCmd = &cobra.Command{
 	Use:     "label-values [label_name]",
 	Short:   "List distinct values for a label",
-	Example: "  pb query promql label-values job --stream otel_metrics\n  pb query promql label-values __name__ --stream otel_metrics",
+	Example: "  pb promql label-values job --dataset otel_metrics\n  pb promql label-values __name__ --dataset otel_metrics",
 	Args:    cobra.ExactArgs(1),
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -412,7 +476,7 @@ var promqlLabelValuesCmd = &cobra.Command{
 var promqlSeriesCmd = &cobra.Command{
 	Use:     "series",
 	Short:   "Find time series matching a label selector",
-	Example: "  pb query promql series --match 'http_requests_total' --stream otel_metrics\n  pb query promql series --match '{job=\"api\"}' --stream otel_metrics",
+	Example: "  pb promql series --match 'http_requests_total' --dataset otel_metrics\n  pb promql series --match '{job=\"api\"}' --dataset otel_metrics",
 	Args:    cobra.NoArgs,
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -480,7 +544,7 @@ type cardinalityEntry struct {
 var promqlCardinalityLabelNamesCmd = &cobra.Command{
 	Use:     "label-names",
 	Short:   "Labels with the highest number of distinct values",
-	Example: "  pb query promql cardinality label-names --stream otel_metrics --limit 20",
+	Example: "  pb promql cardinality label-names --dataset otel_metrics --limit 20",
 	Args:    cobra.NoArgs,
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -532,7 +596,7 @@ var promqlCardinalityLabelNamesCmd = &cobra.Command{
 var promqlCardinalityLabelValuesCmd = &cobra.Command{
 	Use:     "label-values",
 	Short:   "Series count per value for a specific label",
-	Example: "  pb query promql cardinality label-values --label job --stream otel_metrics",
+	Example: "  pb promql cardinality label-values --label job --dataset otel_metrics",
 	Args:    cobra.NoArgs,
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -584,7 +648,7 @@ var promqlCardinalityLabelValuesCmd = &cobra.Command{
 var promqlCardinalityActiveSeriesCmd = &cobra.Command{
 	Use:     "active-series",
 	Short:   "List currently active series",
-	Example: "  pb query promql cardinality active-series --stream otel_metrics --selector '{job=\"api\"}'",
+	Example: "  pb promql cardinality active-series --dataset otel_metrics --selector '{job=\"api\"}'",
 	Args:    cobra.NoArgs,
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -640,8 +704,9 @@ var promqlCardinalityActiveSeriesCmd = &cobra.Command{
 
 var promqlActiveQueriesCmd = &cobra.Command{
 	Use:     "active-queries",
+	Aliases: []string{"ps"},
 	Short:   "Show currently executing PromQL queries",
-	Example: "  pb query promql active-queries",
+	Example: "  pb promql active-queries",
 	Args:    cobra.NoArgs,
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(_ *cobra.Command, _ []string) error {
@@ -691,7 +756,7 @@ var promqlActiveQueriesCmd = &cobra.Command{
 var promqlTSDBCmd = &cobra.Command{
 	Use:     "tsdb",
 	Short:   "Show TSDB statistics for a metrics stream",
-	Example: "  pb query promql tsdb --stream otel_metrics\n  pb query promql tsdb --stream otel_metrics --top 20 --focus-label job",
+	Example: "  pb promql tsdb --dataset otel_metrics\n  pb promql tsdb --dataset otel_metrics --top 20 --focus-label job",
 	Args:    cobra.NoArgs,
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(cmd *cobra.Command, _ []string) error {

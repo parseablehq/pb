@@ -24,6 +24,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+const localLayout = "2006-Jan-02 15:04:05"
+
+var segmentStarts = []int{0, 5, 9, 12, 15, 18}
+var segmentEnds = []int{4, 8, 11, 14, 17, 20}
+
 // Model is the model for the datetime component
 type Model struct {
 	time  time.Time
@@ -43,12 +48,27 @@ func (m *Model) ValueUtc() string {
 // SetTime sets the value of the datetime component
 func (m *Model) SetTime(t time.Time) {
 	m.time = t
-	m.input.SetValue(m.time.Format(time.DateTime))
+	m.input.SetValue(m.time.Format(localLayout))
 }
 
 // Time returns the current time of the datetime component
 func (m *Model) Time() time.Time {
 	return m.time
+}
+
+// LocalValue returns the editable local timestamp string.
+func (m *Model) LocalValue() string {
+	return m.input.Value()
+}
+
+// CursorPosition returns the cursor position in the editable timestamp.
+func (m *Model) CursorPosition() int {
+	return m.input.Position()
+}
+
+// FocusFirstSegment moves editing to the first date-time segment.
+func (m *Model) FocusFirstSegment() {
+	m.input.SetCursor(segmentStarts[0])
 }
 
 // New creates a new datetime component
@@ -93,6 +113,21 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		switch msg.Type {
+		case tea.KeyRight:
+			m.moveSegment(1)
+			return m, nil
+		case tea.KeyLeft:
+			m.moveSegment(-1)
+			return m, nil
+		case tea.KeyUp:
+			m.AdjustSegment(1)
+			return m, nil
+		case tea.KeyDown:
+			m.AdjustSegment(-1)
+			return m, nil
+		}
+
 		// Allow navigation keys to pass through
 		if key.Matches(msg, m.input.KeyMap.CharacterForward,
 			m.input.KeyMap.CharacterBackward,
@@ -100,7 +135,16 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.input.KeyMap.WordBackward,
 			m.input.KeyMap.LineStart,
 			m.input.KeyMap.LineEnd) {
-			m.input, cmd = m.input.Update(msg)
+			switch {
+			case key.Matches(msg, m.input.KeyMap.CharacterForward):
+				m.moveSegment(1)
+				return m, nil
+			case key.Matches(msg, m.input.KeyMap.CharacterBackward):
+				m.moveSegment(-1)
+				return m, nil
+			default:
+				m.input, cmd = m.input.Update(msg)
+			}
 			return m, cmd
 		}
 		// do replace on current cursor
@@ -108,18 +152,92 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			pos := m.input.Position()
 			oldValue := m.input.Value()
 			newValue := []rune(oldValue)
+			if pos < 0 || pos >= len(newValue) || !unicode.IsDigit(newValue[pos]) {
+				return m, nil
+			}
 			newValue[pos] = msg.Runes[0]
 			value := string(newValue)
 			local, _ := time.LoadLocation("Local")
-			newTime, err := time.ParseInLocation(time.DateTime, value, local)
+			newTime, err := time.ParseInLocation(localLayout, value, local)
 			if err == nil {
 				m.time = newTime
 				m.SetTime(newTime)
+				m.input.SetCursor(pos)
 			}
 		}
 	}
 
 	return m, nil
+}
+
+// AdjustSegment increments or decrements the currently focused date-time segment.
+func (m *Model) AdjustSegment(delta int) {
+	if delta == 0 {
+		return
+	}
+	pos := m.input.Position()
+	seg := segmentIndex(pos)
+	next := m.time
+	switch seg {
+	case 0:
+		next = next.AddDate(delta, 0, 0)
+	case 1:
+		next = addMonthsClamped(next, delta)
+	case 2:
+		next = next.AddDate(0, 0, delta)
+	case 3:
+		next = next.Add(time.Duration(delta) * time.Hour)
+	case 4:
+		next = next.Add(time.Duration(delta) * time.Minute)
+	case 5:
+		next = next.Add(time.Duration(delta) * time.Second)
+	}
+	m.SetTime(next)
+	m.input.SetCursor(segmentStarts[seg])
+}
+
+func (m *Model) moveSegment(direction int) {
+	seg := segmentIndex(m.input.Position())
+	seg += direction
+	if seg < 0 || seg >= len(segmentStarts) {
+		return
+	}
+	m.input.SetCursor(segmentStarts[seg])
+}
+
+func segmentIndex(pos int) int {
+	for i := range segmentStarts {
+		if pos >= segmentStarts[i] && pos < segmentEnds[i] {
+			return i
+		}
+	}
+	if pos < segmentStarts[0] {
+		return 0
+	}
+	for i := range segmentStarts {
+		if pos < segmentStarts[i] {
+			return i
+		}
+	}
+	return len(segmentStarts) - 1
+}
+
+func addMonthsClamped(t time.Time, months int) time.Time {
+	year, month, day := t.Date()
+	hour, minute, sec := t.Clock()
+	loc := t.Location()
+	targetMonth := int(month) + months
+	targetYear := year + (targetMonth-1)/12
+	targetMonth = (targetMonth-1)%12 + 1
+	if targetMonth <= 0 {
+		targetMonth += 12
+		targetYear--
+	}
+	lastDay := time.Date(targetYear, time.Month(targetMonth)+1, 0, hour, minute, sec, t.Nanosecond(), loc).Day()
+	if day > lastDay {
+		day = lastDay
+	}
+	return time.Date(targetYear, time.Month(targetMonth), day, hour, minute, sec, t.Nanosecond(), loc)
 }
 
 // View returns the view of the datetime component

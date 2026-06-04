@@ -17,18 +17,16 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
-	"sync"
 
 	pb "pb/cmd"
 	"pb/pkg/analytics"
 
 	"github.com/spf13/cobra"
 )
-
-var wg sync.WaitGroup
 
 // populated at build time
 var (
@@ -58,11 +56,64 @@ var cli = &cobra.Command{
 		if os.Getenv("PB_ANALYTICS") == "disable" {
 			return
 		}
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
 			analytics.PostRunAnalytics(cmd, "cli", args)
 		}()
+	},
+}
+
+func postRunAnalytics(name string) func(*cobra.Command, []string) {
+	return func(cmd *cobra.Command, args []string) {
+		if os.Getenv("PB_ANALYTICS") == "disable" {
+			return
+		}
+		go analytics.PostRunAnalytics(cmd, name, args)
+	}
+}
+
+type rootHelpCommand struct {
+	name string
+	desc string
+}
+
+type rootHelpGroup struct {
+	title    string
+	commands []rootHelpCommand
+}
+
+var rootHelpGroups = []rootHelpGroup{
+	{
+		title: "Core Commands (Query & Stream):",
+		commands: []rootHelpCommand{
+			{name: "sql", desc: "Run SQL query on a dataset"},
+			{name: "promql", desc: "PromQL queries and metrics exploration"},
+			{name: "tail", desc: "Stream live events from a dataset"},
+		},
+	},
+	{
+		title: "Data Management:",
+		commands: []rootHelpCommand{
+			{name: "dataset", desc: "Manage datasets"},
+		},
+	},
+	{
+		title: "Identity & Access:",
+		commands: []rootHelpCommand{
+			{name: "login", desc: "Login to Parseable"},
+			{name: "logout", desc: "Logout from the current Parseable profile"},
+			{name: "profile", desc: "Manage different Parseable targets"},
+			{name: "user", desc: "Manage users"},
+			{name: "role", desc: "Manage roles"},
+		},
+	},
+	{
+		title: "System Commands:",
+		commands: []rootHelpCommand{
+			{name: "status", desc: "Check connection status for the active profile"},
+			{name: "autocomplete", desc: "Generate autocomplete script"},
+			{name: "version", desc: "Print version"},
+			{name: "help", desc: "Help about any command"},
+		},
 	},
 }
 
@@ -71,16 +122,7 @@ var profile = &cobra.Command{
 	Short:             "Manage different Parseable targets",
 	Long:              "\nuse profile command to configure different Parseable instances. Each profile takes a URL and credentials.",
 	PersistentPreRunE: analytics.CheckAndCreateULID,
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		if os.Getenv("PB_ANALYTICS") == "disable" {
-			return
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, "profile", args)
-		}()
-	},
+	PersistentPostRun: postRunAnalytics("profile"),
 }
 
 var schema = &cobra.Command{
@@ -88,7 +130,7 @@ var schema = &cobra.Command{
 	Short: "Generate or create schemas for JSON data or Parseable datasets",
 	Long: `The "schema" command allows you to either:
   - Generate a schema automatically from a JSON file for analysis or integration.
-  - Create a custom schema for Parseable datasets to structure and process your data.
+	- Create a custom schema for Parseable datasets to structure and process your data.
 
 Examples:
   - To generate a schema from a JSON file:
@@ -97,16 +139,7 @@ Examples:
       pb schema create --dataset=my_dataset --config=data.json
 `,
 	PersistentPreRunE: combinedPreRun,
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		if os.Getenv("PB_ANALYTICS") == "disable" {
-			return
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, "generate", args)
-		}()
-	},
+	PersistentPostRun: postRunAnalytics("generate"),
 }
 
 var user = &cobra.Command{
@@ -114,16 +147,7 @@ var user = &cobra.Command{
 	Short:             "Manage users",
 	Long:              "\nuser command is used to manage users.",
 	PersistentPreRunE: combinedPreRun,
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		if os.Getenv("PB_ANALYTICS") == "disable" {
-			return
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, "user", args)
-		}()
-	},
+	PersistentPostRun: postRunAnalytics("user"),
 }
 
 var role = &cobra.Command{
@@ -131,16 +155,7 @@ var role = &cobra.Command{
 	Short:             "Manage roles",
 	Long:              "\nrole command is used to manage roles.",
 	PersistentPreRunE: combinedPreRun,
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		if os.Getenv("PB_ANALYTICS") == "disable" {
-			return
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, "role", args)
-		}()
-	},
+	PersistentPostRun: postRunAnalytics("role"),
 }
 
 var dataset = &cobra.Command{
@@ -148,50 +163,16 @@ var dataset = &cobra.Command{
 	Short:             "Manage datasets",
 	Long:              "\ndataset command is used to manage datasets.",
 	PersistentPreRunE: combinedPreRun,
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		if os.Getenv("PB_ANALYTICS") == "disable" {
-			return
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, "dataset", args)
-		}()
-	},
+	PersistentPostRun: postRunAnalytics("dataset"),
 }
 
-var query = &cobra.Command{
-	Use:               "query",
+var sql = &cobra.Command{
+	Use:               "sql",
 	Short:             "Run SQL query on a dataset",
 	Long:              "\nRun SQL query on a dataset. Default output format is json. Use -i flag to open interactive table view.",
+	Example:           "  pb sql run -i\n  pb sql run \"SELECT * FROM backend\" --from=1h -i",
 	PersistentPreRunE: combinedPreRun,
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		if os.Getenv("PB_ANALYTICS") == "disable" {
-			return
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, "query", args)
-		}()
-	},
-}
-
-var cluster = &cobra.Command{
-	Use:               "cluster",
-	Short:             "Cluster operations for Parseable.",
-	Long:              "\nCluster operations for Parseable cluster on Kubernetes.",
-	PersistentPreRunE: combinedPreRun,
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		if os.Getenv("PB_ANALYTICS") == "disable" {
-			return
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, "install", args)
-		}()
-	},
+	PersistentPostRun: postRunAnalytics("sql"),
 }
 
 var list = &cobra.Command{
@@ -199,16 +180,7 @@ var list = &cobra.Command{
 	Short:             "List parseable on kubernetes cluster",
 	Long:              "\nlist command is used to list Parseable oss installations.",
 	PersistentPreRunE: combinedPreRun,
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		if os.Getenv("PB_ANALYTICS") == "disable" {
-			return
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, "install", args)
-		}()
-	},
+	PersistentPostRun: postRunAnalytics("install"),
 }
 
 var show = &cobra.Command{
@@ -216,16 +188,7 @@ var show = &cobra.Command{
 	Short:             "Show outputs values defined when installing Parseable on kubernetes cluster",
 	Long:              "\nshow command is used to get values in Parseable.",
 	PersistentPreRunE: combinedPreRun,
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		if os.Getenv("PB_ANALYTICS") == "disable" {
-			return
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, "install", args)
-		}()
-	},
+	PersistentPostRun: postRunAnalytics("install"),
 }
 
 var uninstall = &cobra.Command{
@@ -233,16 +196,7 @@ var uninstall = &cobra.Command{
 	Short:             "Uninstall Parseable on kubernetes cluster",
 	Long:              "\nuninstall command is used to uninstall Parseable oss/enterprise on k8s cluster.",
 	PersistentPreRunE: combinedPreRun,
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		if os.Getenv("PB_ANALYTICS") == "disable" {
-			return
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			analytics.PostRunAnalytics(cmd, "uninstall", args)
-		}()
-	},
+	PersistentPostRun: postRunAnalytics("uninstall"),
 }
 
 func main() {
@@ -266,17 +220,20 @@ func main() {
 	dataset.AddCommand(pb.ListDatasetCmd)
 	dataset.AddCommand(pb.StatDatasetCmd)
 
-	query.AddCommand(pb.QueryCmd)
-	query.AddCommand(pb.PromqlCmd)
-	query.AddCommand(pb.SavedQueryList)
+	sql.AddCommand(pb.QueryCmd)
+	sql.AddCommand(pb.SaveSQLCmd)
+	sql.AddCommand(pb.SavedQueryList)
+
+	pb.PromqlCmd.PersistentPreRunE = combinedPreRun
+	pb.PromqlCmd.PersistentPostRun = postRunAnalytics("promql")
 
 	schema.AddCommand(pb.GenerateSchemaCmd)
 	schema.AddCommand(pb.CreateSchemaCmd)
 
-	cluster.AddCommand(pb.InstallOssCmd)
-	cluster.AddCommand(pb.ListOssCmd)
-	cluster.AddCommand(pb.ShowValuesCmd)
-	cluster.AddCommand(pb.UninstallOssCmd)
+	// cluster.AddCommand(pb.InstallOssCmd)
+	// cluster.AddCommand(pb.ListOssCmd)
+	// cluster.AddCommand(pb.ShowValuesCmd)
+	// cluster.AddCommand(pb.UninstallOssCmd)
 
 	list.AddCommand(pb.ListOssCmd)
 
@@ -285,12 +242,13 @@ func main() {
 	show.AddCommand(pb.ShowValuesCmd)
 
 	cli.AddCommand(profile)
-	cli.AddCommand(query)
+	cli.AddCommand(sql)
+	cli.AddCommand(pb.PromqlCmd)
 	cli.AddCommand(dataset)
 	cli.AddCommand(user)
 	cli.AddCommand(role)
 	cli.AddCommand(pb.TailCmd)
-	cli.AddCommand(cluster)
+	// cli.AddCommand(cluster)
 
 	cli.AddCommand(pb.AutocompleteCmd)
 	cli.AddCommand(pb.LoginCmd)
@@ -305,6 +263,7 @@ func main() {
 	cli.AddCommand(pb.VersionCmd)
 	// set as flag
 	cli.Flags().BoolP(versionFlag, versionFlagShort, false, "Print version")
+	cli.SetHelpFunc(renderRootHelp)
 
 	cli.CompletionOptions.HiddenDefaultCmd = true
 
@@ -312,7 +271,106 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-	wg.Wait()
+}
+
+func renderRootHelp(cmd *cobra.Command, _ []string) {
+	if cmd != cli {
+		renderCommandHelp(cmd)
+		return
+	}
+
+	out := cmd.OutOrStdout()
+	fmt.Fprintln(out, "pb is the command line interface for Parseable")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Usage:")
+	fmt.Fprintln(out, "  pb [command] [flags]")
+	fmt.Fprintln(out)
+
+	for _, group := range rootHelpGroups {
+		fmt.Fprintln(out, group.title)
+		for _, command := range group.commands {
+			if command.name != "help" && commandByName(cmd, command.name) == nil {
+				continue
+			}
+			fmt.Fprintf(out, "  %-12s %s\n", command.name, command.desc)
+		}
+		fmt.Fprintln(out)
+	}
+
+	if cmd.HasAvailableFlags() {
+		fmt.Fprintln(out, "Flags:")
+		var flags bytes.Buffer
+		cmd.Flags().SetOutput(&flags)
+		cmd.Flags().PrintDefaults()
+		fmt.Fprint(out, flags.String())
+		fmt.Fprintln(out)
+	}
+
+	fmt.Fprintln(out, `Use "pb [command] --help" for more information about a command.`)
+}
+
+func commandByName(cmd *cobra.Command, name string) *cobra.Command {
+	for _, child := range cmd.Commands() {
+		if child.Name() == name {
+			return child
+		}
+	}
+	return nil
+}
+
+func renderCommandHelp(cmd *cobra.Command) {
+	out := cmd.OutOrStdout()
+	desc := cmd.Long
+	if desc == "" {
+		desc = cmd.Short
+	}
+	if desc != "" {
+		fmt.Fprintln(out, desc)
+		fmt.Fprintln(out)
+	}
+
+	fmt.Fprintln(out, "Usage:")
+	fmt.Fprintf(out, "  %s\n", cmd.UseLine())
+	fmt.Fprintln(out)
+
+	if cmd.Example != "" {
+		fmt.Fprintln(out, "Examples:")
+		fmt.Fprintln(out, cmd.Example)
+		fmt.Fprintln(out)
+	}
+
+	if cmd.HasAvailableSubCommands() {
+		fmt.Fprintln(out, "Available Commands:")
+		for _, child := range cmd.Commands() {
+			if !child.IsAvailableCommand() && child.Name() != "help" {
+				continue
+			}
+			fmt.Fprintf(out, "  %-12s %s\n", child.Name(), child.Short)
+		}
+		fmt.Fprintln(out)
+	}
+
+	if cmd.HasAvailableLocalFlags() {
+		fmt.Fprintln(out, "Flags:")
+		var flags bytes.Buffer
+		cmd.LocalFlags().SetOutput(&flags)
+		cmd.LocalFlags().PrintDefaults()
+		fmt.Fprint(out, flags.String())
+		fmt.Fprintln(out)
+	}
+
+	if cmd.HasAvailableInheritedFlags() {
+		fmt.Fprintln(out, "Global Flags:")
+		var flags bytes.Buffer
+		cmd.InheritedFlags().SetOutput(&flags)
+		cmd.InheritedFlags().PrintDefaults()
+		fmt.Fprint(out, flags.String())
+		fmt.Fprintln(out)
+	}
+
+	if cmd.HasAvailableSubCommands() {
+		fmt.Fprintf(out, "Use \"%s [command] --help\" for more information about a command.\n", cmd.CommandPath())
+	}
 }
 
 // Wrapper to combine existing pre-run logic and ULID check

@@ -20,7 +20,10 @@ import (
 	"pb/pkg/analytics"
 	"pb/pkg/config"
 	internalHTTP "pb/pkg/http"
+	"pb/pkg/ui"
+	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 
@@ -46,13 +49,23 @@ var StatusCmd = &cobra.Command{
 		client := internalHTTP.DefaultClient(&profile)
 		about, err := analytics.FetchAbout(&client)
 		if err != nil {
-			fmt.Printf("Status  : ✗ Not connected\n")
-			fmt.Printf("Error   : %s\n", err.Error())
+			errStyle := lipgloss.NewStyle().Foreground(ui.Active.Err).Bold(true)
+			fmt.Printf("Status  : %s\n", errStyle.Render("✗ Not connected"))
+			fmt.Printf("Error   : %s\n", statusErrorMessage(err))
 			return nil
 		}
 
-		fmt.Printf("Status  : ✓ Connected\n")
+		okStyle := lipgloss.NewStyle().Foreground(ui.Active.Ok).Bold(true)
+		fmt.Printf("Status  : %s\n", okStyle.Render("✓ Connected"))
 		fmt.Printf("Version : %s\n", about.Version)
 		return nil
 	},
+}
+
+func statusErrorMessage(err error) string {
+	message := err.Error()
+	if strings.Contains(message, "Status Code: 401") || strings.Contains(message, "Status Code: 403") {
+		return "Authentication failed: invalid username/password or API key"
+	}
+	return message
 }

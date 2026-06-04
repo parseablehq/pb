@@ -59,7 +59,7 @@ The wizard asks for your server URL, auth method (username/password or API key),
 **Step 2 — Run your first query**
 
 ```bash
-pb query run "SELECT * FROM backend" --from=10m --to=now
+pb sql run "SELECT * FROM backend" --from=10m --to=now
 ```
 
 ## Commands
@@ -83,12 +83,12 @@ pb logout                                                         # remove the a
 ### SQL Query
 
 ```bash
-pb query run "SELECT * FROM backend" --from=10m --to=now
-pb query run "SELECT * FROM backend" --from=1h
-pb query run "SELECT * FROM backend" --from=2024-01-01T00:00:00Z --to=2024-01-01T01:00:00Z
-pb query run "SELECT * FROM backend" --from=1h --output json | jq .
-pb query run "SELECT * FROM backend WHERE status = 500" --from=1h --save-as=server-errors
-pb query list    # list and apply saved queries
+pb sql run "SELECT * FROM backend" --from=10m --to=now
+pb sql run "SELECT * FROM backend" --from=1h
+pb sql run "SELECT * FROM backend" --from=2024-01-01T00:00:00Z --to=2024-01-01T01:00:00Z
+pb sql run "SELECT * FROM backend" --from=1h --output json | jq .
+pb sql run "SELECT * FROM backend WHERE status = 500" --from=1h --save-as=server-errors
+pb sql list    # list and apply saved queries
 ```
 
 OTel fields with dots like `service.name` and `http.status_code` work directly in queries without manual quoting.
@@ -96,8 +96,8 @@ OTel fields with dots like `service.name` and `http.status_code` work directly i
 ### SQL Interactive Mode
 
 ```bash
-pb query run -i
-pb query run "SELECT * FROM backend" --from=1h -i
+pb sql run -i
+pb sql run "SELECT * FROM backend" --from=1h -i
 ```
 
 Panels: Query, Time Range, Table. Navigate with Tab and Shift+Tab.
@@ -105,33 +105,31 @@ Panels: Query, Time Range, Table. Navigate with Tab and Shift+Tab.
 ### PromQL Query
 
 ```bash
-pb query promql run "rate(http_requests_total[5m])" --dataset otel_metrics --from=1h --step=1m
-pb query promql run "up" --dataset otel_metrics --instant
-pb query promql run "http_requests_total" --dataset otel_metrics --output json
+pb promql run "rate(http_requests_total[5m])" --dataset otel_metrics --from=1h --step=1m
+pb promql run "up" --dataset otel_metrics --instant
+pb promql run "http_requests_total" --dataset otel_metrics --output json
 ```
 
 Explore labels and series:
 
 ```bash
-pb query promql labels --dataset otel_metrics
-pb query promql label-values job --dataset otel_metrics
-pb query promql series --match 'http_requests_total{job="api"}' --dataset otel_metrics
+pb promql labels --dataset otel_metrics
+pb promql label-values job --dataset otel_metrics
+pb promql series --match 'http_requests_total{job="api"}' --dataset otel_metrics
 ```
 
 Cardinality analysis:
 
 ```bash
-pb query promql cardinality label-names --dataset otel_metrics
-pb query promql active-queries
+pb promql cardinality label-names --dataset otel_metrics
+pb promql active-queries
 ```
 
 ### PromQL Interactive Mode
 
 ```bash
-pb query run -i --promql
-#or
-pb query promql run -i
-pb query promql run "http_requests_total" --dataset otel_metrics --from=1h -i
+pb promql run -i
+pb promql run "http_requests_total" --dataset otel_metrics --from=1h -i
 ```
 
 Panels: Dataset, Query, Time, Step, Table. Navigate with Tab and Shift+Tab. Press Space on the Step panel to toggle between range and instant mode.

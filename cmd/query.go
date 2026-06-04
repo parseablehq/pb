@@ -44,17 +44,19 @@ var (
 	endFlagShort = "t"
 	defaultEnd   = "now"
 
-	outputFlag = "output"
-	saveAsName string
+	outputFlag  = "output"
+	saveAsName  string
+	sqlSaveName string
 )
 
 var query = &cobra.Command{
-	Use:     "run [query] [flags]",
-	Example: "  pb query run \"select * from frontend\" --from=10m --to=now\n  pb query run \"select * from frontend\" -i",
-	Short:   "Run SQL query on a dataset",
-	Long:    "\nRun SQL query on a dataset. Default output format is text.\nUse --output json for JSON output, or -i for interactive table view.",
-	Args:    cobra.MaximumNArgs(1),
-	PreRunE: PreRunDefaultProfile,
+	Use:          "run [query] [flags]",
+	Example:      "  pb sql run \"select * from frontend\" --from=10m --to=now\n  pb sql run \"select * from frontend\" -i",
+	Short:        "Run SQL query on a dataset",
+	Long:         "\nRun SQL query on a dataset. Default output format is text.\nUse --output json for JSON output, or -i for interactive table view.",
+	Args:         cobra.MaximumNArgs(1),
+	SilenceUsage: true,
+	PreRunE:      PreRunDefaultProfile,
 	RunE: func(command *cobra.Command, args []string) error {
 		startTime := time.Now()
 		command.Annotations = map[string]string{
@@ -72,43 +74,9 @@ var query = &cobra.Command{
 			return err
 		}
 
-		usePromql, _ := command.Flags().GetBool("promql")
-		if usePromql && interactive {
-			start, _ := command.Flags().GetString(startFlag)
-			if !command.Flags().Changed(startFlag) {
-				start = "1h"
-			}
-			end, _ := command.Flags().GetString(endFlag)
-			if end == "" {
-				end = defaultEnd
-			}
-			startT, err := parseTimeStr(start)
-			if err != nil {
-				return fmt.Errorf("invalid --from: %w", err)
-			}
-			endT, err := parseTimeStr(end)
-			if err != nil {
-				return fmt.Errorf("invalid --to: %w", err)
-			}
-			dataset, _ := command.Flags().GetString("dataset")
-			step, _ := command.Flags().GetString("step")
-			instant, _ := command.Flags().GetBool("instant")
-			var expr string
-			if len(args) > 0 {
-				expr = args[0]
-			}
-			m := model.NewPromqlModel(DefaultProfile, expr, startT, endT, step, dataset, instant)
-			p := tea.NewProgram(m, tea.WithAltScreen())
-			_, err = p.Run()
-			if err != nil {
-				command.Annotations["error"] = err.Error()
-			}
-			return err
-		}
-
 		if (len(args) == 0 || strings.TrimSpace(args[0]) == "") && !interactive {
 			fmt.Println("Please enter your query")
-			fmt.Printf("Example:\n  pb query run \"select * from frontend\" --from=10m --to=now\n")
+			fmt.Printf("Example:\n  pb sql run \"select * from frontend\" --from=10m --to=now\n")
 			return nil
 		}
 
@@ -139,6 +107,7 @@ var query = &cobra.Command{
 
 		sqlQuery = quoteStreamNames(sqlQuery)
 		sqlQuery = quoteFieldsWithDots(sqlQuery)
+		sqlQuery = ensureDefaultLimit(sqlQuery)
 
 		if interactive {
 			startT, err := parseTimeStr(start)
@@ -165,9 +134,7 @@ var query = &cobra.Command{
 		}
 
 		client := internalHTTP.DefaultClient(&DefaultProfile)
-		stopSpinner := startSpinner()
 		err = fetchData(&client, sqlQuery, start, end, outputFmt)
-		stopSpinner()
 		if err != nil {
 			command.Annotations["error"] = err.Error()
 			return err
@@ -190,10 +157,6 @@ func init() {
 	query.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
 	query.Flags().BoolP("interactive", "i", false, "Open interactive table view")
 	query.Flags().StringVar(&saveAsName, "save-as", "", "Save this query with a name for later use")
-	query.Flags().Bool("promql", false, "Open PromQL interactive mode (use with -i)")
-	query.Flags().StringP("dataset", "d", defaultMetricsStream, "Metrics dataset (PromQL mode)")
-	query.Flags().String("step", "1m", "Resolution step for PromQL range queries")
-	query.Flags().Bool("instant", false, "PromQL instant query")
 }
 
 // parseTimeStr converts a CLI time string to time.Time.
@@ -260,10 +223,12 @@ func quoteStreamNames(query string) string {
 	})
 }
 
-// quoteFieldsWithDots wraps unquoted dotted identifiers in double quotes so
-// DataFusion treats them as field names instead of table.column references.
-// e.g. service.name → "service.name", http.status_code → "http.status_code"
-// Already-quoted identifiers and string literals are left untouched.
+// quoteFieldsWithDots wraps unquoted field identifiers that DataFusion would
+// otherwise reinterpret: dotted names become table.column references and
+// mixed-case names are folded to lowercase.
+// e.g. service.name → "service.name", StatusCode → "StatusCode"
+// Already-quoted identifiers, string literals, SQL keywords, and function calls
+// are left untouched.
 func quoteFieldsWithDots(query string) string {
 	var result strings.Builder
 	i, n := 0, len(query)
@@ -312,9 +277,10 @@ func quoteFieldsWithDots(query string) string {
 						k++
 					}
 				}
-				if hasDot {
+				identifier := query[i:k]
+				if hasDot || shouldQuoteIdentifier(identifier, query, k) {
 					result.WriteByte('"')
-					result.WriteString(query[i:k])
+					result.WriteString(identifier)
 					result.WriteByte('"')
 					i = k
 				} else {
@@ -330,6 +296,50 @@ func quoteFieldsWithDots(query string) string {
 	return result.String()
 }
 
+var sqlKeywords = map[string]struct{}{
+	"all": {}, "and": {}, "as": {}, "asc": {}, "between": {}, "by": {}, "case": {}, "cast": {},
+	"desc": {}, "distinct": {}, "else": {}, "end": {}, "false": {}, "from": {}, "full": {},
+	"group": {}, "having": {}, "in": {}, "inner": {}, "is": {}, "join": {}, "left": {}, "like": {},
+	"limit": {}, "not": {}, "null": {}, "on": {}, "or": {}, "order": {}, "outer": {}, "right": {},
+	"select": {}, "then": {}, "true": {}, "when": {}, "where": {},
+}
+
+func shouldQuoteIdentifier(identifier, query string, end int) bool {
+	if _, ok := sqlKeywords[strings.ToLower(identifier)]; ok {
+		return false
+	}
+	if nextNonSpace(query, end) == '(' {
+		return false
+	}
+	return hasMixedCase(identifier)
+}
+
+func hasMixedCase(s string) bool {
+	hasUpper, hasLower := false, false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			hasUpper = true
+		}
+		if c >= 'a' && c <= 'z' {
+			hasLower = true
+		}
+	}
+	return hasUpper && hasLower
+}
+
+func nextNonSpace(s string, start int) byte {
+	for start < len(s) {
+		switch s[start] {
+		case ' ', '\t', '\n', '\r':
+			start++
+		default:
+			return s[start]
+		}
+	}
+	return 0
+}
+
 func identStart(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
 }
@@ -340,7 +350,153 @@ func identChar(c byte) bool {
 
 var QueryCmd = query
 
+var SaveSQLCmd = &cobra.Command{
+	Use:          "save [query]",
+	Example:      "  pb sql save 'select * from frontend'\n  pb sql save \"select * from frontend\" --name frontend-errors --from=1h --to=now",
+	Short:        "Save SQL query",
+	Long:         "\nSave a SQL query without running it.",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	PreRunE:      PreRunDefaultProfile,
+	RunE: func(command *cobra.Command, args []string) error {
+		startTime := time.Now()
+		command.Annotations = map[string]string{
+			"startTime": startTime.Format(time.RFC3339),
+		}
+		defer func() {
+			command.Annotations["executionTime"] = time.Since(startTime).String()
+		}()
+
+		sqlQuery := strings.TrimSpace(args[0])
+		if sqlQuery == "" {
+			fmt.Println("Please enter your query")
+			fmt.Printf("Example:\n  pb sql save \"select * from frontend\"\n")
+			return nil
+		}
+
+		start, err := command.Flags().GetString(startFlag)
+		if err != nil {
+			command.Annotations["error"] = err.Error()
+			return err
+		}
+		if start == "" {
+			start = defaultStart
+		}
+
+		end, err := command.Flags().GetString(endFlag)
+		if err != nil {
+			command.Annotations["error"] = err.Error()
+			return err
+		}
+		if end == "" {
+			end = defaultEnd
+		}
+
+		sqlQuery = quoteStreamNames(sqlQuery)
+		sqlQuery = quoteFieldsWithDots(sqlQuery)
+		sqlQuery = ensureDefaultLimit(sqlQuery)
+
+		name := strings.TrimSpace(sqlSaveName)
+		if name == "" {
+			name = defaultSavedQueryName(sqlQuery)
+		}
+
+		client := internalHTTP.DefaultClient(&DefaultProfile)
+		if err := saveFilter(&client, sqlQuery, name, start, end); err != nil {
+			command.Annotations["error"] = err.Error()
+			return err
+		}
+
+		fmt.Printf("Query saved as '%s'\n", name)
+		command.Annotations["error"] = "none"
+		return nil
+	},
+}
+
+func init() {
+	SaveSQLCmd.Flags().StringP(startFlag, startFlagShort, defaultStart, "Start time for query.")
+	SaveSQLCmd.Flags().StringP(endFlag, endFlagShort, defaultEnd, "End time for query.")
+	SaveSQLCmd.Flags().StringVar(&sqlSaveName, "name", "", "Saved query name. Defaults to the dataset name when available.")
+}
+
+func defaultSavedQueryName(sqlQuery string) string {
+	if stream := extractStreamName(sqlQuery); stream != "" {
+		return stream
+	}
+	return "saved-query"
+}
+
+func ensureDefaultLimit(query string) string {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" || hasTopLevelLimit(trimmed) {
+		return query
+	}
+	suffix := ""
+	if strings.HasSuffix(trimmed, ";") {
+		trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, ";"))
+		suffix = ";"
+	}
+	return trimmed + " LIMIT 500" + suffix
+}
+
+func hasTopLevelLimit(query string) bool {
+	depth := 0
+	for i := 0; i < len(query); {
+		switch query[i] {
+		case '\'':
+			i++
+			for i < len(query) {
+				if query[i] == '\'' {
+					i++
+					if i < len(query) && query[i] == '\'' {
+						i++
+						continue
+					}
+					break
+				}
+				i++
+			}
+		case '"':
+			i++
+			for i < len(query) {
+				if query[i] == '"' {
+					i++
+					break
+				}
+				i++
+			}
+		case '(':
+			depth++
+			i++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+			i++
+		default:
+			if depth == 0 && isLimitTokenAt(query, i) {
+				return true
+			}
+			i++
+		}
+	}
+	return false
+}
+
+func isLimitTokenAt(query string, idx int) bool {
+	const token = "limit"
+	if idx+len(token) > len(query) || !strings.EqualFold(query[idx:idx+len(token)], token) {
+		return false
+	}
+	if idx > 0 && identChar(query[idx-1]) {
+		return false
+	}
+	next := idx + len(token)
+	return next >= len(query) || !identChar(query[next])
+}
+
 func fetchData(client *internalHTTP.HTTPClient, query string, startTime, endTime, outputFormat string) error {
+	query = ensureDefaultLimit(query)
 	body, err := json.Marshal(struct {
 		Query     string `json:"query"`
 		StartTime string `json:"startTime"`
@@ -355,27 +511,50 @@ func fetchData(client *internalHTTP.HTTPClient, query string, startTime, endTime
 		return fmt.Errorf("failed to create new request: %w", err)
 	}
 
+	stopSpinner := startSpinner()
 	resp, err := client.Client.Do(req)
+	stopSpinner()
 	if err != nil {
 		return fmt.Errorf("request execution failed: %w", err)
 	}
 	defer resp.Body.Close()
 
+	stopSpinner = startSpinner()
+	respBody, err := io.ReadAll(resp.Body)
+	stopSpinner()
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+	trimmedBody := bytes.TrimSpace(respBody)
+
 	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		fmt.Println(string(body))
-		return fmt.Errorf("non-200 status code received: %s", resp.Status)
+		if len(trimmedBody) == 0 {
+			return fmt.Errorf("query failed: server returned %s with an empty response body", resp.Status)
+		}
+		return fmt.Errorf("query failed: server returned %s: %s", resp.Status, string(trimmedBody))
+	}
+
+	if len(trimmedBody) == 0 {
+		fmt.Printf("No response body returned (status: %s).\n", resp.Status)
+		return nil
+	}
+	if bytes.Equal(trimmedBody, []byte("[]")) && outputFormat != "json" {
+		fmt.Printf("Query succeeded: no rows returned (status: %s).\n", resp.Status)
+		return nil
 	}
 
 	if outputFormat == "json" {
 		var jsonResponse []map[string]interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&jsonResponse); err != nil {
+		if err := json.Unmarshal(respBody, &jsonResponse); err != nil {
 			return fmt.Errorf("error decoding JSON response: %w", err)
 		}
 		encodedResponse, _ := json.MarshalIndent(jsonResponse, "", "  ")
 		fmt.Println(string(encodedResponse))
 	} else {
-		io.Copy(os.Stdout, resp.Body)
+		fmt.Print(string(respBody))
+		if respBody[len(respBody)-1] != '\n' {
+			fmt.Println()
+		}
 	}
 	return nil
 }

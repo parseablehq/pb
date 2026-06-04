@@ -269,14 +269,60 @@ func TestFormatChartTime12h(t *testing.T) {
 	}
 }
 
+func TestChartTimeRangeTitleUsesDisplayMode(t *testing.T) {
+	oldLocal := time.Local
+	time.Local = time.FixedZone("IST", 5*60*60+30*60)
+	defer func() { time.Local = oldLocal }()
+
+	firstUTC := time.Date(2026, 1, 2, 9, 0, 0, 0, time.UTC)
+	lastUTC := time.Date(2026, 1, 2, 9, 10, 0, 0, time.UTC)
+	rows := []table.Row{
+		table.NewRow(table.RowData{
+			promqlTimestampFullKey: firstUTC.Format(time.RFC3339),
+			promqlMetricKey:        `cpu_usage{host.arch="amd64"}`,
+			promqlValueKey:         "1",
+		}),
+		table.NewRow(table.RowData{
+			promqlTimestampFullKey: lastUTC.Format(time.RFC3339),
+			promqlMetricKey:        `cpu_usage{host.arch="amd64"}`,
+			promqlValueKey:         "2",
+		}),
+	}
+
+	localModel := PromqlModel{dataRows: rows}
+	localModel.timeRange.SetDisplayMode(TimeDisplayLocal)
+	if got, want := localModel.chartTimeRangeTitle(), "📊 2:30pm → 2:40pm"; got != want {
+		t.Fatalf("local title = %q, want %q", got, want)
+	}
+
+	utcModel := PromqlModel{dataRows: rows}
+	utcModel.timeRange.SetDisplayMode(TimeDisplayUTC)
+	if got, want := utcModel.chartTimeRangeTitle(), "📊 9:00am → 9:10am"; got != want {
+		t.Fatalf("utc title = %q, want %q", got, want)
+	}
+}
+
 func TestPromqlModelFormatTSUsesLocalTime(t *testing.T) {
 	oldLocal := time.Local
 	time.Local = time.FixedZone("IST", 5*60*60+30*60)
 	defer func() { time.Local = oldLocal }()
 
 	utc := time.Date(2026, 1, 2, 10, 0, 0, 0, time.UTC)
-	got := promqlModelFormatTS(float64(utc.Unix()))
+	got := promqlModelFormatTS(float64(utc.Unix()), TimeDisplayLocal)
 	want := "2026-01-02T15:30:00+05:30"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestPromqlModelFormatTSUsesUTC(t *testing.T) {
+	oldLocal := time.Local
+	time.Local = time.FixedZone("IST", 5*60*60+30*60)
+	defer func() { time.Local = oldLocal }()
+
+	utc := time.Date(2026, 1, 2, 10, 0, 0, 0, time.UTC)
+	got := promqlModelFormatTS(float64(utc.Unix()), TimeDisplayUTC)
+	want := "2026-01-02T10:00:00Z"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}

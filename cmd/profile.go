@@ -329,6 +329,7 @@ var UpdateProfileCmd = &cobra.Command{
 
 var ListProfileCmd = &cobra.Command{
 	Use:     "list profiles",
+	Aliases: []string{"ls"},
 	Short:   "List all added profiles",
 	Example: "  pb profile list",
 	RunE: func(cmd *cobra.Command, _ []string) error {
