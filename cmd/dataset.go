@@ -17,15 +17,25 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"pb/pkg/datasets"
 	internalHTTP "pb/pkg/http"
+	"pb/pkg/ui"
+	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 )
+
+const datasetTypeFlag = "type"
+
+var errDatasetTypeSelectionCanceled = errors.New("dataset type selection canceled")
 
 // DatasetStatsData is the data structure for dataset stats
 type DatasetStatsData struct {
@@ -47,8 +57,9 @@ type DatasetListItem struct {
 }
 
 func (item *DatasetListItem) Render() string {
-	render := StandardStyle.Render(item.Name)
-	return ItemOuter.Render(render)
+	bullet := SelectedStyle.Render("•")
+	name := StandardStyle.Render(item.Name)
+	return ItemOuter.Render(fmt.Sprintf("%s %s", bullet, name))
 }
 
 // DatasetRetentionData is the data structure for dataset retention
@@ -104,10 +115,11 @@ type RuleConfig struct {
 
 // AddDatasetCmd is the parent command for dataset
 var AddDatasetCmd = &cobra.Command{
-	Use:     "add dataset-name",
-	Example: "  pb dataset add backend_logs",
-	Short:   "Create a new dataset",
-	Args:    cobra.ExactArgs(1),
+	Use:          "add dataset-name",
+	Example:      "  pb dataset add backend_logs\n  pb dataset add frontend_metrics --type metrics\n  pb dataset add checkout_traces --type traces",
+	Short:        "Create a new dataset",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Capture start time
 		startTime := time.Now()
@@ -117,12 +129,31 @@ var AddDatasetCmd = &cobra.Command{
 		}()
 
 		name := args[0]
+		datasetType, err := cmd.Flags().GetString(datasetTypeFlag)
+		if err != nil {
+			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
+			return err
+		}
+		datasetType, err = resolveDatasetType(datasetType)
+		if err != nil {
+			if errors.Is(err, errDatasetTypeSelectionCanceled) {
+				fmt.Println("Dataset creation canceled")
+				return nil
+			}
+			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
+			return err
+		}
+
 		client := internalHTTP.DefaultClient(&DefaultProfile)
 		req, err := client.NewRequest("PUT", "logstream/"+name, nil)
 		if err != nil {
 			// Capture error
 			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 			return err
+		}
+		req.Header.Set("X-P-Telemetry-Type", datasetType)
+		if datasetType == datasets.TypeMetrics || datasetType == datasets.TypeTraces {
+			req.Header.Set("X-P-Log-Source", "otel-"+datasetType)
 		}
 
 		resp, err := client.Client.Do(req)
@@ -136,7 +167,7 @@ var AddDatasetCmd = &cobra.Command{
 		cmd.Annotations["executionTime"] = time.Since(startTime).String()
 
 		if resp.StatusCode == 200 {
-			fmt.Printf("Created dataset %s\n", StyleBold.Render(name))
+			fmt.Printf("Created %s dataset %s\n", SelectedStyle.Render(datasetType), StyleBold.Render(name))
 		} else {
 			bytes, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -152,12 +183,151 @@ var AddDatasetCmd = &cobra.Command{
 	},
 }
 
+func init() {
+	AddDatasetCmd.Flags().String(datasetTypeFlag, "", "Dataset type (logs|metrics|traces)")
+}
+
+func resolveDatasetType(value string) (string, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return promptDatasetType()
+	}
+	return validateDatasetType(value)
+}
+
+func validateDatasetType(value string) (string, error) {
+	switch value {
+	case datasets.TypeLogs, datasets.TypeMetrics, datasets.TypeTraces:
+		return value, nil
+	default:
+		return "", fmt.Errorf("invalid dataset type %q (use: logs, metrics, traces)", value)
+	}
+}
+
+func promptDatasetType() (string, error) {
+	_m, err := tea.NewProgram(newDatasetTypePicker()).Run()
+	if err != nil {
+		return "", err
+	}
+
+	m := _m.(datasetTypePicker)
+	if !m.success {
+		return "", errDatasetTypeSelectionCanceled
+	}
+	return m.choice(), nil
+}
+
+type datasetTypeOption struct {
+	value string
+}
+
+type datasetTypePicker struct {
+	options []datasetTypeOption
+	cursor  int
+	success bool
+}
+
+func newDatasetTypePicker() datasetTypePicker {
+	return datasetTypePicker{
+		options: []datasetTypeOption{
+			{value: datasets.TypeLogs},
+			{value: datasets.TypeMetrics},
+			{value: datasets.TypeTraces},
+		},
+	}
+}
+
+func (m datasetTypePicker) Init() tea.Cmd {
+	return nil
+}
+
+func (m datasetTypePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "esc":
+			return m, tea.Quit
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.cursor < len(m.options)-1 {
+				m.cursor++
+			}
+		case "enter":
+			m.success = true
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m datasetTypePicker) View() string {
+	var b strings.Builder
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent }))
+	labelStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Mute }))
+	selectedStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Active }))
+	normalStyle := lipgloss.NewStyle().
+		Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Body }))
+	dimStyle := lipgloss.NewStyle().
+		Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Faint }))
+	keyStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Accent }))
+	railStyle := lipgloss.NewStyle().
+		Background(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Active }))
+
+	b.WriteString(titleStyle.Render("CREATE DATASET"))
+	b.WriteString("\n\n")
+	b.WriteString(labelStyle.Render("DATASET TYPE"))
+	b.WriteString("\n\n")
+
+	for idx, option := range m.options {
+		if idx == m.cursor {
+			b.WriteString(railStyle.Render(" "))
+			b.WriteString(" ")
+			b.WriteString(selectedStyle.Render("❯ " + option.value))
+		} else {
+			b.WriteString("    ")
+			b.WriteString(normalStyle.Render(option.value))
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString("  ")
+	b.WriteString(keyStyle.Render("<↑↓>"))
+	b.WriteString(dimStyle.Render(" navigate    "))
+	b.WriteString(keyStyle.Render("<enter>"))
+	b.WriteString(dimStyle.Render(" select    "))
+	b.WriteString(keyStyle.Render("<esc>"))
+	b.WriteString(dimStyle.Render(" cancel"))
+	return b.String()
+}
+
+func (m datasetTypePicker) choice() string {
+	if len(m.options) == 0 {
+		return ""
+	}
+	return m.options[m.cursor].value
+}
+
 // StatDatasetCmd is the stat command for dataset
 var StatDatasetCmd = &cobra.Command{
-	Use:     "info dataset-name",
-	Example: "  pb dataset info backend_logs",
-	Short:   "Get statistics for a dataset",
-	Args:    cobra.ExactArgs(1),
+	Use:          "info dataset-name",
+	Aliases:      []string{"stat"},
+	Example:      "  pb dataset info backend_logs",
+	Short:        "Get statistics for a dataset",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Capture start time
 		startTime := time.Now()
@@ -168,6 +338,14 @@ var StatDatasetCmd = &cobra.Command{
 
 		name := args[0]
 		client := internalHTTP.DefaultClient(&DefaultProfile)
+
+		// Fetch dataset type first so a missing dataset fails clearly instead
+		// of being rendered as zero stats with an unknown type.
+		datasetType, err := fetchInfo(&client, name)
+		if err != nil {
+			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
+			return err
+		}
 
 		// Fetch stats data
 		stats, err := fetchStats(&client, name)
@@ -195,14 +373,6 @@ var StatDatasetCmd = &cobra.Command{
 
 		// Fetch alerts data
 		alertsData, err := fetchAlerts(&client, name)
-		if err != nil {
-			// Capture error
-			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
-			return err
-		}
-
-		// Fetch dataset type
-		datasetType, err := fetchInfo(&client, name)
 		if err != nil {
 			// Capture error
 			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
@@ -238,27 +408,27 @@ var StatDatasetCmd = &cobra.Command{
 			isAlertsSet := len(alertsData.Alerts) > 0
 
 			// Render the info section with consistent alignment
-			fmt.Println(StyleBold.Render("\nInfo:"))
+			fmt.Println(SelectedStyle.Render("\nInfo:"))
 			fmt.Printf("  %-18s %d\n", "Event Count:", ingestionCount)
 			fmt.Printf("  %-18s %s\n", "Ingestion Size:", humanize.Bytes(uint64(ingestionSize)))
 			fmt.Printf("  %-18s %s\n", "Storage Size:", humanize.Bytes(uint64(storageSize)))
 			fmt.Printf("  %-18s %.2f%s\n", "Compression Ratio:", compressionRatio, "%")
-			fmt.Printf("  %-18s %s\n", "Dataset Type:", datasetType)
+			fmt.Printf("  %-18s %s\n", "Dataset Type:", SelectedStyle.Render(datasetType))
 			fmt.Println()
 
 			if isRetentionSet {
-				fmt.Println(StyleBold.Render("Retention:"))
+				fmt.Println(SelectedStyle.Render("Retention:"))
 				for _, item := range retention {
 					fmt.Printf("  Action:    %s\n", StyleBold.Render(item.Action))
 					fmt.Printf("  Duration:  %s\n", StyleBold.Render(item.Duration))
 					fmt.Println()
 				}
 			} else {
-				fmt.Println(StyleBold.Render("No retention period set on dataset\n"))
+				fmt.Println(SelectedStyle.Render("No retention period set on dataset\n"))
 			}
 
 			if isAlertsSet {
-				fmt.Println(StyleBold.Render("Alerts:"))
+				fmt.Println(SelectedStyle.Render("Alerts:"))
 				for _, alert := range alertsData.Alerts {
 					fmt.Printf("  Alert:   %s\n", StyleBold.Render(alert.Name))
 					ruleFmt := fmt.Sprintf(
@@ -276,7 +446,7 @@ var StatDatasetCmd = &cobra.Command{
 					fmt.Print("\n\n")
 				}
 			} else {
-				fmt.Println(StyleBold.Render("No alerts set on dataset\n"))
+				fmt.Println(SelectedStyle.Render("No alerts set on dataset\n"))
 			}
 		}
 
@@ -289,11 +459,12 @@ func init() {
 }
 
 var RemoveDatasetCmd = &cobra.Command{
-	Use:     "remove dataset-name",
-	Aliases: []string{"rm"},
-	Example: " pb dataset remove backend_logs",
-	Short:   "Delete a dataset",
-	Args:    cobra.ExactArgs(1),
+	Use:          "remove dataset-name",
+	Aliases:      []string{"rm"},
+	Example:      " pb dataset remove backend_logs\n pb dataset remove backend_logs --type logs",
+	Short:        "Delete a dataset",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Capture start time
 		startTime := time.Now()
@@ -304,6 +475,30 @@ var RemoveDatasetCmd = &cobra.Command{
 
 		name := args[0]
 		client := internalHTTP.DefaultClient(&DefaultProfile)
+		expectedType, err := cmd.Flags().GetString(datasetTypeFlag)
+		if err != nil {
+			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
+			return err
+		}
+		expectedType = strings.ToLower(strings.TrimSpace(expectedType))
+		if expectedType != "" {
+			expectedType, err = validateDatasetType(expectedType)
+			if err != nil {
+				cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
+				return err
+			}
+
+			actualType, err := fetchInfo(&client, name)
+			if err != nil {
+				cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
+				return err
+			}
+			if err := ensureDatasetType(name, actualType, expectedType); err != nil {
+				cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
+				return err
+			}
+		}
+
 		req, err := client.NewRequest("DELETE", "logstream/"+name, nil)
 		if err != nil {
 			// Capture error
@@ -338,11 +533,24 @@ var RemoveDatasetCmd = &cobra.Command{
 	},
 }
 
+func ensureDatasetType(name, actualType, expectedType string) error {
+	if actualType != expectedType {
+		return fmt.Errorf("dataset %q is %s, not %s", name, actualType, expectedType)
+	}
+	return nil
+}
+
+func init() {
+	RemoveDatasetCmd.Flags().String(datasetTypeFlag, "", "Only remove if dataset type matches (logs|metrics|traces)")
+}
+
 // ListDatasetCmd is the list command for datasets
 var ListDatasetCmd = &cobra.Command{
-	Use:     "list",
-	Example: "  pb dataset list",
-	Short:   "List all datasets",
+	Use:          "list",
+	Aliases:      []string{"ls"},
+	Example:      "  pb dataset list",
+	Short:        "List all datasets",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		// Capture start time
 		startTime := time.Now()
@@ -351,40 +559,26 @@ var ListDatasetCmd = &cobra.Command{
 			cmd.Annotations["executionTime"] = time.Since(startTime).String()
 		}()
 
-		client := internalHTTP.DefaultClient(&DefaultProfile)
-		req, err := client.NewRequest("GET", "logstream", nil)
+		items, err := datasets.FetchHomeDatasets(DefaultProfile)
 		if err != nil {
-			// Capture error
 			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 			return err
 		}
 
-		resp, err := client.Client.Do(req)
-		if err != nil {
-			// Capture error
-			cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
-			return err
-		}
-
-		var datasets []DatasetListItem
-		if resp.StatusCode == 200 {
-			bytes, err := io.ReadAll(resp.Body)
+		output, _ := cmd.Flags().GetString("output")
+		if output == "json" {
+			jsonData, err := json.MarshalIndent(items, "", "  ")
 			if err != nil {
 				cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
 				return err
 			}
-			if err := json.Unmarshal(bytes, &datasets); err != nil {
-				cmd.Annotations["errors"] = fmt.Sprintf("Error: %s", err.Error())
-				return err
-			}
-
-			for _, dataset := range datasets {
-				fmt.Println(dataset.Render())
-			}
-		} else {
-			fmt.Printf("Failed to fetch datasets. Status Code: %s\n", resp.Status)
+			fmt.Println(string(jsonData))
+			return nil
 		}
 
+		for _, dataset := range items {
+			fmt.Println((&DatasetListItem{Name: dataset.Title}).Render())
+		}
 		return nil
 	},
 }
@@ -503,7 +697,8 @@ func fetchInfo(client *internalHTTP.HTTPClient, name string) (datasetType string
 	case http.StatusOK:
 		// Define a struct to parse the response
 		var response struct {
-			StreamType string `json:"stream_type"`
+			StreamType    string `json:"streamType"`
+			TelemetryType string `json:"telemetryType"`
 		}
 
 		// Unmarshal JSON into the struct
@@ -511,11 +706,12 @@ func fetchInfo(client *internalHTTP.HTTPClient, name string) (datasetType string
 			return "", fmt.Errorf("failed to unmarshal response: %w", err)
 		}
 
-		// Return the extracted stream_type
+		if response.TelemetryType != "" {
+			return response.TelemetryType, nil
+		}
 		return response.StreamType, nil
 	case http.StatusNotFound:
-		// endpoint not available on this server version or stream has no type info
-		return "unknown", nil
+		return "", fmt.Errorf("dataset %q not found", name)
 	default:
 		// Handle non-200 responses
 		return "", fmt.Errorf("Request Failed\nStatus Code: %d\nResponse: %s\n", resp.StatusCode, string(bytes))

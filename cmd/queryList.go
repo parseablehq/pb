@@ -30,11 +30,13 @@ import (
 )
 
 var SavedQueryList = &cobra.Command{
-	Use:     "list",
-	Example: "pb query list [-o | --output]",
-	Short:   "List of saved queries",
-	Long:    "\nShow the list of saved queries for active user",
-	PreRunE: PreRunDefaultProfile,
+	Use:          "list",
+	Aliases:      []string{"ls"},
+	Example:      "pb sql list [-o | --output]",
+	Short:        "List of saved queries",
+	Long:         "\nShow the list of saved queries for active user",
+	SilenceUsage: true,
+	PreRunE:      PreRunDefaultProfile,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		client := internalHTTP.DefaultClient(&DefaultProfile)
 
@@ -107,7 +109,7 @@ var SavedQueryList = &cobra.Command{
 
 		a := model.QueryToApply()
 		d := model.QueryToDelete()
-		if a.Stream() != "" {
+		if a.SavedQueryID() != "" || strings.TrimSpace(a.Stream()) != "" {
 			if err := savedQueryToPbQuery(a.Stream(), a.StartTime(), a.EndTime()); err != nil {
 				return err
 			}
@@ -139,8 +141,13 @@ func deleteSavedQuery(client *internalHTTP.HTTPClient, savedQueryID, title strin
 	}
 }
 
-// Convert a saved query to executable pb query and print results to terminal
+// Convert a saved query to executable SQL query and print results to terminal.
 func savedQueryToPbQuery(sqlQuery string, start string, end string) error {
+	if strings.TrimSpace(sqlQuery) == "" {
+		fmt.Println("Empty query selected.")
+		return nil
+	}
+
 	if start == "" {
 		start = "1h"
 	}
@@ -154,10 +161,11 @@ func savedQueryToPbQuery(sqlQuery string, start string, end string) error {
 	fmt.Printf("Query: %s\n", sqlQuery)
 
 	client := internalHTTP.DefaultClient(&DefaultProfile)
-	stopSpinner := startSpinner()
 	err := fetchData(&client, sqlQuery, start, end, "")
-	stopSpinner()
-	return err
+	if err != nil {
+		return fmt.Errorf("selected saved query failed: %w", err)
+	}
+	return nil
 }
 
 func init() {

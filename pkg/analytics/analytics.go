@@ -142,7 +142,7 @@ func CheckAndCreateULID(_ *cobra.Command, _ []string) error {
 			fmt.Printf("could not write to config file: %v\n", err)
 			return err
 		}
-		fmt.Printf("Generated and saved new ULID: %s\n", config.ULID)
+		// fmt.Printf("Generated and saved new ULID: %s\n", config.ULID)
 	}
 
 	return nil

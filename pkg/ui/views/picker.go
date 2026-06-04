@@ -16,15 +16,12 @@
 package views
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"pb/pkg/config"
+	"pb/pkg/datasets"
 	"pb/pkg/ui"
 	"sort"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -343,76 +340,24 @@ func kindColor(kind string) lipgloss.Color {
 	return p.Accent // logs (default)
 }
 
-// fetchDatasets calls /api/v1/logstream and infers kind from name.
-// (Mirrors fetchMetricDatasets in pkg/model/promql.go but kept local so
-// the greenfield UI has no legacy dependency.)
+// fetchDatasets calls Prism's home API and uses datasetType, matching the web UI.
 func fetchDatasets(profile config.Profile) tea.Cmd {
 	return func() tea.Msg {
-		client := &http.Client{Timeout: 15 * time.Second}
-		req, err := http.NewRequest("GET", strings.TrimRight(profile.URL, "/")+"/api/v1/logstream", nil)
+		items, err := datasets.FetchHomeDatasets(profile)
 		if err != nil {
 			return datasetListMsg{err: err.Error()}
 		}
-		if profile.Token != "" {
-			req.Header.Set("Authorization", "Bearer "+profile.Token)
-		} else {
-			req.SetBasicAuth(profile.Username, profile.Password)
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return datasetListMsg{err: err.Error()}
-		}
-		defer resp.Body.Close()
-		const limit = 10 * 1024 * 1024
-		body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
-		if err != nil {
-			return datasetListMsg{err: "failed to read response: " + err.Error()}
-		}
-		if len(body) > limit {
-			return datasetListMsg{err: "response too large (>10 MB)"}
-		}
-		if resp.StatusCode >= 400 {
-			return datasetListMsg{err: fmt.Sprintf("HTTP %d: %s", resp.StatusCode, truncate(string(body), 200))}
-		}
-		var raw []struct {
-			Name string `json:"name"`
-		}
-		if err := json.Unmarshal(body, &raw); err != nil {
-			return datasetListMsg{err: err.Error()}
-		}
-		out := make([]dsItem, 0, len(raw))
-		for _, r := range raw {
+		out := make([]dsItem, 0, len(items))
+		for _, item := range items {
 			out = append(out, dsItem{
-				Name:   r.Name,
-				Kind:   inferKind(r.Name),
+				Name:   item.Title,
+				Kind:   item.DatasetType,
 				Fields: 0, // populated lazily on selection
 			})
 		}
 		sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 		return datasetListMsg{items: out}
 	}
-}
-
-func inferKind(name string) string {
-	n := strings.ToLower(name)
-	switch {
-	case strings.Contains(n, "metric"):
-		return "metrics"
-	case strings.Contains(n, "trace"):
-		return "traces"
-	case strings.Contains(n, "event"):
-		return "events"
-	default:
-		return "logs"
-	}
-}
-
-func truncate(s string, n int) string {
-	runes := []rune(s)
-	if len(runes) <= n {
-		return s
-	}
-	return string(runes[:n]) + "…"
 }
 
 func max0(n int) int {

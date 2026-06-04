@@ -41,6 +41,7 @@ var (
 	StandardStyle     = lipgloss.NewStyle().Foreground(StandardPrimary)
 	StandardStyleBold = lipgloss.NewStyle().Foreground(StandardPrimary).Bold(true)
 	StandardStyleAlt  = lipgloss.NewStyle().Foreground(StandardSecondary)
+	StandardStyleRule = lipgloss.NewStyle().Foreground(ui.Adaptive(func(p ui.Palette) lipgloss.Color { return p.Border }))
 	SelectedStyle     = lipgloss.NewStyle().Foreground(FocusPrimary).Bold(true)
 	SelectedStyleAlt  = lipgloss.NewStyle().Foreground(FocusSecondary)
 	SelectedItemOuter = lipgloss.NewStyle().

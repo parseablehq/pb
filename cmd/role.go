@@ -188,9 +188,11 @@ var RemoveRoleCmd = &cobra.Command{
 }
 
 var ListRoleCmd = &cobra.Command{
-	Use:     "list",
-	Short:   "List all roles",
-	Example: "  pb role list",
+	Use:          "list",
+	Aliases:      []string{"ls"},
+	Short:        "List all roles",
+	Example:      "  pb role list",
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		startTime := time.Now()
 		cmd.Annotations = make(map[string]string)
@@ -243,23 +245,151 @@ var ListRoleCmd = &cobra.Command{
 			return nil
 		}
 
-		fmt.Println()
+		printRoleTable(roles, roleResponses)
+		var fetchErrors []string
 		for idx, roleName := range roles {
-			fetchRes := roleResponses[idx]
-			fmt.Print("• ")
-			fmt.Println(StandardStyleBold.Bold(true).Render(roleName))
-			if fetchRes.err == nil {
-				for _, role := range fetchRes.data {
-					fmt.Println(lipgloss.NewStyle().PaddingLeft(3).Render(role.Render()))
-				}
-			} else {
-				fmt.Printf("Error fetching role data for %s: %v\n", roleName, fetchRes.err)
-				cmd.Annotations["errors"] += fmt.Sprintf("Error fetching role data for %s: %v\n", roleName, fetchRes.err)
+			if roleResponses[idx].err != nil {
+				errMsg := fmt.Sprintf("Error fetching role data for %s: %v", roleName, roleResponses[idx].err)
+				fetchErrors = append(fetchErrors, errMsg)
+				cmd.Annotations["errors"] += errMsg + "\n"
 			}
+		}
+		if len(fetchErrors) > 0 {
+			return fmt.Errorf("failed to fetch details for %d role(s): %s", len(fetchErrors), strings.Join(fetchErrors, "; "))
 		}
 
 		return nil
 	},
+}
+
+func printRoleTable(roles []string, roleResponses []struct {
+	data []RoleData
+	err  error
+}) {
+	const maxRoleWidth = 42
+	const maxStreamWidth = 48
+
+	roleWidth := lipgloss.Width("ROLE")
+	privilegeWidth := lipgloss.Width("PRIVILEGE")
+	streamWidth := lipgloss.Width("STREAM")
+
+	for idx, roleName := range roles {
+		roleW := lipgloss.Width(roleName)
+		if roleW > maxRoleWidth {
+			roleW = maxRoleWidth
+		}
+		if roleW > roleWidth {
+			roleWidth = roleW
+		}
+		for _, action := range roleResponses[idx].data {
+			if w := lipgloss.Width(action.Privilege); w > privilegeWidth {
+				privilegeWidth = w
+			}
+			stream := roleStream(action)
+			streamW := lipgloss.Width(stream)
+			if streamW > maxStreamWidth {
+				streamW = maxStreamWidth
+			}
+			if streamW > streamWidth {
+				streamWidth = streamW
+			}
+		}
+	}
+
+	headerStyle := SelectedStyle.Bold(true)
+	bodyStyle := StandardStyle
+	mutedStyle := StandardStyleAlt
+	ruleStyle := StandardStyleRule
+	leaderStyle := StandardStyleRule
+	privilegeColumn := roleWidth + 4
+	streamColumn := privilegeColumn + privilegeWidth + 4
+
+	renderRoleGuide := func(roleCell string) string {
+		if roleCell == "" {
+			return strings.Repeat(" ", privilegeColumn)
+		}
+		leaderWidth := privilegeColumn - lipgloss.Width(roleCell) - 1
+		if leaderWidth < 2 {
+			leaderWidth = 2
+		}
+		return bodyStyle.Render(roleCell) + " " + leaderStyle.Render(strings.Repeat(".", leaderWidth))
+	}
+
+	renderPrivilegeGuide := func(privilegeCell string, style lipgloss.Style) string {
+		privilegeCell = truncateCell(privilegeCell, privilegeWidth)
+		leaderWidth := streamColumn - privilegeColumn - lipgloss.Width(privilegeCell) - 1
+		if leaderWidth < 2 {
+			leaderWidth = 2
+		}
+		return style.Render(privilegeCell) + " " + leaderStyle.Render(strings.Repeat(".", leaderWidth))
+	}
+
+	printRow := func(roleCell, privilegeCell string, privilegeStyle lipgloss.Style, streamCell string, streamStyle lipgloss.Style) {
+		fmt.Printf("%s %s %s\n",
+			renderRoleGuide(roleCell),
+			renderPrivilegeGuide(privilegeCell, privilegeStyle),
+			streamStyle.Render(truncateCell(streamCell, maxStreamWidth)),
+		)
+	}
+
+	fmt.Println()
+	fmt.Printf("%s%s%s\n",
+		headerStyle.Render(padRight("ROLE", privilegeColumn+1)),
+		headerStyle.Render(padRight("PRIVILEGE", privilegeWidth+5)),
+		headerStyle.Render("STREAM"),
+	)
+	fmt.Printf("%s%s%s\n",
+		ruleStyle.Render(strings.Repeat("─", privilegeColumn+1)),
+		ruleStyle.Render(strings.Repeat("─", privilegeWidth+5)),
+		ruleStyle.Render(strings.Repeat("─", streamWidth)),
+	)
+
+	for idx, roleName := range roles {
+		fetchRes := roleResponses[idx]
+		if fetchRes.err != nil {
+			printRow(
+				truncateCell(roleName, maxRoleWidth),
+				"-",
+				mutedStyle,
+				fmt.Sprintf("error: %v", fetchRes.err),
+				mutedStyle,
+			)
+			continue
+		}
+
+		if len(fetchRes.data) == 0 {
+			printRow(truncateCell(roleName, maxRoleWidth), "-", mutedStyle, "-", mutedStyle)
+			continue
+		}
+
+		for actionIdx, action := range fetchRes.data {
+			roleCell := ""
+			if actionIdx == 0 {
+				roleCell = truncateCell(roleName, maxRoleWidth)
+			}
+			stream := roleStream(action)
+			streamStyle := bodyStyle
+			if stream == "-" {
+				streamStyle = mutedStyle
+			}
+			printRow(roleCell, orDash(action.Privilege), bodyStyle, stream, streamStyle)
+		}
+	}
+	fmt.Println()
+}
+
+func roleStream(action RoleData) string {
+	if action.Resource == nil || action.Resource.Stream == "" {
+		return "-"
+	}
+	return action.Resource.Stream
+}
+
+func orDash(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "-"
+	}
+	return value
 }
 
 func fetchRoles(client *internalHTTP.HTTPClient, data *[]string) error {
