@@ -344,21 +344,37 @@ var ListUserCmd = &cobra.Command{
 				return fmt.Errorf("failed to marshal JSON output: %w", err)
 			}
 			fmt.Println(string(jsonOutput))
-			cmd.Annotations["error"] = "none"
-			return nil
+			return userRoleFetchError(cmd, users, roleResponses)
 		}
 
 		if outputFormat == "text" {
 			printUserRoleTable(users, roleResponses)
-			cmd.Annotations["error"] = "none"
-			return nil
+			return userRoleFetchError(cmd, users, roleResponses)
 		}
 
 		printUserRoleTable(users, roleResponses)
 
+		return userRoleFetchError(cmd, users, roleResponses)
+	},
+}
+
+func userRoleFetchError(cmd *cobra.Command, users []UserData, roleResponses []struct {
+	data []string
+	err  error
+}) error {
+	var fetchErrors []string
+	for idx, user := range users {
+		if roleResponses[idx].err != nil {
+			errMsg := fmt.Sprintf("Error fetching roles for %s: %v", user.ID, roleResponses[idx].err)
+			fetchErrors = append(fetchErrors, errMsg)
+		}
+	}
+	if len(fetchErrors) == 0 {
 		cmd.Annotations["error"] = "none"
 		return nil
-	},
+	}
+	cmd.Annotations["error"] = strings.Join(fetchErrors, "\n")
+	return fmt.Errorf("failed to fetch roles for %d user(s): %s", len(fetchErrors), strings.Join(fetchErrors, "; "))
 }
 
 func printUserRoleTable(users []UserData, roleResponses []struct {

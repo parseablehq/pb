@@ -616,9 +616,6 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			if msg.Type == tea.KeyEnter && m.currentFocus() == "columns" {
-				if !m.columnsDrawerOpen {
-					return m, m.toggleColumnsDrawer()
-				}
 				m.insertSelectedColumn()
 				return m, nil
 			}
@@ -782,7 +779,7 @@ func (m QueryModel) View() string {
 		bodyH = 12
 	}
 	const editorH = 12
-	fullHeightControls := m.columnsDrawerOpen && !m.columnsLoading && len(m.filteredColumns) > 0
+	fullHeightControls := m.columnsDrawerOpen
 
 	// editorW reserves 1 col for the horizontal gap between editor
 	// and sidebar, so the two │ borders aren't flush against each other.
@@ -1460,7 +1457,11 @@ func ensureDefaultSQLLimit(query string) string {
 		trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, ";"))
 		suffix = ";"
 	}
-	return trimmed + " LIMIT 500" + suffix
+	separator := " "
+	if endsInSQLLineComment(trimmed) {
+		separator = "\n"
+	}
+	return trimmed + separator + "LIMIT 500" + suffix
 }
 
 func hasTopLevelSQLLimit(query string) bool {
@@ -1489,6 +1490,28 @@ func hasTopLevelSQLLimit(query string) bool {
 				}
 				i++
 			}
+		case '-':
+			if i+1 < len(query) && query[i+1] == '-' {
+				i += 2
+				for i < len(query) && query[i] != '\n' {
+					i++
+				}
+				continue
+			}
+			i++
+		case '/':
+			if i+1 < len(query) && query[i+1] == '*' {
+				i += 2
+				for i+1 < len(query) {
+					if query[i] == '*' && query[i+1] == '/' {
+						i += 2
+						break
+					}
+					i++
+				}
+				continue
+			}
+			i++
 		case '(':
 			depth++
 			i++
@@ -1517,6 +1540,66 @@ func isSQLLimitTokenAt(query string, idx int) bool {
 	}
 	next := idx + len(token)
 	return next >= len(query) || !isIdentChar(rune(query[next]))
+}
+
+func endsInSQLLineComment(query string) bool {
+	inSingleQuote := false
+	inDoubleQuote := false
+	inBlockComment := false
+	lineCommentStart := -1
+
+	for i := 0; i < len(query); i++ {
+		if inSingleQuote {
+			if query[i] == '\'' {
+				if i+1 < len(query) && query[i+1] == '\'' {
+					i++
+					continue
+				}
+				inSingleQuote = false
+			}
+			continue
+		}
+		if inDoubleQuote {
+			if query[i] == '"' {
+				if i+1 < len(query) && query[i+1] == '"' {
+					i++
+					continue
+				}
+				inDoubleQuote = false
+			}
+			continue
+		}
+		if inBlockComment {
+			if query[i] == '*' && i+1 < len(query) && query[i+1] == '/' {
+				inBlockComment = false
+				i++
+			}
+			continue
+		}
+
+		switch query[i] {
+		case '\'':
+			inSingleQuote = true
+		case '"':
+			inDoubleQuote = true
+		case '-':
+			if i+1 < len(query) && query[i+1] == '-' {
+				lineCommentStart = i
+				i++
+			}
+		case '/':
+			if i+1 < len(query) && query[i+1] == '*' {
+				inBlockComment = true
+				i++
+			}
+		case '\n', '\r':
+			lineCommentStart = -1
+		}
+	}
+	if lineCommentStart < 0 {
+		return false
+	}
+	return strings.TrimSpace(query[lineCommentStart+2:]) != ""
 }
 
 // parseableASCIIArt is the block-letter wordmark shown in the empty
@@ -1613,6 +1696,234 @@ func isIdentChar(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
 }
 
+func quoteUnsafeSQLTableNames(query string) string {
+	var result strings.Builder
+	i, n := 0, len(query)
+	for i < n {
+		switch query[i] {
+		case '\'':
+			i = copySQLStringLiteral(&result, query, i)
+		case '"':
+			i = copySQLQuotedIdentifier(&result, query, i)
+		default:
+			if isSQLTableClauseAt(query, i) {
+				j := i + sqlTableClauseLen(query, i)
+				result.WriteString(query[i:j])
+				i = j
+
+				for i < n && isSQLSpace(query[i]) {
+					result.WriteByte(query[i])
+					i++
+				}
+				if i >= n {
+					continue
+				}
+				if query[i] == '"' || query[i] == '\'' || query[i] == '(' {
+					continue
+				}
+
+				start := i
+				for i < n && !isSQLTableTokenEnd(query[i]) {
+					i++
+				}
+				tableName := query[start:i]
+				if shouldQuoteSQLTableName(tableName) {
+					result.WriteByte('"')
+					result.WriteString(strings.ReplaceAll(tableName, `"`, `""`))
+					result.WriteByte('"')
+				} else {
+					result.WriteString(tableName)
+				}
+				continue
+			}
+			result.WriteByte(query[i])
+			i++
+		}
+	}
+	return result.String()
+}
+
+// quoteUnsafeSQLFieldNames matches the command-mode SQL normalizer: dotted
+// columns like service.name and mixed-case columns like StatusCode must be
+// quoted for DataFusion to read them as Parseable field names.
+func quoteUnsafeSQLFieldNames(query string) string {
+	var result strings.Builder
+	i, n := 0, len(query)
+	for i < n {
+		ch := query[i]
+		switch ch {
+		case '\'':
+			i = copySQLStringLiteral(&result, query, i)
+		case '"':
+			i = copySQLQuotedIdentifier(&result, query, i)
+		default:
+			if isSQLIdentifierStart(ch) {
+				j := i + 1
+				for j < n && isSQLIdentifierChar(query[j]) {
+					j++
+				}
+
+				k, hasDot := j, false
+				for k < n && query[k] == '.' && k+1 < n && isSQLIdentifierChar(query[k+1]) {
+					hasDot = true
+					k++
+					for k < n && isSQLIdentifierChar(query[k]) {
+						k++
+					}
+				}
+
+				identifier := query[i:k]
+				if hasDot || shouldQuoteSQLFieldName(identifier, query, k) {
+					result.WriteByte('"')
+					result.WriteString(identifier)
+					result.WriteByte('"')
+					i = k
+				} else {
+					result.WriteString(query[i:j])
+					i = j
+				}
+				continue
+			}
+			result.WriteByte(ch)
+			i++
+		}
+	}
+	return result.String()
+}
+
+func copySQLStringLiteral(result *strings.Builder, query string, start int) int {
+	result.WriteByte(query[start])
+	i := start + 1
+	for i < len(query) {
+		c := query[i]
+		result.WriteByte(c)
+		i++
+		if c == '\'' {
+			if i < len(query) && query[i] == '\'' {
+				result.WriteByte(query[i])
+				i++
+				continue
+			}
+			break
+		}
+	}
+	return i
+}
+
+func copySQLQuotedIdentifier(result *strings.Builder, query string, start int) int {
+	result.WriteByte(query[start])
+	i := start + 1
+	for i < len(query) {
+		c := query[i]
+		result.WriteByte(c)
+		i++
+		if c == '"' {
+			if i < len(query) && query[i] == '"' {
+				result.WriteByte(query[i])
+				i++
+				continue
+			}
+			break
+		}
+	}
+	return i
+}
+
+func isSQLTableClauseAt(query string, idx int) bool {
+	return isSQLKeywordAt(query, idx, "from") || isSQLKeywordAt(query, idx, "join")
+}
+
+func sqlTableClauseLen(query string, idx int) int {
+	if isSQLKeywordAt(query, idx, "from") {
+		return len("from")
+	}
+	return len("join")
+}
+
+func isSQLKeywordAt(query string, idx int, keyword string) bool {
+	if idx+len(keyword) > len(query) || !strings.EqualFold(query[idx:idx+len(keyword)], keyword) {
+		return false
+	}
+	if idx > 0 && isIdentChar(rune(query[idx-1])) {
+		return false
+	}
+	next := idx + len(keyword)
+	return next >= len(query) || !isIdentChar(rune(query[next]))
+}
+
+func isSQLSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+func isSQLTableTokenEnd(c byte) bool {
+	return isSQLSpace(c) || c == ',' || c == ';' || c == '(' || c == ')'
+}
+
+func shouldQuoteSQLTableName(tableName string) bool {
+	if tableName == "" || strings.EqualFold(tableName, "dataset") {
+		return false
+	}
+	if !isSQLIdentifierStart(tableName[0]) {
+		return true
+	}
+	for i := 1; i < len(tableName); i++ {
+		if !isSQLIdentifierChar(tableName[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+var sqlFieldKeywords = map[string]struct{}{
+	"all": {}, "and": {}, "as": {}, "asc": {}, "between": {}, "by": {}, "case": {}, "cast": {},
+	"desc": {}, "distinct": {}, "else": {}, "end": {}, "false": {}, "from": {}, "full": {},
+	"group": {}, "having": {}, "in": {}, "inner": {}, "is": {}, "join": {}, "left": {}, "like": {},
+	"limit": {}, "not": {}, "null": {}, "on": {}, "or": {}, "order": {}, "outer": {}, "right": {},
+	"select": {}, "then": {}, "true": {}, "when": {}, "where": {},
+}
+
+func shouldQuoteSQLFieldName(identifier, query string, end int) bool {
+	if _, ok := sqlFieldKeywords[strings.ToLower(identifier)]; ok {
+		return false
+	}
+	if nextNonSpaceByte(query, end) == '(' {
+		return false
+	}
+	return hasMixedCaseASCII(identifier)
+}
+
+func hasMixedCaseASCII(s string) bool {
+	hasUpper, hasLower := false, false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			hasUpper = true
+		}
+		if c >= 'a' && c <= 'z' {
+			hasLower = true
+		}
+	}
+	return hasUpper && hasLower
+}
+
+func nextNonSpaceByte(s string, start int) byte {
+	for start < len(s) {
+		if !isSQLSpace(s[start]) {
+			return s[start]
+		}
+		start++
+	}
+	return 0
+}
+
+func isSQLIdentifierStart(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
+}
+
+func isSQLIdentifierChar(c byte) bool {
+	return isSQLIdentifierStart(c) || (c >= '0' && c <= '9')
+}
+
 func NewFetchTask(profile config.Profile, query string, startTime string, endTime string) tea.Cmd {
 	return func() (msg tea.Msg) {
 		res := FetchData{
@@ -1687,6 +1998,8 @@ func IteratorPrev(iter *iterator.QueryIterator[QueryData, FetchResult]) tea.Cmd 
 func fetchData(client *http.Client, profile *config.Profile, query string, startTime string, endTime string) (data QueryData, res FetchResult, errMsg string) {
 	data = QueryData{}
 	res = fetchErr
+	query = quoteUnsafeSQLTableNames(query)
+	query = quoteUnsafeSQLFieldNames(query)
 	query = ensureDefaultSQLLimit(query)
 
 	body, err := json.Marshal(map[string]string{

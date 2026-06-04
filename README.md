@@ -88,6 +88,7 @@ pb sql run "SELECT * FROM backend" --from=1h
 pb sql run "SELECT * FROM backend" --from=2024-01-01T00:00:00Z --to=2024-01-01T01:00:00Z
 pb sql run "SELECT * FROM backend" --from=1h --output json | jq .
 pb sql run "SELECT * FROM backend WHERE status = 500" --from=1h --save-as=server-errors
+pb sql save "SELECT * FROM backend WHERE status = 500" --name=server-errors
 pb sql list    # list and apply saved queries
 ```
 

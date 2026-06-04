@@ -127,6 +127,18 @@ func TestTimeInputInstantPresetKeepsSecondsStable(t *testing.T) {
 	}
 }
 
+func TestTimeInputNowBadgeOnlyForCurrentTime(t *testing.T) {
+	if !shouldShowNowBadge(time.Now()) {
+		t.Fatalf("current time should show NOW badge")
+	}
+	if shouldShowNowBadge(time.Now().Add(-time.Hour)) {
+		t.Fatalf("historical time should not show NOW badge")
+	}
+	if shouldShowNowBadge(time.Now().Add(time.Hour)) {
+		t.Fatalf("future time should not show NOW badge")
+	}
+}
+
 func TestTimeInputPresetIgnoresLeftRight(t *testing.T) {
 	now := time.Date(2026, 6, 3, 12, 34, 42, 0, time.Local)
 	m := NewTimeInputModel(now.Add(-time.Hour), now.Add(-time.Hour))
@@ -190,5 +202,16 @@ func TestTimeInputViewLabelsResultDisplayMode(t *testing.T) {
 	}
 	if !strings.Contains(view, "DISPLAY RESULTS AS") {
 		t.Fatalf("view should label result display mode, got:\n%s", view)
+	}
+}
+
+func TestTimeInputDisplayModeUsesSelectedEndOffset(t *testing.T) {
+	ref := time.Date(2026, 1, 2, 3, 4, 5, 0, time.FixedZone("Example", -5*60*60))
+
+	rows := renderTimeDisplayMode(TimeDisplayLocal, 72, false, ref)
+	view := strings.Join(rows, "\n")
+
+	if !strings.Contains(view, "UTC-05:00") {
+		t.Fatalf("display mode should use selected end offset, got:\n%s", view)
 	}
 }

@@ -49,10 +49,11 @@ var StatusCmd = &cobra.Command{
 		client := internalHTTP.DefaultClient(&profile)
 		about, err := analytics.FetchAbout(&client)
 		if err != nil {
+			statusMessage := statusErrorMessage(err)
 			errStyle := lipgloss.NewStyle().Foreground(ui.Active.Err).Bold(true)
 			fmt.Printf("Status  : %s\n", errStyle.Render("✗ Not connected"))
-			fmt.Printf("Error   : %s\n", statusErrorMessage(err))
-			return nil
+			fmt.Printf("Error   : %s\n", statusMessage)
+			return fmt.Errorf("status check failed: %s", statusMessage)
 		}
 
 		okStyle := lipgloss.NewStyle().Foreground(ui.Active.Ok).Bold(true)

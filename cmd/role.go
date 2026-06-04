@@ -246,10 +246,16 @@ var ListRoleCmd = &cobra.Command{
 		}
 
 		printRoleTable(roles, roleResponses)
+		var fetchErrors []string
 		for idx, roleName := range roles {
 			if roleResponses[idx].err != nil {
-				cmd.Annotations["errors"] += fmt.Sprintf("Error fetching role data for %s: %v\n", roleName, roleResponses[idx].err)
+				errMsg := fmt.Sprintf("Error fetching role data for %s: %v", roleName, roleResponses[idx].err)
+				fetchErrors = append(fetchErrors, errMsg)
+				cmd.Annotations["errors"] += errMsg + "\n"
 			}
+		}
+		if len(fetchErrors) > 0 {
+			return fmt.Errorf("failed to fetch details for %d role(s): %s", len(fetchErrors), strings.Join(fetchErrors, "; "))
 		}
 
 		return nil

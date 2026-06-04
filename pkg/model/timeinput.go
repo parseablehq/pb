@@ -32,6 +32,8 @@ var rangeNavigationMap = []string{
 	"list", "start", "end", "display",
 }
 
+const nowBadgeTolerance = 2 * time.Second
+
 type TimeDisplayMode string
 
 const (
@@ -129,6 +131,10 @@ func durationAbs(d time.Duration) time.Duration {
 		return -d
 	}
 	return d
+}
+
+func shouldShowNowBadge(t time.Time) bool {
+	return durationAbs(time.Since(t)) <= nowBadgeTolerance
 }
 
 func (m *TimeInputModel) focusSelected() {
@@ -288,12 +294,12 @@ func (m TimeInputModel) View() string {
 	if m.instant {
 		endTitle = "evaluation time"
 	}
-	endBox := renderTimePickerInputBox(endTitle, m.end, rightW, m.currentFocus() == "end", true)
+	endBox := renderTimePickerInputBox(endTitle, m.end, rightW, m.currentFocus() == "end", shouldShowNowBadge(m.end.Time()))
 	if m.instant {
 		startBox = []string{"", "", ""}
 	}
 
-	displayRows := renderTimeDisplayMode(m.DisplayMode(), rightW, m.currentFocus() == "display")
+	displayRows := renderTimeDisplayMode(m.DisplayMode(), rightW, m.currentFocus() == "display", m.end.Time())
 
 	rows := []string{header}
 	for i := 0; i < 9; i++ {
@@ -334,7 +340,7 @@ func renderTimePickerPreset(index, selected int, focused bool) string {
 	return "  " + name
 }
 
-func renderTimeDisplayMode(mode TimeDisplayMode, width int, focused bool) []string {
+func renderTimeDisplayMode(mode TimeDisplayMode, width int, focused bool, referenceTime time.Time) []string {
 	p := ui.Active
 	labelStyle := lipgloss.NewStyle().Foreground(p.Faint).Bold(true)
 	if focused {
@@ -343,7 +349,7 @@ func renderTimeDisplayMode(mode TimeDisplayMode, width int, focused bool) []stri
 	active := lipgloss.NewStyle().Foreground(p.InvertText).Background(p.Active).Bold(true)
 	inactive := lipgloss.NewStyle().Foreground(p.Body)
 
-	localLabel := " Local " + time.Now().Format("UTC-07:00") + " "
+	localLabel := " Local " + referenceTime.Format("UTC-07:00") + " "
 	local := inactive.Render(localLabel)
 	utc := inactive.Render(" UTC ")
 	if mode == TimeDisplayUTC {

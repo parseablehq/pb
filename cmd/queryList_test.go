@@ -14,13 +14,17 @@ func TestSavedQueryToPbQueryPrintsEmptyQueryMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pipe failed: %v", err)
 	}
+	t.Cleanup(func() {
+		os.Stdout = oldStdout
+		_ = w.Close()
+		_ = r.Close()
+	})
 	os.Stdout = w
 
 	err = savedQueryToPbQuery("   ", "", "")
 
-	w.Close()
-	os.Stdout = oldStdout
-	io.Copy(&output, r)
+	_ = w.Close()
+	_, _ = io.Copy(&output, r)
 
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
