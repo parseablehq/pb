@@ -37,15 +37,13 @@ const (
 	ThreeDay  = -72 * time.Hour
 )
 
-var (
-	timeDurations = []list.Item{
-		timeDurationItem{duration: TenMinute, repr: "10 Minutes"},
-		timeDurationItem{duration: OneHour, repr: "1 Hour"},
-		timeDurationItem{duration: FiveHour, repr: "5 Hours"},
-		timeDurationItem{duration: OneDay, repr: "1 Day"},
-		timeDurationItem{duration: ThreeDay, repr: "3 Days"},
-	}
-)
+var timeDurations = []list.Item{
+	timeDurationItem{duration: TenMinute, repr: "10 Minutes"},
+	timeDurationItem{duration: OneHour, repr: "1 Hour"},
+	timeDurationItem{duration: FiveHour, repr: "5 Hours"},
+	timeDurationItem{duration: OneDay, repr: "1 Day"},
+	timeDurationItem{duration: ThreeDay, repr: "3 Days"},
+}
 
 type timeDurationItem struct {
 	duration time.Duration

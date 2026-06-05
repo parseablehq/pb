@@ -265,7 +265,8 @@ var ListRoleCmd = &cobra.Command{
 func printRoleTable(roles []string, roleResponses []struct {
 	data []RoleData
 	err  error
-}) {
+},
+) {
 	const maxRoleWidth = 42
 	const maxStreamWidth = 48
 

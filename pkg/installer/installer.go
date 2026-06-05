@@ -180,7 +180,6 @@ func waterFall(verbose bool) {
 	ingestorURL, queryURL := getParseableSvcUrls(pbInfo.Name, pbInfo.Namespace)
 
 	printSuccessBanner(*pbInfo, config.Version, ingestorURL, queryURL)
-
 }
 
 // promptStorageClass fetches and prompts the user to select a Kubernetes storage class
@@ -514,7 +513,6 @@ func promptStore(chartValues []string) (ObjectStore, []string, error) {
 
 // promptStoreConfigs prompts for object store configurations and appends chart values
 func promptStoreConfigs(store ObjectStore, chartValues []string, plan Plan) (ObjectStoreConfig, []string, error) {
-
 	cpuIngestors := "parseable.highAvailability.ingestor.resources.limits.cpu=" + plan.CPU
 	memoryIngestors := "parseable.highAvailability.ingestor.resources.limits.memory=" + plan.Memory
 
@@ -821,7 +819,6 @@ func deployRelease(config HelmDeploymentConfig) error {
 
 // printSuccessBanner remains the same as in the original code
 func printSuccessBanner(pbInfo ParseableInfo, version, ingestorURL, queryURL string) {
-
 	// Encode credentials to Base64
 	credentials := map[string]string{
 		"username": pbInfo.Username,

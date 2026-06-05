@@ -69,8 +69,10 @@ const (
 )
 
 // overlay states (overlayNone and overlayInputs are defined in query.go)
-const overlayDataset uint = 2
-const overlayBuilder uint = 3
+const (
+	overlayDataset uint = 2
+	overlayBuilder uint = 3
+)
 
 var PromqlNavigationMap = []string{"query", "time", "dataset", "step", "table"}
 

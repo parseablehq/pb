@@ -361,7 +361,8 @@ var ListUserCmd = &cobra.Command{
 func userRoleFetchError(cmd *cobra.Command, users []UserData, roleResponses []struct {
 	data []string
 	err  error
-}) error {
+},
+) error {
 	var fetchErrors []string
 	for idx, user := range users {
 		if roleResponses[idx].err != nil {
@@ -380,7 +381,8 @@ func userRoleFetchError(cmd *cobra.Command, users []UserData, roleResponses []st
 func printUserRoleTable(users []UserData, roleResponses []struct {
 	data []string
 	err  error
-}) {
+},
+) {
 	const maxUserWidth = 64
 	userHeader := "USER"
 	rolesHeader := "ROLES"

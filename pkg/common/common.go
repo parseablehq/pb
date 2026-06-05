@@ -57,7 +57,6 @@ type InstallerEntry struct {
 
 // ReadInstallerConfigMap fetches and parses installer data from a ConfigMap
 func ReadInstallerConfigMap() ([]InstallerEntry, error) {
-
 	// Load kubeconfig and create a Kubernetes client
 	config, err := LoadKubeConfig()
 	if err != nil {
@@ -220,6 +219,7 @@ func CreateDeploymentSpinner(infoMsg string) *spinner.Spinner {
 
 	return s
 }
+
 func RemoveInstallerEntry(name string) error {
 	// Load kubeconfig and create a Kubernetes client
 	config, err := LoadKubeConfig()
@@ -247,7 +247,7 @@ func RemoveInstallerEntry(name string) error {
 	}
 
 	// Find the entry to remove by name
-	var indexToRemove = -1
+	indexToRemove := -1
 	for i, entry := range entries {
 		if entry["name"] == name {
 			indexToRemove = i

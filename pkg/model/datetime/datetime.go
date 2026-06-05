@@ -26,8 +26,10 @@ import (
 
 const localLayout = "2006-Jan-02 15:04:05"
 
-var segmentStarts = []int{0, 5, 9, 12, 15, 18}
-var segmentEnds = []int{4, 8, 11, 14, 17, 20}
+var (
+	segmentStarts = []int{0, 5, 9, 12, 15, 18}
+	segmentEnds   = []int{4, 8, 11, 14, 17, 20}
+)
 
 // Model is the model for the datetime component
 type Model struct {

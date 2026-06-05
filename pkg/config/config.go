@@ -138,5 +138,4 @@ func GetProfile() (Profile, error) {
 	}
 
 	return conf.Profiles[conf.DefaultProfile], nil
-
 }

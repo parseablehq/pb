@@ -170,7 +170,7 @@ var UninstallOssCmd = &cobra.Command{
 			return
 		}
 
-		//Perform uninstallation
+		// Perform uninstallation
 		if err := uninstallCluster(selectedCluster); err != nil {
 			log.Fatalf("Failed to uninstall cluster: %v", err)
 		}
