@@ -29,10 +29,12 @@ import (
 	"pb/pkg/datasets"
 	"pb/pkg/iterator"
 	"pb/pkg/ui"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -52,6 +54,9 @@ const (
 
 	sqlControlTimeDisplayWidth = len("02 Jun 2026, 13:25 | UTC+05:30")
 	sqlControlsMinWidth        = sqlControlTimeDisplayWidth + 4 // border + row prefix
+	sqlWindowSize              = 500
+	sqlMaxCachedWindows        = 3
+	unknownSQLTotal            = -1
 )
 
 // Theme-derived styles. All palette atoms come from pkg/ui — to swap a
@@ -146,6 +151,28 @@ type FetchData struct {
 	errMsg string
 }
 
+type sqlWindowFetchMsg struct {
+	runID       int
+	windowIndex int
+	status      FetchResult
+	schema      []string
+	data        []map[string]interface{}
+	errMsg      string
+}
+
+type sqlWindow struct {
+	index    int
+	schema   []string
+	data     []map[string]interface{}
+	lastUsed int
+}
+
+type sqlQueryPlan struct {
+	baseQuery  string
+	userLimit  int
+	userOffset int
+}
+
 type schemaMsg struct {
 	columns []string
 	errMsg  string
@@ -181,6 +208,22 @@ type QueryModel struct {
 	focused       int
 	dataRows      []table.Row // actual data rows (without padding)
 	fetchErrMsg   string      // last fetch error, shown in the result area
+	tableRowsBase int         // global row offset represented by dataRows[0]
+
+	windowSize      int
+	globalOffset    int
+	viewportStart   int
+	queryLimit      int
+	queryBaseOffset int
+	actualTotal     int
+	baseQuery       string
+	queryRunID      int
+	lockedStartUTC  string
+	lockedEndUTC    string
+	windows         map[int]sqlWindow
+	loadingWindows  map[int]bool
+	cacheClock      int
+	windowFetchErr  string
 
 	// dataset spotlight
 	dataset            string
@@ -374,6 +417,12 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 	cf.Blur()
 
 	hasQuery := strings.TrimSpace(queryStr) != ""
+	initialDataset := ""
+	if hasQuery {
+		if extracted := extractDataset(queryStr); extracted != "—" && extracted != "" && !strings.EqualFold(extracted, "dataset") {
+			initialDataset = extracted
+		}
+	}
 	model := QueryModel{
 		width:             w,
 		height:            h,
@@ -387,10 +436,18 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 		loading:           hasQuery,
 		hasQueried:        hasQuery,
 		queryIterator:     nil,
+		windowSize:        sqlWindowSize,
+		actualTotal:       unknownSQLTotal,
+		windows:           map[int]sqlWindow{},
+		loadingWindows:    map[int]bool{},
 		status:            status,
 		spotlightFilter:   sf,
 		columnFilter:      cf,
 		columnsDrawerOpen: true,
+		dataset:           initialDataset,
+	}
+	if hasQuery {
+		model.prepareSQLWindowRun()
 	}
 	return model
 }
@@ -398,9 +455,384 @@ func NewQueryModel(profile config.Profile, queryStr string, startTime, endTime t
 func (m QueryModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.spinner.Tick, fetchAllStreams(m.profile)}
 	if strings.TrimSpace(m.query.Value()) != "" {
-		cmds = append(cmds, NewFetchTask(m.profile, resolveDatasetPlaceholder(m.query.Value(), m.dataset), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()))
+		cmds = append(cmds, m.fetchSQLWindow(0))
 	}
 	return tea.Batch(cmds...)
+}
+
+func (m *QueryModel) prepareSQLWindowRun() {
+	query := resolveDatasetPlaceholder(m.query.Value(), m.dataset)
+	query = quoteUnsafeSQLTableNames(query)
+	query = quoteUnsafeSQLFieldNames(query)
+	plan := buildSQLQueryPlan(query, sqlWindowSize)
+
+	m.queryRunID++
+	m.baseQuery = plan.baseQuery
+	m.queryLimit = plan.userLimit
+	m.queryBaseOffset = plan.userOffset
+	m.actualTotal = unknownSQLTotal
+	m.globalOffset = 0
+	m.viewportStart = 0
+	m.tableRowsBase = 0
+	m.dataRows = []table.Row{}
+	m.windows = map[int]sqlWindow{}
+	m.loadingWindows = map[int]bool{}
+	m.cacheClock = 0
+	m.fetchErrMsg = ""
+	m.windowFetchErr = ""
+	m.lockedStartUTC = m.timeRange.StartValueUtc()
+	m.lockedEndUTC = m.timeRange.EndValueUtc()
+	m.loading = true
+	m.hasQueried = true
+}
+
+func (m *QueryModel) startSQLWindowRun() tea.Cmd {
+	m.prepareSQLWindowRun()
+	return m.fetchSQLWindow(0)
+}
+
+func (m *QueryModel) resetInvalidDatasetSelection() {
+	if m.dataset == "" || len(m.allDatasets) == 0 {
+		return
+	}
+	for i, ds := range m.allDatasets {
+		if ds == m.dataset {
+			m.datasetSelectedIdx = i
+			return
+		}
+	}
+	m.dataset = m.allDatasets[0]
+	m.datasetSelectedIdx = 0
+}
+
+func (m *QueryModel) fetchSQLWindow(windowIndex int) tea.Cmd {
+	if windowIndex < 0 || m.baseQuery == "" {
+		return nil
+	}
+	if m.queryLimit >= 0 && windowIndex*m.windowSize >= m.queryLimit {
+		return nil
+	}
+	if _, ok := m.windows[windowIndex]; ok {
+		return nil
+	}
+	if m.loadingWindows[windowIndex] {
+		return nil
+	}
+	fetchLimit := m.windowSize
+	if m.queryLimit >= 0 {
+		remaining := m.queryLimit - windowIndex*m.windowSize
+		if remaining <= 0 {
+			return nil
+		}
+		if remaining < fetchLimit {
+			fetchLimit = remaining
+		}
+	}
+	m.loadingWindows[windowIndex] = true
+	return NewSQLWindowFetchTask(m.profile, m.queryRunID, m.baseQuery, m.queryBaseOffset, m.windowSize, fetchLimit, windowIndex, m.lockedStartUTC, m.lockedEndUTC)
+}
+
+func (m *QueryModel) completeSQLWindowFetch(msg sqlWindowFetchMsg) tea.Cmd {
+	if msg.runID != m.queryRunID {
+		return nil
+	}
+	delete(m.loadingWindows, msg.windowIndex)
+	m.loading = len(m.windows) == 0 && len(m.loadingWindows) > 0
+	m.status.Info = ""
+
+	if msg.status != fetchOk {
+		if msg.errMsg == "" {
+			msg.errMsg = "query failed"
+		}
+		if len(m.windows) == 0 {
+			m.dataRows = []table.Row{}
+			m.table = m.table.WithRows([]table.Row{})
+			m.fetchErrMsg = msg.errMsg
+			m.status.Error = "query failed"
+			m.resetInvalidDatasetSelection()
+			return nil
+		}
+		m.windowFetchErr = msg.errMsg
+		m.status.Error = "window fetch failed"
+		m.refreshVisibleRows()
+		return nil
+	}
+
+	m.fetchErrMsg = ""
+	m.windowFetchErr = ""
+	m.status.Error = ""
+	m.cacheClock++
+	m.windows[msg.windowIndex] = sqlWindow{
+		index:    msg.windowIndex,
+		schema:   msg.schema,
+		data:     msg.data,
+		lastUsed: m.cacheClock,
+	}
+	m.evictSQLWindows()
+
+	if len(msg.schema) > 0 {
+		m.schema = msg.schema
+		m.UpdateTableColumns(msg.schema, msg.data)
+	}
+	if len(msg.data) < m.windowSize {
+		m.actualTotal = msg.windowIndex*m.windowSize + len(msg.data)
+	}
+	if m.queryLimit >= 0 && m.actualTotal >= 0 && m.actualTotal > m.queryLimit {
+		m.actualTotal = m.queryLimit
+	}
+	if m.currentTotal() == 0 {
+		m.globalOffset = 0
+	} else if m.globalOffset >= m.currentTotal() {
+		m.globalOffset = m.currentTotal() - 1
+	}
+	m.clampSQLViewport()
+	m.refreshVisibleRows()
+	m.focusPane("table")
+	return m.prefetchSQLWindowIfNeeded()
+}
+
+func (m *QueryModel) evictSQLWindows() {
+	for len(m.windows) > sqlMaxCachedWindows {
+		evictIdx := -1
+		evictUsed := int(^uint(0) >> 1)
+		for idx, win := range m.windows {
+			if idx == m.currentWindowIndex() {
+				continue
+			}
+			if win.lastUsed < evictUsed {
+				evictIdx = idx
+				evictUsed = win.lastUsed
+			}
+		}
+		if evictIdx < 0 {
+			for idx, win := range m.windows {
+				if win.lastUsed < evictUsed {
+					evictIdx = idx
+					evictUsed = win.lastUsed
+				}
+			}
+		}
+		if evictIdx < 0 {
+			return
+		}
+		delete(m.windows, evictIdx)
+	}
+}
+
+func (m QueryModel) currentWindowIndex() int {
+	if m.windowSize <= 0 {
+		return 0
+	}
+	return m.globalOffset / m.windowSize
+}
+
+func (m QueryModel) currentTotal() int {
+	if m.actualTotal >= 0 {
+		return m.actualTotal
+	}
+	if m.queryLimit >= 0 {
+		return m.queryLimit
+	}
+	return 0
+}
+
+func (m *QueryModel) refreshVisibleRows() {
+	total := m.currentTotal()
+	if total == 0 {
+		m.dataRows = []table.Row{}
+		m.table = m.table.WithRows(m.dataRows)
+		m.viewportStart = 0
+		return
+	}
+	pageSize := m.tablePageSize()
+	if pageSize < 1 {
+		pageSize = 1
+	}
+	m.clampSQLViewport()
+	start := m.viewportStart
+	rows := make([]table.Row, 0, pageSize)
+	for abs := start; abs < total && len(rows) < pageSize; abs++ {
+		winIdx := abs / m.windowSize
+		local := abs % m.windowSize
+		win, ok := m.windows[winIdx]
+		if ok && local < len(win.data) {
+			m.cacheClock++
+			win.lastUsed = m.cacheClock
+			m.windows[winIdx] = win
+			rows = append(rows, table.NewRow(m.formatSQLRow(win.data[local])))
+			continue
+		}
+		rows = append(rows, table.NewRow(m.placeholderSQLRow(abs)))
+	}
+	m.tableRowsBase = start
+	m.dataRows = rows
+	highlight := m.globalOffset - start
+	if highlight < 0 {
+		highlight = 0
+	}
+	if highlight >= len(rows) && len(rows) > 0 {
+		highlight = len(rows) - 1
+	}
+	m.table = m.table.WithRows(m.dataRows).WithHighlightedRow(highlight)
+}
+
+func (m *QueryModel) clampSQLViewport() {
+	total := m.currentTotal()
+	pageSize := m.tablePageSize()
+	if pageSize < 1 {
+		pageSize = 1
+	}
+	if total <= 0 {
+		m.viewportStart = 0
+		return
+	}
+	if m.globalOffset < 0 {
+		m.globalOffset = 0
+	}
+	if m.globalOffset >= total {
+		m.globalOffset = total - 1
+	}
+	maxStart := total - pageSize
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	if m.viewportStart > maxStart {
+		m.viewportStart = maxStart
+	}
+	if m.viewportStart < 0 {
+		m.viewportStart = 0
+	}
+	if m.globalOffset < m.viewportStart {
+		m.viewportStart = m.globalOffset
+	}
+	if m.globalOffset >= m.viewportStart+pageSize {
+		m.viewportStart = m.globalOffset - pageSize + 1
+	}
+}
+
+func (m QueryModel) tablePageSize() int {
+	if m.height == 0 {
+		return 10
+	}
+	bh := lipgloss.Height(buildBottomBar(m, m.width))
+	ps := sqlPageSize(m.height, bh)
+	if ps < 1 {
+		return 1
+	}
+	return ps
+}
+
+func (m QueryModel) currentTablePage() int {
+	pageSize := m.tablePageSize()
+	if pageSize < 1 {
+		pageSize = 1
+	}
+	return m.globalOffset/pageSize + 1
+}
+
+func (m QueryModel) maxTablePages() int {
+	total := m.currentTotal()
+	if total <= 0 {
+		return 1
+	}
+	pageSize := m.tablePageSize()
+	if pageSize < 1 {
+		pageSize = 1
+	}
+	pages := (total + pageSize - 1) / pageSize
+	if pages < 1 {
+		return 1
+	}
+	return pages
+}
+
+func (m QueryModel) formatSQLRow(row map[string]interface{}) table.RowData {
+	out := make(table.RowData, len(row))
+	for k, v := range row {
+		out[k] = v
+	}
+	if ts, ok := out[dateTimeKey].(string); ok {
+		out[dateTimeKey] = formatTimestampToDisplayHMS(ts, m.timeRange.start.Time().Location(), m.timeRange.DisplayMode())
+	}
+	return out
+}
+
+func (m QueryModel) placeholderSQLRow(abs int) table.RowData {
+	row := table.RowData{}
+	for _, col := range m.schema {
+		row[col] = "loading..."
+	}
+	if len(row) == 0 {
+		row["Id"] = fmt.Sprintf("%d", abs+1)
+	}
+	return row
+}
+
+func (m *QueryModel) prefetchSQLWindowIfNeeded() tea.Cmd {
+	winIdx := m.currentWindowIndex()
+	local := m.globalOffset % m.windowSize
+	if local < int(float64(m.windowSize)*0.9) {
+		return nil
+	}
+	return m.fetchSQLWindow(winIdx + 1)
+}
+
+func (m *QueryModel) ensureCurrentSQLWindow() tea.Cmd {
+	return m.fetchSQLWindow(m.currentWindowIndex())
+}
+
+func (m *QueryModel) moveSQLCursor(delta int) tea.Cmd {
+	total := m.currentTotal()
+	if total == 0 {
+		return nil
+	}
+	next := m.globalOffset + delta
+	if next < 0 {
+		next = 0
+	}
+	if next >= total {
+		next = total - 1
+	}
+	if next == m.globalOffset {
+		return nil
+	}
+	m.globalOffset = next
+	m.clampSQLViewport()
+	m.refreshVisibleRows()
+	return tea.Batch(m.ensureCurrentSQLWindow(), m.prefetchSQLWindowIfNeeded())
+}
+
+func (m *QueryModel) handleSQLTableNavigation(msg tea.KeyMsg) (bool, tea.Cmd) {
+	if m.table.GetIsFilterInputFocused() || len(m.dataRows) == 0 {
+		return false, nil
+	}
+	page := m.tablePageSize()
+	switch {
+	case key.Matches(msg, tableKeyBinds.RowUp):
+		return true, m.moveSQLCursor(-1)
+	case key.Matches(msg, tableKeyBinds.RowDown):
+		return true, m.moveSQLCursor(1)
+	case key.Matches(msg, tableKeyBinds.PageUp):
+		return true, m.moveSQLCursor(-page)
+	case key.Matches(msg, tableKeyBinds.PageDown):
+		return true, m.moveSQLCursor(page)
+	case key.Matches(msg, tableKeyBinds.PageFirst):
+		m.globalOffset = 0
+		m.viewportStart = 0
+		m.refreshVisibleRows()
+		return true, m.ensureCurrentSQLWindow()
+	case key.Matches(msg, tableKeyBinds.PageLast):
+		total := m.currentTotal()
+		if total > 0 {
+			m.globalOffset = total - 1
+			m.viewportStart = total - page
+			m.refreshVisibleRows()
+			return true, m.ensureCurrentSQLWindow()
+		}
+		return true, nil
+	default:
+		return false, nil
+	}
 }
 
 func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -423,6 +855,9 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status.width = m.width
 		bh := lipgloss.Height(buildBottomBar(m, m.width))
 		m.table = m.table.WithMaxTotalWidth(m.width).WithPageSize(sqlPageSize(m.height, bh))
+		if len(m.windows) > 0 {
+			m.refreshVisibleRows()
+		}
 		return m, nil
 
 	case schemaMsg:
@@ -451,6 +886,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
+			m.resetInvalidDatasetSelection()
 			if m.columnsDrawerOpen && m.dataset != "" && len(m.allColumns) == 0 && !m.columnsLoading {
 				m.columnsLoading = true
 				cmds = append(cmds, fetchStreamSchema(m.profile, m.dataset))
@@ -483,6 +919,10 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status.Error = "query failed"
 		}
 		return m, nil
+
+	case sqlWindowFetchMsg:
+		cmds = append(cmds, m.completeSQLWindowFetch(msg))
+		return m, tea.Batch(cmds...)
 
 		// Is it a key press?
 	case tea.KeyMsg:
@@ -698,7 +1138,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status.Info = ""
 				m.loading = true
 				m.hasQueried = true
-				return m, tea.Batch(m.spinner.Tick, NewFetchTask(m.profile, resolveDatasetPlaceholder(m.query.Value(), m.dataset), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()))
+				return m, tea.Batch(m.spinner.Tick, m.startSQLWindowRun())
 			}
 		}
 
@@ -712,7 +1152,7 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status.Info = ""
 			m.loading = true
 			m.hasQueried = true
-			return m, tea.Batch(m.spinner.Tick, NewFetchTask(m.profile, resolveDatasetPlaceholder(m.query.Value(), m.dataset), m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc()))
+			return m, tea.Batch(m.spinner.Tick, m.startSQLWindowRun())
 		}
 
 		if msg.Type == tea.KeyCtrlB {
@@ -734,7 +1174,11 @@ func (m QueryModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "query":
 					m.query, cmd = m.query.Update(msg)
 				case "table":
-					m.table, cmd = m.table.Update(msg)
+					if handled, navCmd := m.handleSQLTableNavigation(msg); handled {
+						cmd = navCmd
+					} else {
+						m.table, cmd = m.table.Update(msg)
+					}
 				}
 				cmds = append(cmds, cmd)
 			case overlayInputs:
@@ -906,12 +1350,17 @@ func (m QueryModel) View() string {
 			Width(resultsInnerW).
 			Render(" --")
 		var leftPart, rightPart string
-		if m.table.MaxPages() > 1 {
-			leftPart = fmt.Sprintf("%d/%d", m.table.CurrentPage(), m.table.MaxPages())
+		if m.currentTotal() > 0 {
+			leftPart = fmt.Sprintf("%d/%d", m.currentTablePage(), m.maxTablePages())
 		}
-		if len(m.dataRows) > 0 {
-			curRow := m.table.GetHighlightedRowIndex() + 1
-			rightPart = fmt.Sprintf("%d | %d rows", curRow, len(m.dataRows))
+		if len(m.dataRows) > 0 && m.currentTotal() > 0 {
+			rightPart = fmt.Sprintf("rows %d/%d", m.globalOffset+1, m.currentTotal())
+			if len(m.loadingWindows) > 0 {
+				rightPart += " · loading"
+			}
+			if m.windowFetchErr != "" {
+				rightPart += " · fetch failed"
+			}
 		}
 		faint := lipgloss.NewStyle().Foreground(p.Faint)
 		leftR, rightR := faint.Render(leftPart), faint.Render(rightPart)
@@ -1378,6 +1827,7 @@ func queryKeysForFocus(m QueryModel) []ui.KeyHint {
 	case "table":
 		return append([]ui.KeyHint{
 			{Key: "<↑/↓>", Label: "Row"},
+			{Key: "<shift+↑/↓>", Label: "Page"},
 			{Key: "</>", Label: "Filter"},
 		}, common...)
 	}
@@ -1462,6 +1912,171 @@ func ensureDefaultSQLLimit(query string) string {
 		separator = "\n"
 	}
 	return trimmed + separator + "LIMIT 500" + suffix
+}
+
+func buildSQLQueryPlan(query string, defaultLimit int) sqlQueryPlan {
+	base, limit, offset := stripTopLevelSQLLimitOffset(query)
+	if strings.TrimSpace(base) == "" {
+		base = strings.TrimSpace(query)
+	}
+	if limit < 0 {
+		limit = defaultLimit
+	}
+	return sqlQueryPlan{
+		baseQuery:  base,
+		userLimit:  limit,
+		userOffset: offset,
+	}
+}
+
+func injectSQLWindow(query string, limit, offset int) string {
+	base, _, _ := stripTopLevelSQLLimitOffset(query)
+	base = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(base), ";"))
+	if offset < 0 {
+		offset = 0
+	}
+	return fmt.Sprintf("%s LIMIT %d OFFSET %d", base, limit, offset)
+}
+
+func stripTopLevelSQLLimitOffset(query string) (base string, limit int, offset int) {
+	limit = -1
+	offset = 0
+	limitPos, offsetPos := findTopLevelSQLLimitOffset(query)
+	stripPos := -1
+	if limitPos >= 0 {
+		stripPos = limitPos
+		limit = readSQLClauseInt(query, limitPos+len("limit"))
+	}
+	if offsetPos >= 0 {
+		if stripPos < 0 || offsetPos < stripPos {
+			stripPos = offsetPos
+		}
+		if parsed := readSQLClauseInt(query, offsetPos+len("offset")); parsed >= 0 {
+			offset = parsed
+		}
+	}
+	if stripPos < 0 {
+		return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(query), ";")), limit, offset
+	}
+	suffix := ""
+	trimmed := strings.TrimSpace(query)
+	if strings.HasSuffix(trimmed, ";") {
+		suffix = ";"
+	}
+	base = strings.TrimSpace(query[:stripPos])
+	base = strings.TrimSpace(strings.TrimSuffix(base, ";"))
+	if suffix != "" {
+		base = strings.TrimSpace(strings.TrimSuffix(base, ";"))
+	}
+	return base, limit, offset
+}
+
+func findTopLevelSQLLimitOffset(query string) (limitPos int, offsetPos int) {
+	limitPos, offsetPos = -1, -1
+	depth := 0
+	for i := 0; i < len(query); {
+		switch query[i] {
+		case '\'':
+			i = skipSQLString(query, i)
+		case '"':
+			i = skipSQLQuotedIdentifier(query, i)
+		case '-':
+			if i+1 < len(query) && query[i+1] == '-' {
+				i += 2
+				for i < len(query) && query[i] != '\n' {
+					i++
+				}
+				continue
+			}
+			i++
+		case '/':
+			if i+1 < len(query) && query[i+1] == '*' {
+				i += 2
+				for i+1 < len(query) {
+					if query[i] == '*' && query[i+1] == '/' {
+						i += 2
+						break
+					}
+					i++
+				}
+				continue
+			}
+			i++
+		case '(':
+			depth++
+			i++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+			i++
+		default:
+			if depth == 0 {
+				if limitPos < 0 && isSQLLimitTokenAt(query, i) {
+					limitPos = i
+					i += len("limit")
+					continue
+				}
+				if offsetPos < 0 && isSQLKeywordAt(query, i, "offset") {
+					offsetPos = i
+					i += len("offset")
+					continue
+				}
+			}
+			i++
+		}
+	}
+	return limitPos, offsetPos
+}
+
+func readSQLClauseInt(query string, pos int) int {
+	for pos < len(query) && isSQLSpace(query[pos]) {
+		pos++
+	}
+	start := pos
+	for pos < len(query) && query[pos] >= '0' && query[pos] <= '9' {
+		pos++
+	}
+	if start == pos {
+		return -1
+	}
+	value, err := strconv.Atoi(query[start:pos])
+	if err != nil {
+		return -1
+	}
+	return value
+}
+
+func skipSQLString(query string, start int) int {
+	i := start + 1
+	for i < len(query) {
+		if query[i] == '\'' {
+			i++
+			if i < len(query) && query[i] == '\'' {
+				i++
+				continue
+			}
+			break
+		}
+		i++
+	}
+	return i
+}
+
+func skipSQLQuotedIdentifier(query string, start int) int {
+	i := start + 1
+	for i < len(query) {
+		if query[i] == '"' {
+			i++
+			if i < len(query) && query[i] == '"' {
+				i++
+				continue
+			}
+			break
+		}
+		i++
+	}
+	return i
 }
 
 func hasTopLevelSQLLimit(query string) bool {
@@ -1659,6 +2274,36 @@ func extractDataset(sql string) string {
 		return "—"
 	}
 	rest := strings.TrimSpace(sql[i+6:])
+	if strings.HasPrefix(rest, `"`) {
+		var b strings.Builder
+		for i := 1; i < len(rest); i++ {
+			if rest[i] == '"' {
+				if i+1 < len(rest) && rest[i+1] == '"' {
+					b.WriteByte('"')
+					i++
+					continue
+				}
+				return b.String()
+			}
+			b.WriteByte(rest[i])
+		}
+		return strings.TrimPrefix(rest, `"`)
+	}
+	if strings.HasPrefix(rest, `'`) {
+		var b strings.Builder
+		for i := 1; i < len(rest); i++ {
+			if rest[i] == '\'' {
+				if i+1 < len(rest) && rest[i+1] == '\'' {
+					b.WriteByte('\'')
+					i++
+					continue
+				}
+				return b.String()
+			}
+			b.WriteByte(rest[i])
+		}
+		return strings.TrimPrefix(rest, `'`)
+	}
 	if sp := strings.IndexAny(rest, " ,;\n\t)"); sp > 0 {
 		return rest[:sp]
 	}
@@ -1955,6 +2600,39 @@ func NewFetchTask(profile config.Profile, query string, startTime string, endTim
 	}
 }
 
+func NewSQLWindowFetchTask(profile config.Profile, runID int, baseQuery string, baseOffset, windowSize, fetchLimit, windowIndex int, startTime string, endTime string) tea.Cmd {
+	return func() (msg tea.Msg) {
+		res := sqlWindowFetchMsg{
+			runID:       runID,
+			windowIndex: windowIndex,
+			status:      fetchErr,
+			schema:      []string{},
+			data:        []map[string]interface{}{},
+		}
+		defer func() {
+			if r := recover(); r != nil {
+				res.errMsg = "query failed"
+				msg = res
+			}
+		}()
+
+		client := &http.Client{
+			Timeout: time.Second * 50,
+		}
+		query := injectSQLWindow(baseQuery, fetchLimit, baseOffset+windowIndex*windowSize)
+		data, status, errMsg := fetchDataRaw(client, &profile, query, startTime, endTime)
+		if status == fetchOk {
+			res.data = data.Records
+			res.schema = data.Fields
+			res.status = fetchOk
+		} else {
+			res.errMsg = errMsg
+		}
+		msg = res
+		return msg
+	}
+}
+
 func IteratorNext(iter *iterator.QueryIterator[QueryData, FetchResult]) tea.Cmd {
 	return func() tea.Msg {
 		res := FetchData{
@@ -1996,12 +2674,15 @@ func IteratorPrev(iter *iterator.QueryIterator[QueryData, FetchResult]) tea.Cmd 
 }
 
 func fetchData(client *http.Client, profile *config.Profile, query string, startTime string, endTime string) (data QueryData, res FetchResult, errMsg string) {
-	data = QueryData{}
-	res = fetchErr
 	query = quoteUnsafeSQLTableNames(query)
 	query = quoteUnsafeSQLFieldNames(query)
 	query = ensureDefaultSQLLimit(query)
+	return fetchDataRaw(client, profile, query, startTime, endTime)
+}
 
+func fetchDataRaw(client *http.Client, profile *config.Profile, query string, startTime string, endTime string) (data QueryData, res FetchResult, errMsg string) {
+	data = QueryData{}
+	res = fetchErr
 	body, err := json.Marshal(map[string]string{
 		"query":     query,
 		"startTime": startTime,
@@ -2064,33 +2745,48 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 		return
 	}
 
-	m.schema = data.schema
+	m.UpdateTableColumns(data.schema, data.data)
+
+	m.dataRows = make([]table.Row, len(data.data))
+	for i, rowJSON := range data.data {
+		m.dataRows[i] = table.NewRow(m.formatSQLRow(rowJSON))
+	}
+
+	m.tableRowsBase = 0
+	m.table = m.table.WithRows(m.dataRows)
+}
+
+func (m *QueryModel) UpdateTableColumns(schema []string, sample []map[string]interface{}) {
+	if len(schema) == 0 {
+		return
+	}
+
+	m.schema = schema
 
 	// Build column specs: timestamp pinned left, p_tags/p_metadata pinned right.
 	var specs []colSpec
-	resultLoc := m.timeRange.start.Time().Location()
 	resultTimeLabel := formatResultTimeLabel(m.timeRange.DisplayMode())
 
-	if slices.Contains(data.schema, dateTimeKey) {
+	if slices.Contains(schema, dateTimeKey) {
 		specs = append(specs, colSpec{key: dateTimeKey, title: "time " + resultTimeLabel, width: dateTimeWidth, fixed: true})
 	}
 
-	for _, title := range data.schema {
+	for _, title := range schema {
 		switch title {
 		case dateTimeKey, tagKey, metadataKey:
 			continue
 		default:
-			w := inferWidthForColumns(title, &data.data, 100, 100) + 1
+			w := inferWidthForColumns(title, &sample, 100, 100) + 1
 			specs = append(specs, colSpec{key: title, title: title, width: w, filterable: true})
 		}
 	}
 
-	if slices.Contains(data.schema, tagKey) {
-		specs = append(specs, colSpec{key: tagKey, title: tagKey, width: inferWidthForColumns(tagKey, &data.data, 100, 80), filterable: true})
+	if slices.Contains(schema, tagKey) {
+		specs = append(specs, colSpec{key: tagKey, title: tagKey, width: inferWidthForColumns(tagKey, &sample, 100, 80), filterable: true})
 	}
 
-	if slices.Contains(data.schema, metadataKey) {
-		specs = append(specs, colSpec{key: metadataKey, title: metadataKey, width: inferWidthForColumns(metadataKey, &data.data, 100, 80), filterable: true})
+	if slices.Contains(schema, metadataKey) {
+		specs = append(specs, colSpec{key: metadataKey, title: metadataKey, width: inferWidthForColumns(metadataKey, &sample, 100, 80), filterable: true})
 	}
 
 	if m.width > 0 && len(specs) > 0 {
@@ -2142,16 +2838,7 @@ func (m *QueryModel) UpdateTable(data FetchData) {
 		columns = append(columns, col)
 	}
 
-	m.dataRows = make([]table.Row, len(data.data))
-	for i, rowJSON := range data.data {
-		if ts, ok := rowJSON[dateTimeKey].(string); ok {
-			rowJSON[dateTimeKey] = formatTimestampToDisplayHMS(ts, resultLoc, m.timeRange.DisplayMode())
-		}
-		m.dataRows[i] = table.NewRow(rowJSON)
-	}
-
 	m.table = m.table.WithColumns(columns).WithMaxTotalWidth(m.width)
-	m.table = m.table.WithRows(m.dataRows)
 }
 
 func inferWidthForColumns(column string, data *[]map[string]interface{}, maxRecords int, maxWidth int) (width int) {
