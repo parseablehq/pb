@@ -17,7 +17,7 @@
 package cmd
 
 import (
-	"pb/pkg/ui"
+	"github.com/parseablehq/pb/pkg/ui"
 
 	"github.com/charmbracelet/lipgloss"
 )

@@ -17,10 +17,10 @@ package cmd
 
 import (
 	"fmt"
-	"pb/pkg/config"
-	"pb/pkg/model/login"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/parseablehq/pb/pkg/config"
+	"github.com/parseablehq/pb/pkg/model/login"
 	"github.com/spf13/cobra"
 )
 

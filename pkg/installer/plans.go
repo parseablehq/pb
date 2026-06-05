@@ -18,7 +18,7 @@ package installer
 import (
 	"fmt"
 
-	"pb/pkg/common"
+	"github.com/parseablehq/pb/pkg/common"
 
 	"github.com/manifoldco/promptui"
 )

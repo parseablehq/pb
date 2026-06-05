@@ -20,12 +20,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"pb/pkg/model/role"
 	"strings"
 	"sync"
 	"time"
 
-	internalHTTP "pb/pkg/http"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
+	"github.com/parseablehq/pb/pkg/model/role"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"

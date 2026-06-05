@@ -26,8 +26,9 @@ import (
 	"strings"
 	"time"
 
-	internalHTTP "pb/pkg/http"
-	"pb/pkg/model"
+	"github.com/charmbracelet/lipgloss"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
+	"github.com/parseablehq/pb/pkg/model"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -412,10 +413,9 @@ var promqlLabelsCmd = &cobra.Command{
 		if resp.Status == "error" {
 			return fmt.Errorf("%s", resp.Error)
 		}
-		for _, l := range resp.Data {
-			fmt.Println(l)
+		for _, label := range resp.Data {
+			fmt.Println((&DatasetListItem{Name: label}).Render())
 		}
-		fmt.Printf("\ntotal=%d\n", len(resp.Data))
 		return nil
 	},
 }
@@ -583,11 +583,7 @@ var promqlCardinalityLabelNamesCmd = &cobra.Command{
 		if resp.Status == "error" {
 			return fmt.Errorf("%s", resp.Error)
 		}
-		fmt.Printf("%-40s  %s\n", "LABEL", "DISTINCT VALUES")
-		fmt.Println(strings.Repeat("-", 55))
-		for _, e := range resp.Data {
-			fmt.Printf("%-40s  %d\n", e.Name, e.Value)
-		}
+		printCardinalityEntryTable("LABEL", "DISTINCT VALUES", resp.Data)
 		return nil
 	},
 }
@@ -635,13 +631,52 @@ var promqlCardinalityLabelValuesCmd = &cobra.Command{
 		if resp.Status == "error" {
 			return fmt.Errorf("%s", resp.Error)
 		}
-		fmt.Printf("%-40s  %s\n", "VALUE", "SERIES COUNT")
-		fmt.Println(strings.Repeat("-", 55))
-		for _, e := range resp.Data {
-			fmt.Printf("%-40s  %d\n", e.Name, e.Value)
-		}
+		printCardinalityEntryTable("VALUE", "SERIES COUNT", resp.Data)
 		return nil
 	},
+}
+
+func printCardinalityEntryTable(nameHeader, valueHeader string, entries []cardinalityEntry) {
+	const maxNameWidth = 64
+	nameWidth := lipgloss.Width(nameHeader)
+	for _, entry := range entries {
+		width := lipgloss.Width(entry.Name)
+		if width > maxNameWidth {
+			width = maxNameWidth
+		}
+		if width > nameWidth {
+			nameWidth = width
+		}
+	}
+
+	headerStyle := SelectedStyle.Bold(true)
+	bodyStyle := StandardStyle
+	ruleStyle := StandardStyleRule
+	leaderStyle := StandardStyleRule
+	valueStyle := StandardStyle
+	nameColumn := nameWidth + 4
+
+	fmt.Printf("%s%s\n",
+		headerStyle.Render(padRight(nameHeader, nameColumn)),
+		headerStyle.Render(valueHeader),
+	)
+	fmt.Printf("%s%s\n",
+		ruleStyle.Render(strings.Repeat("─", nameColumn)),
+		ruleStyle.Render(strings.Repeat("─", lipgloss.Width(valueHeader))),
+	)
+	for _, entry := range entries {
+		nameCell := truncateCell(entry.Name, maxNameWidth)
+		leaderWidth := nameColumn - lipgloss.Width(nameCell) - 1
+		if leaderWidth < 2 {
+			leaderWidth = 2
+		}
+		fmt.Printf("%s %s %s\n",
+			bodyStyle.Render(nameCell),
+			leaderStyle.Render(strings.Repeat(".", leaderWidth)),
+			valueStyle.Render(fmt.Sprintf("%d", entry.Value)),
+		)
+	}
+	fmt.Println()
 }
 
 // cardinality active-series
@@ -806,38 +841,56 @@ var promqlTSDBCmd = &cobra.Command{
 		}
 
 		d := resp.Data
-		fmt.Printf("Total Series:       %d\n", d.TotalSeries)
-		fmt.Printf("Total Label Pairs:  %d\n\n", d.TotalLabelValuePairs)
+		printTSDBSummary(d.TotalSeries, d.TotalLabelValuePairs)
 
 		if len(d.SeriesByMetric) > 0 {
-			fmt.Println("Top metrics by series count:")
-			for _, e := range d.SeriesByMetric {
-				fmt.Printf("  %-50s  %d\n", e.Name, e.Value)
-			}
-			fmt.Println()
+			printCardinalitySection("Top metrics by series count", "METRIC", "SERIES", d.SeriesByMetric)
 		}
 		if len(d.SeriesByLabel) > 0 {
-			fmt.Println("Top labels by series count:")
-			for _, e := range d.SeriesByLabel {
-				fmt.Printf("  %-40s  %d\n", e.Name, e.Value)
-			}
-			fmt.Println()
+			printCardinalitySection("Top labels by series count", "LABEL", "SERIES", d.SeriesByLabel)
 		}
 		if len(d.SeriesByFocusLabel) > 0 {
-			fmt.Printf("Series by %s value:\n", focusLabel)
-			for _, e := range d.SeriesByFocusLabel {
-				fmt.Printf("  %-40s  %d\n", e.Name, e.Value)
-			}
-			fmt.Println()
+			printCardinalitySection(fmt.Sprintf("Series by %s value", focusLabel), "VALUE", "SERIES", d.SeriesByFocusLabel)
 		}
 		if len(d.LabelValueCount) > 0 {
-			fmt.Println("Distinct values per label:")
-			for _, e := range d.LabelValueCount {
-				fmt.Printf("  %-40s  %d\n", e.Name, e.Value)
-			}
+			printCardinalitySection("Distinct values per label", "LABEL", "DISTINCT VALUES", d.LabelValueCount)
 		}
 		return nil
 	},
+}
+
+func printTSDBSummary(totalSeries, totalLabelValuePairs int) {
+	headerStyle := SelectedStyle.Bold(true)
+	bodyStyle := StandardStyle
+	leaderStyle := StandardStyleRule
+	const labelWidth = 24
+
+	fmt.Println()
+	fmt.Println(headerStyle.Render("TSDB SUMMARY"))
+	for _, row := range []struct {
+		label string
+		value int
+	}{
+		{label: "Total Series", value: totalSeries},
+		{label: "Total Label Pairs", value: totalLabelValuePairs},
+	} {
+		leaderWidth := labelWidth - lipgloss.Width(row.label)
+		if leaderWidth < 2 {
+			leaderWidth = 2
+		}
+		fmt.Printf("%s %s %s\n",
+			bodyStyle.Render(row.label),
+			leaderStyle.Render(strings.Repeat(".", leaderWidth)),
+			bodyStyle.Render(fmt.Sprintf("%d", row.value)),
+		)
+	}
+	fmt.Println()
+}
+
+func printCardinalitySection(title, nameHeader, valueHeader string, entries []cardinalityEntry) {
+	fmt.Println()
+	fmt.Println(SelectedStyle.Bold(true).Render(title))
+	printCardinalityEntryTable(nameHeader, valueHeader, entries)
 }
 
 // ---------------------------------------------------------------------------

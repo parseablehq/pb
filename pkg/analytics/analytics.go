@@ -30,8 +30,8 @@ import (
 	"strings"
 	"time"
 
-	"pb/pkg/config"
-	internalHTTP "pb/pkg/http"
+	"github.com/parseablehq/pb/pkg/config"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/spf13/cobra"

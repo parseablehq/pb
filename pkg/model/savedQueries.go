@@ -24,8 +24,8 @@ import (
 	"strings"
 	"time"
 
-	"pb/pkg/config"
-	"pb/pkg/ui"
+	"github.com/parseablehq/pb/pkg/config"
+	"github.com/parseablehq/pb/pkg/ui"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"

@@ -23,8 +23,8 @@ import (
 	"net/http"
 	"os"
 
-	"pb/pkg/common"
-	internalHTTP "pb/pkg/http"
+	"github.com/parseablehq/pb/pkg/common"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
 
 	"github.com/spf13/cobra"
 )

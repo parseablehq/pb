@@ -25,9 +25,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"pb/pkg/config"
-	"pb/pkg/datasets"
-	"pb/pkg/ui"
 	"regexp"
 	"sort"
 	"strconv"
@@ -45,6 +42,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	table "github.com/evertras/bubble-table/table"
+	"github.com/parseablehq/pb/pkg/config"
+	"github.com/parseablehq/pb/pkg/datasets"
+	"github.com/parseablehq/pb/pkg/ui"
 	"golang.org/x/term"
 )
 

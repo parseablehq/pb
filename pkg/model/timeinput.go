@@ -17,8 +17,6 @@
 package model
 
 import (
-	"pb/pkg/model/datetime"
-	"pb/pkg/ui"
 	"strings"
 	"time"
 
@@ -26,6 +24,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/reflow/truncate"
+	"github.com/parseablehq/pb/pkg/model/datetime"
+	"github.com/parseablehq/pb/pkg/ui"
 )
 
 var rangeNavigationMap = []string{

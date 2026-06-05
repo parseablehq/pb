@@ -20,12 +20,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"pb/pkg/config"
-	internalHTTP "pb/pkg/http"
-	"pb/pkg/model"
 	"strings"
 	"time"
 
+	"github.com/parseablehq/pb/pkg/config"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
+	"github.com/parseablehq/pb/pkg/model"
 	"github.com/spf13/cobra"
 )
 

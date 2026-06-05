@@ -16,7 +16,7 @@
 package views
 
 import (
-	"pb/pkg/ui"
+	"github.com/parseablehq/pb/pkg/ui"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

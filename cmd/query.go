@@ -27,9 +27,9 @@ import (
 	"strings"
 	"time"
 
-	"pb/pkg/model"
+	"github.com/parseablehq/pb/pkg/model"
 
-	internalHTTP "pb/pkg/http"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
 
 	tea "github.com/charmbracelet/bubbletea"
 

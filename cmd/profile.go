@@ -20,12 +20,12 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"pb/pkg/config"
-	"pb/pkg/model/credential"
-	"pb/pkg/model/defaultprofile"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/parseablehq/pb/pkg/config"
+	"github.com/parseablehq/pb/pkg/model/credential"
+	"github.com/parseablehq/pb/pkg/model/defaultprofile"
 	"github.com/spf13/cobra"
 )
 
