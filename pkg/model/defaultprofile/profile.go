@@ -18,12 +18,12 @@ package defaultprofile
 import (
 	"fmt"
 	"io"
-	"pb/pkg/config"
-	"pb/pkg/ui"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/parseablehq/pb/pkg/config"
+	"github.com/parseablehq/pb/pkg/ui"
 )
 
 var (

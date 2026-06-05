@@ -19,12 +19,12 @@ package model
 import (
 	"fmt"
 	"io"
-	"pb/pkg/ui"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/parseablehq/pb/pkg/ui"
 )
 
 // Time-range presets — match the mock at terminal/page.tsx ViewTime.

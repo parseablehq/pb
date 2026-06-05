@@ -17,14 +17,14 @@ package views
 
 import (
 	"fmt"
-	"pb/pkg/config"
-	"pb/pkg/datasets"
-	"pb/pkg/ui"
 	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/parseablehq/pb/pkg/config"
+	"github.com/parseablehq/pb/pkg/datasets"
+	"github.com/parseablehq/pb/pkg/ui"
 )
 
 // PickerView is the fuzzy dataset list (mock §5.4). One column, search

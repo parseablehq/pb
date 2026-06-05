@@ -21,15 +21,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"pb/pkg/datasets"
-	internalHTTP "pb/pkg/http"
-	"pb/pkg/ui"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
+	"github.com/parseablehq/pb/pkg/datasets"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
+	"github.com/parseablehq/pb/pkg/ui"
 	"github.com/spf13/cobra"
 )
 

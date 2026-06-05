@@ -17,13 +17,13 @@
 package credential
 
 import (
-	"pb/pkg/model/button"
-	"pb/pkg/ui"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/parseablehq/pb/pkg/model/button"
+	"github.com/parseablehq/pb/pkg/ui"
 )
 
 // Default Style for this widget — theme-derived; yellow no more.

@@ -20,12 +20,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	internalHTTP "pb/pkg/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/slices"
 )

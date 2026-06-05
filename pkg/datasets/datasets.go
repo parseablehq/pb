@@ -6,10 +6,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"pb/pkg/config"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/parseablehq/pb/pkg/config"
 )
 
 const (

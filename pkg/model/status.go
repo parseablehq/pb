@@ -17,11 +17,11 @@
 package model
 
 import (
-	"pb/pkg/ui"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/parseablehq/pb/pkg/ui"
 )
 
 // Segmented status bar matching the design mock — k9s/helix idiom.

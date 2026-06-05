@@ -16,7 +16,7 @@
 package ui
 
 import (
-	"pb/pkg/config"
+	"github.com/parseablehq/pb/pkg/config"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"

@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"pb/pkg/config"
-	internalHTTP "pb/pkg/http"
 	"testing"
+
+	"github.com/parseablehq/pb/pkg/config"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
 )
 
 func TestFetchInfoUsesTelemetryType(t *testing.T) {

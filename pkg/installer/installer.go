@@ -32,8 +32,8 @@ import (
 	"sync"
 	"time"
 
-	"pb/pkg/common"
-	"pb/pkg/helm"
+	"github.com/parseablehq/pb/pkg/common"
+	"github.com/parseablehq/pb/pkg/helm"
 
 	"github.com/manifoldco/promptui"
 	yamling "gopkg.in/yaml.v3"

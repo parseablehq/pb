@@ -19,8 +19,8 @@ package cmd
 import (
 	"errors"
 	"os"
-	"pb/pkg/config"
 
+	"github.com/parseablehq/pb/pkg/config"
 	"github.com/spf13/cobra"
 )
 
