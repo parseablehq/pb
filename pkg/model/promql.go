@@ -25,9 +25,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"pb/pkg/config"
-	"pb/pkg/datasets"
-	"pb/pkg/ui"
 	"regexp"
 	"sort"
 	"strconv"
@@ -45,6 +42,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	table "github.com/evertras/bubble-table/table"
+	"github.com/parseablehq/pb/pkg/config"
+	"github.com/parseablehq/pb/pkg/datasets"
+	"github.com/parseablehq/pb/pkg/ui"
 	"golang.org/x/term"
 )
 
@@ -69,8 +69,10 @@ const (
 )
 
 // overlay states (overlayNone and overlayInputs are defined in query.go)
-const overlayDataset uint = 2
-const overlayBuilder uint = 3
+const (
+	overlayDataset uint = 2
+	overlayBuilder uint = 3
+)
 
 var PromqlNavigationMap = []string{"query", "time", "dataset", "step", "table"}
 

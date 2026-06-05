@@ -20,11 +20,11 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"pb/pkg/common"
-	"pb/pkg/helm"
-	"pb/pkg/installer"
 
 	"github.com/olekukonko/tablewriter"
+	"github.com/parseablehq/pb/pkg/common"
+	"github.com/parseablehq/pb/pkg/helm"
+	"github.com/parseablehq/pb/pkg/installer"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -170,7 +170,7 @@ var UninstallOssCmd = &cobra.Command{
 			return
 		}
 
-		//Perform uninstallation
+		// Perform uninstallation
 		if err := uninstallCluster(selectedCluster); err != nil {
 			log.Fatalf("Failed to uninstall cluster: %v", err)
 		}

@@ -1,6 +1,10 @@
 name: Go Build and Test
 
-on: pull_request
+on:
+  pull_request:
+  push:
+    branches:
+      - main
 
 jobs:
   build-and-test:
@@ -9,17 +13,40 @@ jobs:
     steps:
       - name: Checkout the code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25.0"
+          go-version-file: go.mod
       - name: Install gofumpt
         run: go install mvdan.cc/gofumpt@v0.7.0
-      - name: Run gofumpt
-        run: gofumpt -l -w .
+      - name: Check gofumpt
+        run: test -z "$(gofumpt -l .)"
       - name: make verification
         run: make verifiers
       - name: Build
         run: go build -v ./...
       - name: Test
         run: go test -v ./...
+
+  windows-installer:
+    name: Test Windows installer
+    runs-on: windows-latest
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test install.ps1
+        shell: pwsh
+        run: |
+          $InstallDir = Join-Path $env:RUNNER_TEMP "pb-bin"
+          $env:INSTALL_DIR = $InstallDir
+          .\scripts\install.ps1
+
+          if (!(Test-Path "$InstallDir\pb.exe")) {
+            throw "pb.exe was not installed"
+          }
+
+          & "$InstallDir\pb.exe" --help

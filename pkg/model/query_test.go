@@ -1,9 +1,10 @@
 package model
 
 import (
-	"pb/pkg/config"
 	"testing"
 	"time"
+
+	"github.com/parseablehq/pb/pkg/config"
 )
 
 func TestFormatSQLControlTime(t *testing.T) {

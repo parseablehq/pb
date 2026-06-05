@@ -18,12 +18,14 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os"
+	"strings"
 
-	pb "pb/cmd"
-	"pb/pkg/analytics"
+	"github.com/charmbracelet/lipgloss"
+	pb "github.com/parseablehq/pb/cmd"
+	"github.com/parseablehq/pb/pkg/analytics"
+	"github.com/parseablehq/pb/pkg/ui"
 
 	"github.com/spf13/cobra"
 )
@@ -50,7 +52,7 @@ var cli = &cobra.Command{
 			pb.PrintVersion(Version, Commit)
 			return nil
 		}
-		return errors.New("no command or flag supplied")
+		return command.Help()
 	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		if os.Getenv("PB_ANALYTICS") == "disable" {
@@ -110,12 +112,17 @@ var rootHelpGroups = []rootHelpGroup{
 		title: "System Commands:",
 		commands: []rootHelpCommand{
 			{name: "status", desc: "Check connection status for the active profile"},
-			{name: "autocomplete", desc: "Generate autocomplete script"},
 			{name: "version", desc: "Print version"},
 			{name: "help", desc: "Help about any command"},
 		},
 	},
 }
+
+const parseableHelpASCIIArt = ` ____   _    ____  ____  _____    _    ____  _     _____
+|  _ \ / \  |  _ \/ ___|| ____|  / \  | __ )| |   | ____|
+| |_) / _ \ | |_) \___ \|  _|   / _ \ |  _ \| |   |  _|
+|  __/ ___ \|  _ < ___) | |___ / ___ \| |_) | |___| |___
+|_| /_/   \_\_| \_\____/|_____/_/   \_\____/|_____|_____|`
 
 var profile = &cobra.Command{
 	Use:               "profile",
@@ -250,7 +257,6 @@ func main() {
 	cli.AddCommand(pb.TailCmd)
 	// cli.AddCommand(cluster)
 
-	cli.AddCommand(pb.AutocompleteCmd)
 	cli.AddCommand(pb.LoginCmd)
 	cli.AddCommand(pb.LogoutCmd)
 	cli.AddCommand(pb.StatusCmd)
@@ -280,25 +286,39 @@ func renderRootHelp(cmd *cobra.Command, _ []string) {
 	}
 
 	out := cmd.OutOrStdout()
-	fmt.Fprintln(out, "pb is the command line interface for Parseable")
+	palette := ui.Active
+	logo := lipgloss.NewStyle().
+		Foreground(palette.Accent).
+		Bold(true).
+		Render(parseableHelpASCIIArt)
+	tagline := lipgloss.NewStyle().
+		Foreground(palette.Faint).
+		Render("Parseable CLI")
+	body := lipgloss.NewStyle().Foreground(palette.Body)
+	section := lipgloss.NewStyle().Foreground(palette.Accent).Bold(true)
+	commandStyle := lipgloss.NewStyle().Foreground(palette.Body).Bold(true)
+	descStyle := lipgloss.NewStyle().Foreground(palette.Faint)
+
+	fmt.Fprintln(out, logo)
+	fmt.Fprintln(out, tagline)
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Usage:")
+	fmt.Fprintln(out, body.Render("pb is the command line interface for Parseable."))
+	fmt.Fprintln(out, body.Render("Query logs with SQL, explore metrics with PromQL, tail live events,"))
+	fmt.Fprintln(out, body.Render("and manage datasets, users, roles, and profiles from your terminal."))
+	fmt.Fprintln(out)
+
+	fmt.Fprintln(out, section.Render("Usage:"))
 	fmt.Fprintln(out, "  pb [command] [flags]")
 	fmt.Fprintln(out)
 
-	for _, group := range rootHelpGroups {
-		fmt.Fprintln(out, group.title)
-		for _, command := range group.commands {
-			if command.name != "help" && commandByName(cmd, command.name) == nil {
-				continue
-			}
-			fmt.Fprintf(out, "  %-12s %s\n", command.name, command.desc)
-		}
-		fmt.Fprintln(out)
+	fmt.Fprintln(out, section.Render("Available Commands:"))
+	for _, command := range rootHelpCommands(cmd) {
+		fmt.Fprintln(out, rootHelpCommandRow(command, commandStyle, descStyle))
 	}
+	fmt.Fprintln(out)
 
 	if cmd.HasAvailableFlags() {
-		fmt.Fprintln(out, "Flags:")
+		fmt.Fprintln(out, section.Render("Flags:"))
 		var flags bytes.Buffer
 		cmd.Flags().SetOutput(&flags)
 		cmd.Flags().PrintDefaults()
@@ -306,7 +326,29 @@ func renderRootHelp(cmd *cobra.Command, _ []string) {
 		fmt.Fprintln(out)
 	}
 
-	fmt.Fprintln(out, `Use "pb [command] --help" for more information about a command.`)
+	fmt.Fprintln(out, descStyle.Render(`Use "pb [command] --help" for more information about a command.`))
+}
+
+func rootHelpCommands(cmd *cobra.Command) []rootHelpCommand {
+	var commands []rootHelpCommand
+	for _, group := range rootHelpGroups {
+		for _, command := range group.commands {
+			if command.name != "help" && commandByName(cmd, command.name) == nil {
+				continue
+			}
+			commands = append(commands, command)
+		}
+	}
+	return commands
+}
+
+func rootHelpCommandRow(command rootHelpCommand, commandStyle, descStyle lipgloss.Style) string {
+	const commandWidth = 10
+	padding := commandWidth - lipgloss.Width(command.name)
+	if padding < 1 {
+		padding = 1
+	}
+	return "  " + commandStyle.Render(command.name) + strings.Repeat(" ", padding) + descStyle.Render(command.desc)
 }
 
 func commandByName(cmd *cobra.Command, name string) *cobra.Command {

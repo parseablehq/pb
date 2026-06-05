@@ -17,13 +17,13 @@ package cmd
 
 import (
 	"fmt"
-	"pb/pkg/analytics"
-	"pb/pkg/config"
-	internalHTTP "pb/pkg/http"
-	"pb/pkg/ui"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/parseablehq/pb/pkg/analytics"
+	"github.com/parseablehq/pb/pkg/config"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
+	"github.com/parseablehq/pb/pkg/ui"
 	"github.com/spf13/cobra"
 )
 

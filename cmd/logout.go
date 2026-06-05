@@ -19,11 +19,11 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"pb/pkg/config"
-	"pb/pkg/model/defaultprofile"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/parseablehq/pb/pkg/config"
+	"github.com/parseablehq/pb/pkg/model/defaultprofile"
 	"github.com/spf13/cobra"
 )
 

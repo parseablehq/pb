@@ -18,14 +18,14 @@ package role
 
 import (
 	"fmt"
-	"pb/pkg/model/button"
-	"pb/pkg/model/selection"
-	"pb/pkg/ui"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/parseablehq/pb/pkg/model/button"
+	"github.com/parseablehq/pb/pkg/model/selection"
+	"github.com/parseablehq/pb/pkg/ui"
 )
 
 var (

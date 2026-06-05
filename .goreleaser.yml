@@ -21,10 +21,19 @@ builds:
       - -s -w -X main.Version=v{{ .Version }} -X main.Commit={{ .ShortCommit }}
 
 archives:
-  - format: tar.gz
+  - name_template: "pb_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
     files:
       - README.md
       - LICENSE
+
+checksum:
+  name_template: "pb_{{ .Version }}_checksums.txt"
 
 dockers:
   - id: pb

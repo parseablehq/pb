@@ -18,8 +18,8 @@ package login
 import (
 	"strings"
 
-	"pb/pkg/config"
-	"pb/pkg/ui"
+	"github.com/parseablehq/pb/pkg/config"
+	"github.com/parseablehq/pb/pkg/ui"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"

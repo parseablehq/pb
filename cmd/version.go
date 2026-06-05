@@ -18,10 +18,10 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"pb/pkg/analytics"
-	internalHTTP "pb/pkg/http"
 	"time"
 
+	"github.com/parseablehq/pb/pkg/analytics"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
 	"github.com/spf13/cobra"
 )
 
