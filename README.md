@@ -190,7 +190,7 @@ pb promql run "process.cpu.time{process.cpu.state!=""}" --dataset astronomy-shop
 **Run PromQL without the TUI:**
 
 ```sh
-$ pb promql run "sum(rate(http_requests_total[5m]))" --dataset otel_metrics --from=1h
+pb promql run "sum(rate(http_requests_total[5m]))" --dataset otel_metrics --from=1h
 ```
 
 **Stream live events:**

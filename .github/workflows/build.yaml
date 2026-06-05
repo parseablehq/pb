@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout the code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -34,6 +36,8 @@ jobs:
     steps:
       - name: Checkout the code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Test install.ps1
         shell: pwsh
         run: |
