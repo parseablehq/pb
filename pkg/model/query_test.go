@@ -1,6 +1,7 @@
 package model
 
 import (
+	"pb/pkg/config"
 	"testing"
 	"time"
 )
@@ -109,6 +110,108 @@ func TestEnsureDefaultSQLLimitKeepsRealLimitWithComments(t *testing.T) {
 		if got := ensureDefaultSQLLimit(query); got != query {
 			t.Fatalf("ensureDefaultSQLLimit(%q) = %q, want unchanged", query, got)
 		}
+	}
+}
+
+func TestBuildSQLQueryPlanStripsTopLevelLimitAndOffset(t *testing.T) {
+	plan := buildSQLQueryPlan(`SELECT * FROM logs WHERE msg = 'offset 1' LIMIT 100000 OFFSET 50`, 500)
+
+	if plan.baseQuery != `SELECT * FROM logs WHERE msg = 'offset 1'` {
+		t.Fatalf("baseQuery = %q", plan.baseQuery)
+	}
+	if plan.userLimit != 100000 {
+		t.Fatalf("userLimit = %d, want 100000", plan.userLimit)
+	}
+	if plan.userOffset != 50 {
+		t.Fatalf("userOffset = %d, want 50", plan.userOffset)
+	}
+}
+
+func TestBuildSQLQueryPlanIgnoresSubqueryLimit(t *testing.T) {
+	query := `SELECT * FROM (SELECT * FROM logs LIMIT 10) x LIMIT 25`
+	plan := buildSQLQueryPlan(query, 500)
+
+	if plan.baseQuery != `SELECT * FROM (SELECT * FROM logs LIMIT 10) x` {
+		t.Fatalf("baseQuery = %q", plan.baseQuery)
+	}
+	if plan.userLimit != 25 {
+		t.Fatalf("userLimit = %d, want 25", plan.userLimit)
+	}
+}
+
+func TestBuildSQLQueryPlanUsesDefaultLimit(t *testing.T) {
+	plan := buildSQLQueryPlan(`SELECT * FROM logs`, 500)
+
+	if plan.baseQuery != `SELECT * FROM logs` {
+		t.Fatalf("baseQuery = %q", plan.baseQuery)
+	}
+	if plan.userLimit != 500 {
+		t.Fatalf("userLimit = %d, want 500", plan.userLimit)
+	}
+}
+
+func TestBuildSQLQueryPlanHandlesOffsetBeforeLimit(t *testing.T) {
+	plan := buildSQLQueryPlan(`SELECT * FROM logs OFFSET 20 LIMIT 500`, 500)
+
+	if plan.baseQuery != `SELECT * FROM logs` {
+		t.Fatalf("baseQuery = %q", plan.baseQuery)
+	}
+	if plan.userOffset != 20 {
+		t.Fatalf("userOffset = %d, want 20", plan.userOffset)
+	}
+	if plan.userLimit != 500 {
+		t.Fatalf("userLimit = %d, want 500", plan.userLimit)
+	}
+}
+
+func TestInjectSQLWindowRewritesLimitOffset(t *testing.T) {
+	got := injectSQLWindow(`SELECT * FROM logs LIMIT 100000 OFFSET 10`, 500, 1500)
+	want := `SELECT * FROM logs LIMIT 500 OFFSET 1500`
+
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestExtractDatasetUnquotesStreamName(t *testing.T) {
+	if got := extractDataset(`SELECT * FROM "astronomy-shop-logs" LIMIT 500`); got != "astronomy-shop-logs" {
+		t.Fatalf("got %q, want astronomy-shop-logs", got)
+	}
+}
+
+func TestNewQueryModelPreparesInitialWindowRun(t *testing.T) {
+	start := time.Date(2026, time.June, 5, 10, 0, 0, 0, time.UTC)
+	end := start.Add(time.Hour)
+
+	m := NewQueryModel(config.Profile{}, `SELECT * FROM "astronomy-shop-logs" LIMIT 500`, start, end)
+
+	if m.dataset != "astronomy-shop-logs" {
+		t.Fatalf("dataset = %q, want astronomy-shop-logs", m.dataset)
+	}
+	if m.queryRunID != 1 {
+		t.Fatalf("queryRunID = %d, want 1", m.queryRunID)
+	}
+	if m.baseQuery != `SELECT * FROM "astronomy-shop-logs"` {
+		t.Fatalf("baseQuery = %q", m.baseQuery)
+	}
+	if m.lockedStartUTC == "" || m.lockedEndUTC == "" {
+		t.Fatalf("expected locked time range, got start=%q end=%q", m.lockedStartUTC, m.lockedEndUTC)
+	}
+}
+
+func TestResetInvalidDatasetSelectionFallsBackToDefault(t *testing.T) {
+	m := QueryModel{
+		dataset:     "astronomy-shop-lgs",
+		allDatasets: []string{"astronomy-shop-logs", "backend"},
+	}
+
+	m.resetInvalidDatasetSelection()
+
+	if m.dataset != "astronomy-shop-logs" {
+		t.Fatalf("dataset = %q, want astronomy-shop-logs", m.dataset)
+	}
+	if m.datasetSelectedIdx != 0 {
+		t.Fatalf("datasetSelectedIdx = %d, want 0", m.datasetSelectedIdx)
 	}
 }
 
