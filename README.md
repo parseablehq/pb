@@ -165,7 +165,7 @@ Start with a pre-filled query:
 ```sh
 pb sql run "SELECT * FROM backend-shop WHERE order.amount > 999 LIMIT 5" --from=1h -i
 ```
-<!-- ![pb SQL interactive TUI](docs/images/pb-sql-tui.png) -->
+![pb SQL interactive TUI](docs/images/pb-sql-tui.png)
 
 **Run SQL without the TUI:**
 
@@ -185,7 +185,7 @@ Start with a pre-filled query:
 pb promql run "process.cpu.time{process.cpu.state!=""}" --dataset astronomy-shop-metrics --from=1h -i
 ```
 
-<!-- ![pb PromQL interactive TUI](docs/images/pb-promql-tui.png) -->
+![pb PromQL interactive TUI](docs/images/pb-promql-tui.png)
 
 **Run PromQL without the TUI:**
 

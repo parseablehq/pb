@@ -34,26 +34,3 @@ archives:
 
 checksum:
   name_template: "pb_{{ .Version }}_checksums.txt"
-
-dockers:
-  - id: pb
-    goos: linux
-    goarch: amd64
-    ids:
-      - pb
-    image_templates:
-      - "parseable/pb:{{ .Tag }}"
-      - "parseable/pb:latest"
-    skip_push: false
-    dockerfile: Dockerfile
-    use: docker
-    build_flag_templates:
-      - "--pull"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title=Parseable"
-      - "--label=maintainer=Parseable Team <hi@parseable.io>"
-      - "--label=org.opencontainers.image.vendor=Cloudnatively Pvt Ltd"
-      - "--label=org.opencontainers.image.licenses=AGPL-3.0"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--platform=linux/amd64"
