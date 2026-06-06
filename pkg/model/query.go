@@ -1641,7 +1641,7 @@ func renderSQLControlsBox(start, end, dataset string, columns []string, columnId
 		paneRule("┌", "┐", "TIME RANGE "+formatResultTimeLabel(displayMode), width, borderStyle, timeTitleStyle),
 	}
 	lines = append(lines, paneBodyLines(lipgloss.JoinVertical(lipgloss.Left, timeLines...), width, len(timeLines), borderStyle)...)
-	lines = append(lines, paneRule("├", "┤", "DATASET", width, borderStyle, datasetTitleStyle))
+	lines = append(lines, paneRule("├", "┤", "DATASET <ctrl-d>", width, borderStyle, datasetTitleStyle))
 	lines = append(lines, paneBodyLines(lipgloss.JoinVertical(lipgloss.Left, datasetLines...), width, len(datasetLines), borderStyle)...)
 	lines = append(lines, paneRule("├", "┤", columnsTitle, width, borderStyle, columnsTitleStyle))
 	lines = append(lines, paneBodyLines(lipgloss.JoinVertical(lipgloss.Left, columnLines...), width, columnSectionH, borderStyle)...)

@@ -54,12 +54,15 @@ type DatasetStatsData struct {
 
 type DatasetListItem struct {
 	Name string
+	Type string
+	LastIngested time.Time
 }
 
 func (item *DatasetListItem) Render() string {
 	bullet := SelectedStyle.Render("•")
 	name := StandardStyle.Render(item.Name)
-	return ItemOuter.Render(fmt.Sprintf("%s %s", bullet, name))
+	datasetType := StandardStyle.Render(item.Type)
+	return ItemOuter.Render(fmt.Sprintf("%s %s [%s]", bullet, name, datasetType))
 }
 
 // DatasetRetentionData is the data structure for dataset retention
@@ -459,7 +462,7 @@ func init() {
 }
 
 var RemoveDatasetCmd = &cobra.Command{
-	Use:          "remove dataset-name",
+	Use:          "remove|rm dataset-name",
 	Aliases:      []string{"rm"},
 	Example:      " pb dataset remove backend_logs\n pb dataset remove backend_logs --type logs",
 	Short:        "Delete a dataset",
@@ -546,7 +549,7 @@ func init() {
 
 // ListDatasetCmd is the list command for datasets
 var ListDatasetCmd = &cobra.Command{
-	Use:          "list",
+	Use:          "list|ls",
 	Aliases:      []string{"ls"},
 	Example:      "  pb dataset list",
 	Short:        "List all datasets",
@@ -577,7 +580,7 @@ var ListDatasetCmd = &cobra.Command{
 		}
 
 		for _, dataset := range items {
-			fmt.Println((&DatasetListItem{Name: dataset.Title}).Render())
+			fmt.Println((&DatasetListItem{Name: dataset.Title, Type: dataset.DatasetType}).Render())
 		}
 		return nil
 	},
