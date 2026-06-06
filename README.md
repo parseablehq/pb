@@ -66,7 +66,7 @@ curl -fsSL https://raw.githubusercontent.com/parseablehq/pb/main/scripts/install
 **Quick install (Windows PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/parseablehq/pb/main/scripts/install.ps1 | iex
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/parseablehq/pb/main/scripts/install.ps1 | iex"
 ```
 
 Downloads the latest release, verifies the SHA-256 checksum, installs to
