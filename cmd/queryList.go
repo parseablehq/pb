@@ -30,7 +30,7 @@ import (
 )
 
 var SavedQueryList = &cobra.Command{
-	Use:          "list|ls",
+	Use:          "list",
 	Aliases:      []string{"ls"},
 	Example:      "pb sql list [-o | --output]",
 	Short:        "List of saved queries",
