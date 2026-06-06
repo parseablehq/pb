@@ -73,7 +73,13 @@ Downloads the latest release, verifies the SHA-256 checksum, installs to
 `%USERPROFILE%\bin`, and adds that folder to your user `PATH`. Open a new
 PowerShell window after installation.
 
-<!-- TODO: Add Homebrew installation here after the tap/formula is available. -->
+**Homebrew (macOS and Linux):**
+
+```bash
+brew install parseablehq/tap/pb
+```
+
+> Use the full tap name above. `brew install pb` installs an unrelated Homebrew cask.
 
 **Pre-built binary (Linux/macOS/Windows):**
 
