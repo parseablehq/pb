@@ -53,8 +53,8 @@ type DatasetStatsData struct {
 }
 
 type DatasetListItem struct {
-	Name string
-	Type string
+	Name         string
+	Type         string
 	LastIngested time.Time
 }
 
