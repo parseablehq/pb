@@ -62,6 +62,9 @@ func (item *DatasetListItem) Render() string {
 	bullet := SelectedStyle.Render("•")
 	name := StandardStyle.Render(item.Name)
 	datasetType := StandardStyle.Render(item.Type)
+	if datasetType == "" {
+		return ItemOuter.Render(fmt.Sprintf("%s %s", bullet, name))
+	}
 	return ItemOuter.Render(fmt.Sprintf("%s %s [%s]", bullet, name, datasetType))
 }
 
