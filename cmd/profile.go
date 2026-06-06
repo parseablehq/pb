@@ -154,7 +154,7 @@ var AddProfileCmd = &cobra.Command{
 }
 
 var RemoveProfileCmd = &cobra.Command{
-	Use:     "remove profile-name",
+	Use:     "remove|rm profile-name",
 	Aliases: []string{"rm"},
 	Example: "  pb profile remove local_parseable",
 	Args:    cobra.ExactArgs(1),
@@ -328,7 +328,7 @@ var UpdateProfileCmd = &cobra.Command{
 }
 
 var ListProfileCmd = &cobra.Command{
-	Use:     "list profiles",
+	Use:     "list|ls profiles",
 	Aliases: []string{"ls"},
 	Short:   "List all added profiles",
 	Example: "  pb profile list",

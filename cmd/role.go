@@ -143,7 +143,7 @@ var AddRoleCmd = &cobra.Command{
 }
 
 var RemoveRoleCmd = &cobra.Command{
-	Use:     "remove role-name",
+	Use:     "remove|rm role-name",
 	Aliases: []string{"rm"},
 	Example: "  pb role remove ingestor",
 	Short:   "Delete a role",
@@ -188,7 +188,7 @@ var RemoveRoleCmd = &cobra.Command{
 }
 
 var ListRoleCmd = &cobra.Command{
-	Use:          "list",
+	Use:          "list|ls",
 	Aliases:      []string{"ls"},
 	Short:        "List all roles",
 	Example:      "  pb role list",
