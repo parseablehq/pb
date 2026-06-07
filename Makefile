@@ -1,8 +1,7 @@
 PWD := $(shell pwd)
 GOPATH := $(shell go env GOPATH)
-# This is just for development purposes. The version is determined at build time using git tags.
+# Local builds use the nearest git tag for version metadata; fall back to "dev".
 VERSION ?= $(shell git describe --tags 2>/dev/null || echo "dev")
-TAG ?= "parseablehq/pb:$(VERSION)"
 LDFLAGS := $(shell go run buildscripts/gen-ldflags.go $(VERSION))
 
 GOARCH := $(shell go env GOARCH)
@@ -19,16 +18,13 @@ checks:
 getdeps:
 	@mkdir -p ${GOPATH}/bin
 	@echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)"
-# Will need to make it more error prone in future!
+# TODO: Make dependency installation more robust and reproducible.
 	@curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOPATH)/bin $(GOLANGCI_LINT_VERSION)
 
 crosscompile:
 	@(env bash $(PWD)/buildscripts/cross-compile.sh)
 
 verifiers: getdeps vet lint
-
-docker: build
-	@docker build -t $(TAG) . -f Dockerfile.dev
 
 vet:
 	@echo "Running $@"
