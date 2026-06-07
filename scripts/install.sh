@@ -40,6 +40,47 @@ checksum() {
 	fi
 }
 
+detect_user_shell() {
+	if [ -n "${SHELL:-}" ]; then
+		printf '%s\n' "${SHELL##*/}"
+	else
+		printf '%s\n' "sh"
+	fi
+}
+
+print_path_instructions() {
+	install_dir="$1"
+	shell_name="$(detect_user_shell)"
+
+	echo ""
+	case "$shell_name" in
+	bash)
+		echo "$install_dir is not in your PATH. Add it with:"
+		echo ""
+		echo "  echo 'export PATH=\"$install_dir:\$PATH\"' >> ~/.bashrc"
+		echo "  . ~/.bashrc"
+		;;
+	zsh)
+		echo "$install_dir is not in your PATH. Add it with:"
+		echo ""
+		echo "  echo 'export PATH=\"$install_dir:\$PATH\"' >> ~/.zshrc"
+		echo "  source ~/.zshrc"
+		;;
+	fish)
+		echo "$install_dir is not in your PATH. Add it with:"
+		echo ""
+		echo "  mkdir -p ~/.config/fish"
+		echo "  echo 'fish_add_path $install_dir' >> ~/.config/fish/config.fish"
+		echo "  source ~/.config/fish/config.fish"
+		;;
+	*)
+		echo "$install_dir is not in your PATH. Add it to your shell startup file:"
+		echo ""
+		echo "  export PATH=\"$install_dir:\$PATH\""
+		;;
+	esac
+}
+
 install_binary() {
 	src="$1"
 	dst="$2"
@@ -120,6 +161,7 @@ chmod +x "$tmpdir/$BINARY_NAME"
 install_binary "$tmpdir/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
 
 echo "$BINARY_NAME installed to $INSTALL_DIR/$BINARY_NAME"
-if ! command -v "$BINARY_NAME" >/dev/null 2>&1; then
-	echo "Add $INSTALL_DIR to your PATH to run '$BINARY_NAME' from any directory."
-fi
+case ":$PATH:" in
+*":$INSTALL_DIR:"*) ;;
+*) print_path_instructions "$INSTALL_DIR" ;;
+esac

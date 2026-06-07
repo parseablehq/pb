@@ -465,7 +465,7 @@ func init() {
 }
 
 var RemoveDatasetCmd = &cobra.Command{
-	Use:          "remove|rm dataset-name",
+	Use:          "remove dataset-name",
 	Aliases:      []string{"rm"},
 	Example:      " pb dataset remove backend_logs\n pb dataset remove backend_logs --type logs",
 	Short:        "Delete a dataset",
@@ -552,7 +552,7 @@ func init() {
 
 // ListDatasetCmd is the list command for datasets
 var ListDatasetCmd = &cobra.Command{
-	Use:          "list|ls",
+	Use:          "list",
 	Aliases:      []string{"ls"},
 	Example:      "  pb dataset list",
 	Short:        "List all datasets",

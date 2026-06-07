@@ -149,7 +149,7 @@ var AddUserCmd = func() *cobra.Command {
 }()
 
 var RemoveUserCmd = &cobra.Command{
-	Use:     "remove|rm user-name",
+	Use:     "remove user-name",
 	Aliases: []string{"rm"},
 	Example: "  pb user remove bob",
 	Short:   "Delete a user",
@@ -275,7 +275,7 @@ var SetUserRoleCmd = &cobra.Command{
 }
 
 var ListUserCmd = &cobra.Command{
-	Use:          "list|ls",
+	Use:          "list",
 	Aliases:      []string{"ls"},
 	Short:        "List all users",
 	Example:      "  pb user list",

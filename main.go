@@ -387,7 +387,7 @@ func renderCommandHelp(cmd *cobra.Command) {
 			if !child.IsAvailableCommand() && child.Name() != "help" {
 				continue
 			}
-			fmt.Fprintf(out, "  %-12s %s\n", child.Name(), child.Short)
+			fmt.Fprintf(out, "  %-16s %s\n", commandDisplayName(child), child.Short)
 		}
 		fmt.Fprintln(out)
 	}
@@ -413,6 +413,15 @@ func renderCommandHelp(cmd *cobra.Command) {
 	if cmd.HasAvailableSubCommands() {
 		fmt.Fprintf(out, "Use \"%s [command] --help\" for more information about a command.\n", cmd.CommandPath())
 	}
+}
+
+func commandDisplayName(cmd *cobra.Command) string {
+	name := cmd.Name()
+	aliases := cmd.Aliases
+	if len(aliases) == 0 {
+		return name
+	}
+	return name + "|" + strings.Join(aliases, "|")
 }
 
 // Wrapper to combine existing pre-run logic and ULID check

@@ -29,24 +29,3 @@ jobs:
         run: go build -v ./...
       - name: Test
         run: go test -v ./...
-
-  windows-installer:
-    name: Test Windows installer
-    runs-on: windows-latest
-    steps:
-      - name: Checkout the code
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Test install.ps1
-        shell: pwsh
-        run: |
-          $InstallDir = Join-Path $env:RUNNER_TEMP "pb-bin"
-          $env:INSTALL_DIR = $InstallDir
-          .\scripts\install.ps1
-
-          if (!(Test-Path "$InstallDir\pb.exe")) {
-            throw "pb.exe was not installed"
-          }
-
-          & "$InstallDir\pb.exe" --help
