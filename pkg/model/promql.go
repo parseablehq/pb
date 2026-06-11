@@ -308,6 +308,10 @@ func nextPromqlMode(mode string) string {
 	}
 }
 
+func isPromqlModeToggleKey(msg tea.KeyMsg) bool {
+	return msg.Type == tea.KeyCtrlAt || msg.String() == "ctrl+space"
+}
+
 func (m PromqlModel) isInstantMode() bool {
 	return m.mode == promqlModeInstant
 }
@@ -1034,8 +1038,8 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.timeRange.StartValueUtc(), m.timeRange.EndValueUtc(), m.mode, m.timeRange.DisplayMode()))
 		}
 
-		// Space on step panel cycles range/instant/both mode.
-		if msg.Type == tea.KeySpace && m.currentFocus() == "step" {
+		// Ctrl+Space on step panel cycles range/instant/both mode.
+		if isPromqlModeToggleKey(msg) && m.currentFocus() == "step" {
 			prevMode := m.mode
 			m.mode = nextPromqlMode(m.mode)
 			m.instant = m.isInstantMode()
@@ -1045,9 +1049,17 @@ func (m PromqlModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.timeRange.SetEnd(time.Now().Add(-1 * time.Hour))
 				m.chartMode = false
 			} else {
-				// switching back to range: reset end to now so presets work correctly
-				if prevMode == promqlModeInstant {
+				// switching from both back to range: reset end to now so presets work correctly.
+				// instant -> both keeps the instant evaluation time for table toggle.
+				switch prevMode {
+				case promqlModeBoth:
 					m.timeRange.SetEnd(time.Now())
+				case promqlModeInstant:
+					duration := OneHour
+					if item, ok := m.timeRange.list.SelectedItem().(timeDurationItem); ok {
+						duration = item.duration
+					}
+					m.timeRange.SetStart(m.timeRange.end.Time().Add(duration))
 				}
 				m.chartMode = true
 			}
@@ -1475,7 +1487,7 @@ func (m PromqlModel) View() string {
 			lines = lines[:resultsInnerH]
 		}
 		inner = strings.Join(lines, "\n")
-	case len(m.dataRows) == 0:
+	case len(m.dataRows) == 0 && (!m.chartMode || len(m.chartRows) == 0):
 		msg := lipgloss.NewStyle().Foreground(p.Faint).Render("no results for this query")
 		inner = lipgloss.Place(resultsInnerW, resultsInnerH, lipgloss.Center, lipgloss.Center, msg,
 			lipgloss.WithWhitespaceChars(" "))
@@ -1836,7 +1848,7 @@ func promqlKeysForFocus(m PromqlModel) []ui.KeyHint {
 	case "step":
 		return append([]ui.KeyHint{
 			{Key: "type", Label: "Edit (15s, 5m, 1h)"},
-			{Key: "<space>", Label: "Range/instant/both"},
+			{Key: "<ctrl+space>", Label: "Range/instant/both"},
 		}, common...)
 	case "table":
 		if m.chartMode {
@@ -2106,7 +2118,8 @@ func NewPromqlModeFetchTask(profile config.Profile, expr, dataset, step, startTi
 		}()
 
 		if mode == promqlModeBoth {
-			rangeResult, err := fetchPromqlResult(profile, expr, dataset, step, startTime, endTime, false)
+			rangeStart, rangeEnd := normalizePromqlRangeWindow(startTime, endTime)
+			rangeResult, err := fetchPromqlResult(profile, expr, dataset, step, rangeStart, rangeEnd, false)
 			if err != nil {
 				res.errMsg = err.Error()
 				return res
@@ -2148,6 +2161,15 @@ func NewPromqlModeFetchTask(profile config.Profile, expr, dataset, step, startTi
 		res.valueWidth = valueWidth
 		return res
 	}
+}
+
+func normalizePromqlRangeWindow(startTime, endTime string) (string, string) {
+	start, startOK := parsePromqlStepTime(startTime)
+	end, endOK := parsePromqlStepTime(endTime)
+	if !startOK || !endOK || start.Before(end) {
+		return startTime, endTime
+	}
+	return end.Add(OneHour).UTC().Format(time.RFC3339), endTime
 }
 
 func fetchPromqlResult(profile config.Profile, expr, dataset, step, startTime, endTime string, instant bool) (promqlRespModel, error) {
