@@ -2,10 +2,13 @@ package model
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	table "github.com/evertras/bubble-table/table"
+	"github.com/parseablehq/pb/pkg/config"
 )
 
 func TestEscapePromQLValue(t *testing.T) {
@@ -299,6 +302,122 @@ func TestChartTimeRangeTitleUsesDisplayMode(t *testing.T) {
 	utcModel.timeRange.SetDisplayMode(TimeDisplayUTC)
 	if got, want := utcModel.chartTimeRangeTitle(), "📊 9:00am → 9:10am"; got != want {
 		t.Fatalf("utc title = %q, want %q", got, want)
+	}
+}
+
+func TestPromqlModeToggleUsesCtrlSpace(t *testing.T) {
+	if !isPromqlModeToggleKey(tea.KeyMsg{Type: tea.KeyCtrlAt}) {
+		t.Fatal("ctrl+space should toggle PromQL mode")
+	}
+	if isPromqlModeToggleKey(tea.KeyMsg{Type: tea.KeySpace}) {
+		t.Fatal("plain space should not toggle PromQL mode")
+	}
+}
+
+func TestPromqlInstantToBothPreservesEndTime(t *testing.T) {
+	start := time.Date(2026, 1, 2, 8, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 1, 2, 9, 0, 0, 0, time.UTC)
+	m := NewPromqlModel(config.Profile{}, "", start, end, "1m", "metrics", true)
+	m.mode = promqlModeInstant
+	m.focused = 3 // step panel
+
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlAt})
+	got := next.(PromqlModel)
+	if got.mode != promqlModeBoth {
+		t.Fatalf("mode = %q, want %q", got.mode, promqlModeBoth)
+	}
+	if !got.timeRange.end.Time().Equal(end) {
+		t.Fatalf("end time changed to %s, want %s", got.timeRange.end.Time(), end)
+	}
+	if wantStart := end.Add(OneHour); !got.timeRange.start.Time().Equal(wantStart) {
+		t.Fatalf("start time = %s, want %s", got.timeRange.start.Time(), wantStart)
+	}
+}
+
+func TestNormalizePromqlRangeWindowFixesInvalidRange(t *testing.T) {
+	end := time.Date(2026, 1, 2, 9, 0, 0, 0, time.UTC)
+	start := end.Add(time.Hour)
+
+	gotStart, gotEnd := normalizePromqlRangeWindow(start.Format(time.RFC3339), end.Format(time.RFC3339))
+	if gotEnd != end.Format(time.RFC3339) {
+		t.Fatalf("end = %q, want %q", gotEnd, end.Format(time.RFC3339))
+	}
+	if gotStart != end.Add(OneHour).Format(time.RFC3339) {
+		t.Fatalf("start = %q, want %q", gotStart, end.Add(OneHour).Format(time.RFC3339))
+	}
+}
+
+func TestPromqlBothModeRendersChartRowsWhenInstantRowsEmpty(t *testing.T) {
+	start := time.Date(2026, 1, 2, 9, 0, 0, 0, time.UTC)
+	end := start.Add(10 * time.Minute)
+	m := NewPromqlModel(config.Profile{}, "cpu_usage", start, end, "1m", "metrics", false)
+	m.width = 100
+	m.height = 40
+	m.hasQueried = true
+	m.mode = promqlModeBoth
+	m.chartMode = true
+	m.dataRows = nil
+	m.chartRows = []table.Row{
+		table.NewRow(table.RowData{
+			promqlTimestampFullKey: start.Format(time.RFC3339),
+			promqlMetricKey:        `cpu_usage{host="a"}`,
+			promqlValueKey:         "1",
+		}),
+		table.NewRow(table.RowData{
+			promqlTimestampFullKey: end.Format(time.RFC3339),
+			promqlMetricKey:        `cpu_usage{host="a"}`,
+			promqlValueKey:         "2",
+		}),
+	}
+
+	view := m.View()
+	if strings.Contains(view, "no results for this query") {
+		t.Fatalf("both mode should render chart rows when instant rows are empty:\n%s", view)
+	}
+	if !strings.Contains(view, "RESULTS | Chart View") {
+		t.Fatalf("expected chart view, got:\n%s", view)
+	}
+}
+
+func TestPromqlBothModeKeepsInstantRowsForTable(t *testing.T) {
+	m := PromqlModel{mode: promqlModeBoth}
+	instantRows := []table.Row{
+		table.NewRow(table.RowData{
+			promqlTimestampFullKey: "2026-01-02T09:00:00Z",
+			promqlMetricKey:        `cpu_usage{host="instant"}`,
+			promqlValueKey:         "9",
+		}),
+	}
+	rangeRows := []table.Row{
+		table.NewRow(table.RowData{
+			promqlTimestampFullKey: "2026-01-02T08:55:00Z",
+			promqlMetricKey:        `cpu_usage{host="range"}`,
+			promqlValueKey:         "1",
+		}),
+		table.NewRow(table.RowData{
+			promqlTimestampFullKey: "2026-01-02T09:00:00Z",
+			promqlMetricKey:        `cpu_usage{host="range"}`,
+			promqlValueKey:         "2",
+		}),
+	}
+	msg := PromqlFetchData{
+		status:      fetchOk,
+		resultType:  "vector",
+		chartResult: "matrix",
+		rows:        instantRows,
+		chartRows:   rangeRows,
+	}
+
+	next, _ := m.Update(msg)
+	got := next.(PromqlModel)
+	if !got.chartMode {
+		t.Fatal("both mode should default to chart view")
+	}
+	if !reflect.DeepEqual(got.dataRows, instantRows) {
+		t.Fatalf("table rows = %#v, want instant rows %#v", got.dataRows, instantRows)
+	}
+	if !reflect.DeepEqual(got.chartRows, rangeRows) {
+		t.Fatalf("chart rows = %#v, want range rows %#v", got.chartRows, rangeRows)
 	}
 }
 
