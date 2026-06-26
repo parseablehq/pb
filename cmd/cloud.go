@@ -41,6 +41,7 @@ var (
 	cloudProfileName     string
 	cloudOrchestratorURL string
 	cloudSetDefault      bool
+	cloudForceOverwrite  bool
 )
 
 type cloudAPIKeyValidationResponse struct {
@@ -104,7 +105,7 @@ var CloudProfileAddCmd = &cobra.Command{
 			OrchestratorURL: orchestratorURL,
 		}
 
-		if err := saveCloudProfile(profileName, profile, cloudSetDefault); err != nil {
+		if err := saveCloudProfile(profileName, profile, cloudSetDefault, cloudForceOverwrite); err != nil {
 			return err
 		}
 
@@ -124,6 +125,7 @@ func init() {
 	CloudProfileAddCmd.Flags().StringVar(&cloudProfileName, "name", "", "profile name")
 	CloudProfileAddCmd.Flags().StringVar(&cloudOrchestratorURL, "orchestrator-url", cloudOrchestratorURLFromEnv(), "Parseable Cloud orchestrator URL")
 	CloudProfileAddCmd.Flags().BoolVar(&cloudSetDefault, "default", false, "set this profile as default")
+	CloudProfileAddCmd.Flags().BoolVar(&cloudForceOverwrite, "force", false, "overwrite existing profile")
 
 	CloudProfileCmd.AddCommand(CloudProfileAddCmd)
 	CloudCmd.AddCommand(CloudProfileCmd)
@@ -176,20 +178,26 @@ func validateCloudAPIKey(orchestratorURL, apiKey string) (*cloudAPIKeyValidation
 	return &result, nil
 }
 
-func saveCloudProfile(name string, profile config.Profile, setDefault bool) error {
+func saveCloudProfile(name string, profile config.Profile, setDefault, force bool) error {
 	if name == "" {
 		return errors.New("profile name is required")
 	}
 
 	fileConfig, err := config.ReadConfigFromFile()
-	if err != nil {
+	if os.IsNotExist(err) {
 		fileConfig = &config.Config{
 			Profiles: make(map[string]config.Profile),
 		}
+	} else if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
 	}
 
 	if fileConfig.Profiles == nil {
 		fileConfig.Profiles = make(map[string]config.Profile)
+	}
+
+	if _, exists := fileConfig.Profiles[name]; exists && !force {
+		return fmt.Errorf("profile %q already exists. use --force to overwrite", name)
 	}
 
 	fileConfig.Profiles[name] = profile

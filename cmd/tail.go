@@ -126,6 +126,12 @@ func tailAuthMetadata(profile config.Profile) metadata.MD {
 		return metadata.New(values)
 	}
 
+	if profile.Token != "" {
+		return metadata.New(map[string]string{
+			"Authorization": "Bearer " + profile.Token,
+		})
+	}
+
 	return metadata.New(map[string]string{
 		"Authorization": "Basic " + basicAuth(profile.Username, profile.Password),
 	})
