@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/parseablehq/pb/pkg/config"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
 	"github.com/parseablehq/pb/pkg/ui"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -305,7 +306,7 @@ func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
 		return nil
 	}
 
-	req.SetBasicAuth(profile.Username, profile.Password)
+	internalHTTP.AddAuthHeaders(req, profile)
 	req.Header.Add("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
@@ -371,7 +372,7 @@ func RunQuery(client *http.Client, profile *config.Profile, query string, startT
 	if err != nil {
 		return "", err
 	}
-	req.SetBasicAuth(profile.Username, profile.Password)
+	internalHTTP.AddAuthHeaders(req, profile)
 	req.Header.Add("Content-Type", "application/json")
 
 	resp, err := client.Do(req)

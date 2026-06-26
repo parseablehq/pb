@@ -73,7 +73,7 @@ func tail(profile config.Profile, stream string) error {
 		return err
 	}
 
-	authHeader := basicAuth(profile.Username, profile.Password)
+	authMetadata := tailAuthMetadata(profile)
 
 	watching := func() {
 		fmt.Fprintf(os.Stderr, "\r\033[K● watching %s... (ctrl+c to stop)", stream)
@@ -82,9 +82,7 @@ func tail(profile config.Profile, stream string) error {
 
 	for {
 		resp, err := flightClient.DoGet(
-			metadata.NewOutgoingContext(context.Background(), metadata.New(map[string]string{
-				"Authorization": "Basic " + authHeader,
-			})),
+			metadata.NewOutgoingContext(context.Background(), authMetadata),
 			&flight.Ticket{Ticket: payload},
 		)
 		if err != nil {
@@ -117,6 +115,20 @@ func tail(profile config.Profile, stream string) error {
 		watching()
 		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+func tailAuthMetadata(profile config.Profile) metadata.MD {
+	if profile.Cloud && profile.APIKey != "" {
+		values := map[string]string{"x-api-key": profile.APIKey}
+		if profile.TenantID != "" {
+			values["x-p-tenant"] = profile.TenantID
+		}
+		return metadata.New(values)
+	}
+
+	return metadata.New(map[string]string{
+		"Authorization": "Basic " + basicAuth(profile.Username, profile.Password),
+	})
 }
 
 // isStreamEnd returns true for normal stream termination codes that warrant a reconnect.

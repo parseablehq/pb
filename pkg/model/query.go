@@ -40,6 +40,7 @@ import (
 	"github.com/muesli/reflow/truncate"
 	"github.com/parseablehq/pb/pkg/config"
 	"github.com/parseablehq/pb/pkg/datasets"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
 	"github.com/parseablehq/pb/pkg/iterator"
 	"github.com/parseablehq/pb/pkg/ui"
 	"golang.org/x/exp/slices"
@@ -2700,11 +2701,7 @@ func fetchDataRaw(client *http.Client, profile *config.Profile, query string, st
 		errMsg = err.Error()
 		return
 	}
-	if profile.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+profile.Token)
-	} else {
-		req.SetBasicAuth(profile.Username, profile.Password)
-	}
+	internalHTTP.AddAuthHeaders(req, profile)
 	req.Header.Add("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
@@ -3054,11 +3051,7 @@ func fetchStreamSchema(profile config.Profile, stream string) tea.Cmd {
 		schemaURL, _ := url.JoinPath(profile.URL, "api/v1/logstream", stream, "schema")
 		req, err := http.NewRequest("GET", schemaURL, nil)
 		if err == nil {
-			if profile.Token != "" {
-				req.Header.Set("Authorization", "Bearer "+profile.Token)
-			} else {
-				req.SetBasicAuth(profile.Username, profile.Password)
-			}
+			internalHTTP.AddAuthHeaders(req, &profile)
 			if resp, err := client.Do(req); err == nil {
 				body, _ := io.ReadAll(resp.Body)
 				resp.Body.Close()

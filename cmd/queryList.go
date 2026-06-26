@@ -190,7 +190,7 @@ func fetchFilters(client *http.Client, profile *config.Profile) []Item {
 		return nil
 	}
 
-	req.SetBasicAuth(profile.Username, profile.Password)
+	internalHTTP.AddAuthHeaders(req, profile)
 	req.Header.Add("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {

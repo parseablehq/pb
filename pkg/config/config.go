@@ -70,6 +70,14 @@ type Profile struct {
 	Username string `toml:"username,omitempty" json:"username,omitempty"`
 	Password string `toml:"password,omitempty" json:"password,omitempty"`
 	Token    string `toml:"token,omitempty" json:"token,omitempty"`
+
+	Cloud           bool   `toml:"cloud,omitempty" json:"cloud,omitempty"`
+	APIKey          string `toml:"api_key,omitempty" json:"api_key,omitempty"`
+	TenantID        string `toml:"tenant_id,omitempty" json:"tenant_id,omitempty"`
+	IngestURL       string `toml:"ingest_url,omitempty" json:"ingest_url,omitempty"`
+	WorkspaceID     string `toml:"workspace_id,omitempty" json:"workspace_id,omitempty"`
+	WorkspaceName   string `toml:"workspace_name,omitempty" json:"workspace_name,omitempty"`
+	OrchestratorURL string `toml:"orchestrator_url,omitempty" json:"orchestrator_url,omitempty"`
 }
 
 func (p *Profile) GrpcAddr(port string) string {
@@ -90,7 +98,7 @@ func WriteConfigToFile(config *Config) error {
 		return err
 	}
 
-	file, err := os.Create(filePath)
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		fmt.Println("Error creating the file:", err)
 		return err

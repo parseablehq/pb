@@ -195,11 +195,7 @@ func promqlGet(path string, params url.Values) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if DefaultProfile.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+DefaultProfile.Token)
-	} else {
-		req.SetBasicAuth(DefaultProfile.Username, DefaultProfile.Password)
-	}
+	internalHTTP.AddAuthHeaders(req, &DefaultProfile)
 	stopSpinner := startSpinner()
 	resp, err := client.Client.Do(req)
 	stopSpinner()

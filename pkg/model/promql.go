@@ -44,6 +44,7 @@ import (
 	table "github.com/evertras/bubble-table/table"
 	"github.com/parseablehq/pb/pkg/config"
 	"github.com/parseablehq/pb/pkg/datasets"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
 	"github.com/parseablehq/pb/pkg/ui"
 	"golang.org/x/term"
 )
@@ -2225,11 +2226,7 @@ func promqlModelFetch(profile config.Profile, path string, params url.Values) ([
 	if err != nil {
 		return nil, err
 	}
-	if profile.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+profile.Token)
-	} else {
-		req.SetBasicAuth(profile.Username, profile.Password)
-	}
+	internalHTTP.AddAuthHeaders(req, &profile)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -2607,11 +2604,7 @@ func builderHTTPGetCtx(ctx context.Context, profile config.Profile, rawURL strin
 	if err != nil {
 		return nil, err
 	}
-	if profile.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+profile.Token)
-	} else {
-		req.SetBasicAuth(profile.Username, profile.Password)
-	}
+	internalHTTP.AddAuthHeaders(req, &profile)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/parseablehq/pb/pkg/config"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
 )
 
 const (
@@ -82,10 +83,6 @@ func NamesByType(items []Dataset, datasetType string) []string {
 }
 
 func authenticate(req *http.Request, profile config.Profile) {
-	if profile.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+profile.Token)
-	} else {
-		req.SetBasicAuth(profile.Username, profile.Password)
-	}
+	internalHTTP.AddAuthHeaders(req, &profile)
 	req.Header.Set("Content-Type", "application/json")
 }

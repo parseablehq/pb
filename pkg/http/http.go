@@ -25,6 +25,11 @@ import (
 	"github.com/parseablehq/pb/pkg/config"
 )
 
+const (
+	apiKeyHeader = "x-api-key"
+	tenantHeader = "X-P-Tenant"
+)
+
 type HTTPClient struct {
 	Client  http.Client
 	Profile *config.Profile
@@ -49,11 +54,24 @@ func (client *HTTPClient) NewRequest(method string, path string, body io.Reader)
 	if err != nil {
 		return
 	}
-	if client.Profile.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+client.Profile.Token)
-	} else {
-		req.SetBasicAuth(client.Profile.Username, client.Profile.Password)
-	}
+	AddAuthHeaders(req, client.Profile)
 	req.Header.Add("Content-Type", "application/json")
 	return
+}
+
+func AddAuthHeaders(req *http.Request, profile *config.Profile) {
+	if profile.Cloud && profile.APIKey != "" {
+		req.Header.Set(apiKeyHeader, profile.APIKey)
+		if profile.TenantID != "" {
+			req.Header.Set(tenantHeader, profile.TenantID)
+		}
+		return
+	}
+
+	if profile.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+profile.Token)
+		return
+	}
+
+	req.SetBasicAuth(profile.Username, profile.Password)
 }

@@ -102,6 +102,7 @@ var rootHelpGroups = []rootHelpGroup{
 		title: "Identity & Access:",
 		commands: []rootHelpCommand{
 			{name: "login", desc: "Login to Parseable"},
+			{name: "cloud", desc: "Manage Parseable Cloud profiles"},
 			{name: "logout", desc: "Logout from the current Parseable profile"},
 			{name: "profile", desc: "Manage different Parseable targets"},
 			{name: "user", desc: "Manage users"},
@@ -258,6 +259,7 @@ func main() {
 	// cli.AddCommand(cluster)
 
 	cli.AddCommand(pb.LoginCmd)
+	cli.AddCommand(pb.CloudCmd)
 	cli.AddCommand(pb.LogoutCmd)
 	cli.AddCommand(pb.StatusCmd)
 

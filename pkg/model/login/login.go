@@ -30,7 +30,6 @@ type step int
 
 const (
 	stepChooseType step = iota
-	stepCloudSoon
 	stepEnterURL
 	stepChooseAuth
 	stepEnterUsername
@@ -152,13 +151,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.urlInput.Focus()
 					return m, textinput.Blink
 				}
-				m.step = stepCloudSoon
+				m.errMsg = ""
+				m.step = stepEnterToken
+				m.tokenInput.Focus()
+				return m, textinput.Blink
 			}
-			return m, nil
-
-		// ── Coming-soon screen ───────────────────────────────────────────────
-		case stepCloudSoon:
-			m.step = stepChooseType
 			return m, nil
 
 		// ── Step 2: server URL ───────────────────────────────────────────────
@@ -259,7 +256,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch key.Type {
 			case tea.KeyEsc:
 				m.errMsg = ""
-				m.step = stepChooseAuth
+				if m.typeIndex == 1 {
+					m.step = stepChooseType
+				} else {
+					m.step = stepChooseAuth
+				}
 				m.tokenInput.Blur()
 				return m, nil
 			case tea.KeyEnter:
@@ -359,7 +360,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) finalize(name string) (tea.Model, tea.Cmd) {
 	m.Name = name
-	if m.authIndex == 0 {
+	if m.typeIndex == 1 {
+		m.Profile = config.Profile{
+			Cloud:  true,
+			APIKey: strings.TrimSpace(m.tokenInput.Value()),
+		}
+	} else if m.authIndex == 0 {
 		m.Profile = config.Profile{
 			URL:      m.serverURL,
 			Username: strings.TrimSpace(m.usernameInput.Value()),
@@ -413,7 +419,7 @@ func (m Model) View() string {
 		b.WriteString("\n\n")
 		entries := []struct{ label, badge string }{
 			{"Self-hosted", ""},
-			{"Parseable Cloud", "  (coming soon)"},
+			{"Parseable Cloud", ""},
 		}
 		for i, e := range entries {
 			if i == m.typeIndex {
@@ -426,15 +432,6 @@ func (m Model) View() string {
 		}
 		b.WriteString("\n")
 		b.WriteString(hint([2]string{"↑↓", "navigate"}, [2]string{"enter", "select"}, [2]string{"ctrl-c", "quit"}))
-
-	case stepCloudSoon:
-		b.WriteString(labelStyle.Render("PARSEABLE CLOUD"))
-		b.WriteString("\n\n")
-		b.WriteString(normalStyle.Render("  We're working on it."))
-		b.WriteString("\n")
-		b.WriteString(dimStyle.Render("  Cloud login is coming soon."))
-		b.WriteString("\n\n")
-		b.WriteString(hint([2]string{"any key", "back"}))
 
 	case stepEnterURL:
 		b.WriteString(labelStyle.Render("SERVER URL"))
@@ -476,7 +473,11 @@ func (m Model) View() string {
 		b.WriteString(hint([2]string{"esc", "back"}, [2]string{"enter", "continue"}))
 
 	case stepEnterToken:
-		b.WriteString(labelStyle.Render("API KEY"))
+		if m.typeIndex == 1 {
+			b.WriteString(labelStyle.Render("CLOUD API KEY"))
+		} else {
+			b.WriteString(labelStyle.Render("API KEY"))
+		}
 		b.WriteString("\n\n  ")
 		b.WriteString(m.tokenInput.View())
 		b.WriteString("\n\n")
@@ -509,9 +510,16 @@ func (m Model) View() string {
 	case stepDone:
 		b.WriteString(successStyle.Render("✓ profile '" + m.Name + "' saved"))
 		b.WriteString("\n\n")
-		b.WriteString("  " + labelStyle.Render("URL  "))
-		b.WriteString(normalStyle.Render(m.Profile.URL))
-		b.WriteString("\n")
+		if m.Profile.URL != "" {
+			b.WriteString("  " + labelStyle.Render("URL  "))
+			b.WriteString(normalStyle.Render(m.Profile.URL))
+			b.WriteString("\n")
+		}
+		if m.Profile.Cloud {
+			b.WriteString("  " + labelStyle.Render("AUTH "))
+			b.WriteString(normalStyle.Render("Cloud API key (stored after validation)"))
+			b.WriteString("\n")
+		}
 		if m.Profile.Username != "" {
 			b.WriteString("  " + labelStyle.Render("USER "))
 			b.WriteString(normalStyle.Render(m.Profile.Username))
