@@ -17,9 +17,13 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/parseablehq/pb/pkg/config"
@@ -54,24 +58,51 @@ func (client *HTTPClient) NewRequest(method string, path string, body io.Reader)
 	if err != nil {
 		return
 	}
-	AddAuthHeaders(req, client.Profile)
+	if err = AddAuthHeaders(req, client.Profile); err != nil {
+		return
+	}
 	req.Header.Add("Content-Type", "application/json")
+	debugRequestHeaders(req)
 	return
 }
 
-func AddAuthHeaders(req *http.Request, profile *config.Profile) {
-	if profile.Cloud && profile.APIKey != "" {
+func AddAuthHeaders(req *http.Request, profile *config.Profile) error {
+	if profile == nil {
+		return errors.New("profile is nil")
+	}
+
+	mode, err := profile.AuthMode()
+	if err != nil {
+		return err
+	}
+
+	switch mode {
+	case config.AuthCloudAPIKey:
 		req.Header.Set(apiKeyHeader, profile.APIKey)
-		if profile.TenantID != "" {
-			req.Header.Set(tenantHeader, profile.TenantID)
+		req.Header.Set(tenantHeader, profile.TenantID)
+	case config.AuthCloudOAuth:
+		req.AddCookie(&http.Cookie{Name: "session", Value: profile.SessionToken})
+		req.Header.Set(tenantHeader, profile.TenantID)
+	case config.AuthSelfHostedAPIKey:
+		req.Header.Set(apiKeyHeader, profile.APIKey)
+	case config.AuthSelfHostedBasic:
+		req.SetBasicAuth(profile.Username, profile.Password)
+	}
+	return nil
+}
+
+func debugRequestHeaders(req *http.Request) {
+	if os.Getenv("PB_DEBUG_HTTP_HEADERS") == "" {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "pb debug request: %s %s\n", req.Method, req.URL.String())
+	for key, values := range req.Header {
+		value := strings.Join(values, ",")
+		switch strings.ToLower(key) {
+		case "authorization", apiKeyHeader, "cookie":
+			value = "<redacted>"
 		}
-		return
+		fmt.Fprintf(os.Stderr, "pb debug header: %s: %s\n", key, value)
 	}
-
-	if profile.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+profile.Token)
-		return
-	}
-
-	req.SetBasicAuth(profile.Username, profile.Password)
 }

@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"github.com/parseablehq/pb/pkg/ui"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // populated at build time
@@ -39,6 +41,7 @@ var (
 var (
 	versionFlag      = "version"
 	versionFlagShort = "v"
+	rootOutputFormat string
 )
 
 // Root command
@@ -51,6 +54,12 @@ var cli = &cobra.Command{
 		if p, _ := command.Flags().GetBool(versionFlag); p {
 			pb.PrintVersion(Version, Commit)
 			return nil
+		}
+		if rootOutputFormat == "json" {
+			return printCommandJSON(command)
+		}
+		if rootOutputFormat != "text" {
+			return fmt.Errorf("unsupported output format %q (expected text or json)", rootOutputFormat)
 		}
 		return command.Help()
 	},
@@ -235,6 +244,16 @@ func main() {
 	pb.PromqlCmd.PersistentPreRunE = combinedPreRun
 	pb.PromqlCmd.PersistentPostRun = postRunAnalytics("promql")
 
+	configureParentOutput(profile)
+	configureParentOutput(sql)
+	configureParentOutput(pb.PromqlCmd)
+	configureParentOutput(pb.PromqlCardinalityCmd())
+	configureParentOutput(dataset)
+	configureParentOutput(pb.CloudCmd)
+	configureParentOutput(pb.CloudProfileCmd)
+	configureParentOutput(user)
+	configureParentOutput(role)
+
 	schema.AddCommand(pb.GenerateSchemaCmd)
 	schema.AddCommand(pb.CreateSchemaCmd)
 
@@ -271,6 +290,8 @@ func main() {
 	cli.AddCommand(pb.VersionCmd)
 	// set as flag
 	cli.Flags().BoolP(versionFlag, versionFlagShort, false, "Print version")
+	cli.Flags().StringVarP(&rootOutputFormat, "output", "o", "text", "Output format (text|json)")
+	cli.SetHelpCommand(newHelpCommand())
 	cli.SetHelpFunc(renderRootHelp)
 
 	cli.CompletionOptions.HiddenDefaultCmd = true
@@ -279,6 +300,98 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
+}
+
+type jsonCommand struct {
+	Command     string        `json:"command"`
+	Usage       string        `json:"usage"`
+	Description string        `json:"description,omitempty"`
+	Aliases     []string      `json:"aliases,omitempty"`
+	Flags       []jsonFlag    `json:"flags,omitempty"`
+	Subcommands []jsonCommand `json:"subcommands,omitempty"`
+}
+
+type jsonFlag struct {
+	Name      string `json:"name"`
+	Shorthand string `json:"shorthand,omitempty"`
+	Usage     string `json:"usage"`
+}
+
+func commandJSON(cmd *cobra.Command) jsonCommand {
+	description := strings.TrimSpace(cmd.Long)
+	if description == "" {
+		description = strings.TrimSpace(cmd.Short)
+	}
+	result := jsonCommand{
+		Command:     cmd.CommandPath(),
+		Usage:       cmd.UseLine(),
+		Description: description,
+		Aliases:     cmd.Aliases,
+	}
+	seenFlags := make(map[string]struct{})
+	appendFlags := func(flags *pflag.FlagSet) {
+		flags.VisitAll(func(flag *pflag.Flag) {
+			if _, exists := seenFlags[flag.Name]; exists || flag.Hidden {
+				return
+			}
+			seenFlags[flag.Name] = struct{}{}
+			result.Flags = append(result.Flags, jsonFlag{Name: flag.Name, Shorthand: flag.Shorthand, Usage: flag.Usage})
+		})
+	}
+	appendFlags(cmd.NonInheritedFlags())
+	appendFlags(cmd.InheritedFlags())
+	for _, child := range cmd.Commands() {
+		if child.IsAvailableCommand() && child.Name() != "help" {
+			result.Subcommands = append(result.Subcommands, commandJSON(child))
+		}
+	}
+	return result
+}
+
+func printCommandJSON(cmd *cobra.Command) error {
+	encoder := json.NewEncoder(cmd.OutOrStdout())
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(commandJSON(cmd))
+}
+
+func configureParentOutput(cmd *cobra.Command) {
+	var output string
+	cmd.Flags().StringVarP(&output, "output", "o", "text", "Output format (text|json)")
+	cmd.PreRunE = func(_ *cobra.Command, _ []string) error { return nil }
+	cmd.RunE = func(command *cobra.Command, _ []string) error {
+		switch output {
+		case "json":
+			return printCommandJSON(command)
+		case "text":
+			return command.Help()
+		default:
+			return fmt.Errorf("unsupported output format %q (expected text or json)", output)
+		}
+	}
+}
+
+func newHelpCommand() *cobra.Command {
+	var output string
+	help := &cobra.Command{
+		Use:   "help [command]",
+		Short: "Help about any command",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(command *cobra.Command, args []string) error {
+			target, _, err := command.Root().Find(args)
+			if err != nil {
+				return err
+			}
+			if output == "json" {
+				return printCommandJSON(target)
+			}
+			if output != "text" {
+				return fmt.Errorf("unsupported output format %q (expected text or json)", output)
+			}
+			return target.Help()
+		},
+	}
+	help.Flags().StringVarP(&output, "output", "o", "text", "Output format (text|json)")
+	return help
 }
 
 func renderRootHelp(cmd *cobra.Command, _ []string) {

@@ -2226,7 +2226,9 @@ func promqlModelFetch(profile config.Profile, path string, params url.Values) ([
 	if err != nil {
 		return nil, err
 	}
-	internalHTTP.AddAuthHeaders(req, &profile)
+	if err := internalHTTP.AddAuthHeaders(req, &profile); err != nil {
+		return nil, err
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -2604,7 +2606,9 @@ func builderHTTPGetCtx(ctx context.Context, profile config.Profile, rawURL strin
 	if err != nil {
 		return nil, err
 	}
-	internalHTTP.AddAuthHeaders(req, &profile)
+	if err := internalHTTP.AddAuthHeaders(req, &profile); err != nil {
+		return nil, err
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

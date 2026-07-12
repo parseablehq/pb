@@ -119,7 +119,7 @@ var AddProfileCmd = &cobra.Command{
 			password = args[3]
 		}
 
-		profile := config.Profile{URL: url.String(), Username: username, Password: password}
+		profile := config.Profile{Cloud: false, URL: url.String(), Username: username, Password: password}
 		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
 			newConfig := config.Config{

@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -43,6 +44,9 @@ var PromqlCmd = &cobra.Command{
 	Long:    "\nRun PromQL queries and explore metrics stored in a Parseable metrics stream.",
 	Example: "  pb promql run -i\n  pb promql run \"http_requests_total\" --dataset otel_metrics --from=1h -i",
 }
+
+// PromqlCardinalityCmd exposes the cardinality parent for shared CLI output setup.
+func PromqlCardinalityCmd() *cobra.Command { return promqlCardinalityCmd }
 
 func init() {
 	PromqlCmd.SetHelpFunc(renderPromqlHelp)
@@ -115,6 +119,7 @@ func init() {
 	promqlCardinalityActiveSeriesCmd.Flags().StringP("output", "o", "text", "Output format: text or json")
 
 	// flags: tsdb
+	promqlActiveQueriesCmd.Flags().StringP("output", "o", "text", "Output format: text or json")
 	promqlTSDBCmd.Flags().StringP("dataset", "d", defaultMetricsStream, "Metrics dataset")
 	promqlTSDBCmd.Flags().Int("top", 10, "Max entries per category")
 	promqlTSDBCmd.Flags().String("date", "", "Date to analyze (YYYY-MM-DD, defaults to today)")
@@ -195,7 +200,9 @@ func promqlGet(path string, params url.Values) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	internalHTTP.AddAuthHeaders(req, &DefaultProfile)
+	if err := internalHTTP.AddAuthHeaders(req, &DefaultProfile); err != nil {
+		return nil, err
+	}
 	stopSpinner := startSpinner()
 	resp, err := client.Client.Do(req)
 	stopSpinner()
@@ -374,13 +381,16 @@ func promqlInteractiveFromDefault(from string, interactive, fromChanged bool) st
 // ---------------------------------------------------------------------------
 
 var promqlLabelsCmd = &cobra.Command{
-	Use:     "labels",
+	Use:     "labels [stream]",
 	Short:   "List all label names in a metrics stream",
-	Example: "  pb promql labels --dataset otel_metrics",
-	Args:    cobra.NoArgs,
+	Example: "  pb promql labels otel_metrics\n  pb promql labels --dataset otel_metrics",
+	Args:    cobra.MaximumNArgs(1),
 	PreRunE: PreRunDefaultProfile,
-	RunE: func(cmd *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		stream, _ := cmd.Flags().GetString("dataset")
+		if len(args) > 0 {
+			stream = args[0]
+		}
 		outputFmt, _ := cmd.Flags().GetString("output")
 
 		params := url.Values{}
@@ -409,8 +419,12 @@ var promqlLabelsCmd = &cobra.Command{
 		if resp.Status == "error" {
 			return fmt.Errorf("%s", resp.Error)
 		}
+		if len(resp.Data) == 0 {
+			fmt.Println("No labels found.")
+			return nil
+		}
 		for _, label := range resp.Data {
-			fmt.Println((&DatasetListItem{Name: label}).Render())
+			fmt.Println(ItemOuter.Render(fmt.Sprintf("%s %s", SelectedStyle.Render("•"), StandardStyle.Render(label))))
 		}
 		return nil
 	},
@@ -421,14 +435,17 @@ var promqlLabelsCmd = &cobra.Command{
 // ---------------------------------------------------------------------------
 
 var promqlLabelValuesCmd = &cobra.Command{
-	Use:     "label-values [label_name]",
+	Use:     "label-values [label_name] [stream]",
 	Short:   "List distinct values for a label",
-	Example: "  pb promql label-values job --dataset otel_metrics\n  pb promql label-values __name__ --dataset otel_metrics",
-	Args:    cobra.ExactArgs(1),
+	Example: "  pb promql label-values job otel_metrics\n  pb promql label-values job --dataset otel_metrics\n  pb promql label-values __name__ --dataset otel_metrics",
+	Args:    cobra.RangeArgs(1, 2),
 	PreRunE: PreRunDefaultProfile,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		label := args[0]
 		stream, _ := cmd.Flags().GetString("dataset")
+		if len(args) > 1 {
+			stream = args[1]
+		}
 		outputFmt, _ := cmd.Flags().GetString("output")
 
 		params := url.Values{}
@@ -457,8 +474,12 @@ var promqlLabelValuesCmd = &cobra.Command{
 		if resp.Status == "error" {
 			return fmt.Errorf("%s", resp.Error)
 		}
+		if len(resp.Data) == 0 {
+			fmt.Println("No label values found.")
+			return nil
+		}
 		for _, v := range resp.Data {
-			fmt.Println(v)
+			fmt.Println(ItemOuter.Render(fmt.Sprintf("%s %s", SelectedStyle.Render("•"), StandardStyle.Render(v))))
 		}
 		fmt.Printf("\nlabel=%s  total=%d\n", label, len(resp.Data))
 		return nil
@@ -470,13 +491,16 @@ var promqlLabelValuesCmd = &cobra.Command{
 // ---------------------------------------------------------------------------
 
 var promqlSeriesCmd = &cobra.Command{
-	Use:     "series",
+	Use:     "series [stream]",
 	Short:   "Find time series matching a label selector",
-	Example: "  pb promql series --match 'http_requests_total' --dataset otel_metrics\n  pb promql series --match '{job=\"api\"}' --dataset otel_metrics",
-	Args:    cobra.NoArgs,
+	Example: "  pb promql series otel_metrics --match 'http_requests_total'\n  pb promql series --match '{job=\"api\"}' --dataset otel_metrics",
+	Args:    cobra.MaximumNArgs(1),
 	PreRunE: PreRunDefaultProfile,
-	RunE: func(cmd *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		stream, _ := cmd.Flags().GetString("dataset")
+		if len(args) > 0 {
+			stream = args[0]
+		}
 		matchers, _ := cmd.Flags().GetStringArray("match")
 		outputFmt, _ := cmd.Flags().GetString("output")
 
@@ -513,8 +537,12 @@ var promqlSeriesCmd = &cobra.Command{
 		if resp.Status == "error" {
 			return fmt.Errorf("%s", resp.Error)
 		}
+		if len(resp.Data) == 0 {
+			fmt.Println("No series found.")
+			return nil
+		}
 		for _, series := range resp.Data {
-			fmt.Println(formatPromqlLabels(series))
+			printPromqlSeries(series)
 		}
 		fmt.Printf("\ntotal=%d\n", len(resp.Data))
 		return nil
@@ -538,13 +566,16 @@ type cardinalityEntry struct {
 
 // cardinality label-names
 var promqlCardinalityLabelNamesCmd = &cobra.Command{
-	Use:     "label-names",
+	Use:     "label-names [stream]",
 	Short:   "Labels with the highest number of distinct values",
-	Example: "  pb promql cardinality label-names --dataset otel_metrics --limit 20",
-	Args:    cobra.NoArgs,
+	Example: "  pb promql cardinality label-names otel_metrics\n  pb promql cardinality label-names --dataset otel_metrics --limit 20",
+	Args:    cobra.MaximumNArgs(1),
 	PreRunE: PreRunDefaultProfile,
-	RunE: func(cmd *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		stream, _ := cmd.Flags().GetString("dataset")
+		if len(args) > 0 {
+			stream = args[0]
+		}
 		lookback, _ := cmd.Flags().GetInt("lookback")
 		limit, _ := cmd.Flags().GetInt("limit")
 		selector, _ := cmd.Flags().GetString("selector")
@@ -586,14 +617,20 @@ var promqlCardinalityLabelNamesCmd = &cobra.Command{
 
 // cardinality label-values
 var promqlCardinalityLabelValuesCmd = &cobra.Command{
-	Use:     "label-values",
+	Use:     "label-values [stream] [label]",
 	Short:   "Series count per value for a specific label",
-	Example: "  pb promql cardinality label-values --label job --dataset otel_metrics",
-	Args:    cobra.NoArgs,
+	Example: "  pb promql cardinality label-values otel_metrics service.name\n  pb promql cardinality label-values --label job --dataset otel_metrics",
+	Args:    cobra.MaximumNArgs(2),
 	PreRunE: PreRunDefaultProfile,
-	RunE: func(cmd *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		stream, _ := cmd.Flags().GetString("dataset")
+		if len(args) > 0 {
+			stream = args[0]
+		}
 		labelName, _ := cmd.Flags().GetString("label")
+		if len(args) > 1 {
+			labelName = args[1]
+		}
 		lookback, _ := cmd.Flags().GetInt("lookback")
 		limit, _ := cmd.Flags().GetInt("limit")
 		outputFmt, _ := cmd.Flags().GetString("output")
@@ -677,16 +714,22 @@ func printCardinalityEntryTable(nameHeader, valueHeader string, entries []cardin
 
 // cardinality active-series
 var promqlCardinalityActiveSeriesCmd = &cobra.Command{
-	Use:     "active-series",
+	Use:     "active-series [stream] [selector]",
 	Short:   "List currently active series",
-	Example: "  pb promql cardinality active-series --dataset otel_metrics --selector '{job=\"api\"}'",
-	Args:    cobra.NoArgs,
+	Example: "  pb promql cardinality active-series otel_metrics '{job=\"api\"}'\n  pb promql cardinality active-series --dataset otel_metrics --selector '{job=\"api\"}'",
+	Args:    cobra.MaximumNArgs(2),
 	PreRunE: PreRunDefaultProfile,
-	RunE: func(cmd *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		stream, _ := cmd.Flags().GetString("dataset")
+		if len(args) > 0 {
+			stream = args[0]
+		}
 		lookback, _ := cmd.Flags().GetInt("lookback")
 		limit, _ := cmd.Flags().GetInt("limit")
 		selector, _ := cmd.Flags().GetString("selector")
+		if len(args) > 1 {
+			selector = args[1]
+		}
 		outputFmt, _ := cmd.Flags().GetString("output")
 
 		params := url.Values{}
@@ -721,9 +764,15 @@ var promqlCardinalityActiveSeriesCmd = &cobra.Command{
 		if resp.Status == "error" {
 			return fmt.Errorf("%s", resp.Error)
 		}
-		fmt.Printf("total_active_series=%d\n\n", resp.Data.TotalActiveSeries)
+		fmt.Println(SelectedStyle.Bold(true).Render("ACTIVE SERIES"))
+		fmt.Printf("total=%d\n\n", resp.Data.TotalActiveSeries)
+		if len(resp.Data.Series) == 0 {
+			fmt.Println("No active series found.")
+			return nil
+		}
 		for _, s := range resp.Data.Series {
-			fmt.Println(formatPromqlLabels(s))
+			printPromqlSeries(s)
+			fmt.Println()
 		}
 		return nil
 	},
@@ -737,13 +786,19 @@ var promqlActiveQueriesCmd = &cobra.Command{
 	Use:     "active-queries",
 	Aliases: []string{"ps"},
 	Short:   "Show currently executing PromQL queries",
-	Example: "  pb promql active-queries",
+	Example: "  pb promql active-queries\n  pb promql active-queries -o json",
 	Args:    cobra.NoArgs,
 	PreRunE: PreRunDefaultProfile,
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		outputFmt, _ := cmd.Flags().GetString("output")
+
 		body, err := promqlGet("prometheus/api/v1/status/active_queries", nil)
 		if err != nil {
 			return err
+		}
+		if outputFmt == "json" {
+			printRawJSON(body)
+			return nil
 		}
 
 		var resp struct {
@@ -785,13 +840,16 @@ var promqlActiveQueriesCmd = &cobra.Command{
 // ---------------------------------------------------------------------------
 
 var promqlTSDBCmd = &cobra.Command{
-	Use:     "tsdb",
+	Use:     "tsdb [stream]",
 	Short:   "Show TSDB statistics for a metrics stream",
-	Example: "  pb promql tsdb --dataset otel_metrics\n  pb promql tsdb --dataset otel_metrics --top 20 --focus-label job",
-	Args:    cobra.NoArgs,
+	Example: "  pb promql tsdb otel_metrics\n  pb promql tsdb --dataset otel_metrics\n  pb promql tsdb --dataset otel_metrics --top 20 --focus-label job",
+	Args:    cobra.MaximumNArgs(1),
 	PreRunE: PreRunDefaultProfile,
-	RunE: func(cmd *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		stream, _ := cmd.Flags().GetString("dataset")
+		if len(args) > 0 {
+			stream = args[0]
+		}
 		topN, _ := cmd.Flags().GetInt("top")
 		date, _ := cmd.Flags().GetString("date")
 		focusLabel, _ := cmd.Flags().GetString("focus-label")
@@ -816,27 +874,37 @@ var promqlTSDBCmd = &cobra.Command{
 			return nil
 		}
 
-		var resp struct {
-			Status string `json:"status"`
-			Data   struct {
-				TotalSeries          int                `json:"totalSeries"`
-				TotalLabelValuePairs int                `json:"totalLabelValuePairs"`
-				SeriesByMetric       []cardinalityEntry `json:"seriesCountByMetricName"`
-				SeriesByLabel        []cardinalityEntry `json:"seriesCountByLabelName"`
-				SeriesByFocusLabel   []cardinalityEntry `json:"seriesCountByFocusLabelValue"`
-				LabelValueCount      []cardinalityEntry `json:"labelValueCountByLabelName"`
-			} `json:"data"`
-			Error string `json:"error,omitempty"`
+		var envelope struct {
+			Status string          `json:"status"`
+			Data   json.RawMessage `json:"data"`
+			Error  string          `json:"error,omitempty"`
 		}
-		if err := json.Unmarshal(body, &resp); err != nil {
+		if err := json.Unmarshal(body, &envelope); err != nil {
 			fmt.Println(string(body))
 			return nil
 		}
-		if resp.Status == "error" {
-			return fmt.Errorf("%s", resp.Error)
+		if envelope.Status == "error" {
+			return fmt.Errorf("%s", envelope.Error)
+		}
+		if isEmptyJSONList(envelope.Data) {
+			fmt.Printf("No TSDB stats found. Pass a metrics dataset name, for example: pb promql tsdb <dataset>\n")
+			return nil
 		}
 
-		d := resp.Data
+		var data struct {
+			TotalSeries          int                `json:"totalSeries"`
+			TotalLabelValuePairs int                `json:"totalLabelValuePairs"`
+			SeriesByMetric       []cardinalityEntry `json:"seriesCountByMetricName"`
+			SeriesByLabel        []cardinalityEntry `json:"seriesCountByLabelName"`
+			SeriesByFocusLabel   []cardinalityEntry `json:"seriesCountByFocusLabelValue"`
+			LabelValueCount      []cardinalityEntry `json:"labelValueCountByLabelName"`
+		}
+		if err := json.Unmarshal(envelope.Data, &data); err != nil {
+			fmt.Println(string(body))
+			return nil
+		}
+
+		d := data
 		printTSDBSummary(d.TotalSeries, d.TotalLabelValuePairs)
 
 		if len(d.SeriesByMetric) > 0 {
@@ -853,6 +921,11 @@ var promqlTSDBCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func isEmptyJSONList(data json.RawMessage) bool {
+	var list []json.RawMessage
+	return json.Unmarshal(data, &list) == nil && len(list) == 0
 }
 
 func printTSDBSummary(totalSeries, totalLabelValuePairs int) {
@@ -901,6 +974,7 @@ func formatPromqlLabels(m map[string]string) string {
 			labels = append(labels, k+"=\""+v+"\"")
 		}
 	}
+	sort.Strings(labels)
 	if len(labels) == 0 {
 		return name
 	}
@@ -908,6 +982,25 @@ func formatPromqlLabels(m map[string]string) string {
 		return "{" + strings.Join(labels, ", ") + "}"
 	}
 	return fmt.Sprintf("%s{%s}", name, strings.Join(labels, ", "))
+}
+
+func printPromqlSeries(m map[string]string) {
+	name := m["__name__"]
+	if name == "" {
+		name = "(unnamed series)"
+	}
+	fmt.Println(ItemOuter.Render(fmt.Sprintf("%s %s", SelectedStyle.Render("•"), StandardStyle.Render(name))))
+
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		if k != "__name__" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Printf("  %s=%q\n", k, m[k])
+	}
 }
 
 func promqlTS(v any) string {

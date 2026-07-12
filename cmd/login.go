@@ -42,7 +42,20 @@ credentials. All settings are saved to ~/.config/pb/config.toml.`,
 			return nil
 		}
 
-		if m.Profile.Cloud {
+		if m.CloudBrowserLogin {
+			profile, err := cloudProfileFromBrowserLogin(
+				cloudDefaultOrchestratorURL,
+				cloudDefaultClerkPublishableKey,
+				cloudDefaultCallbackAddr,
+			)
+			if err != nil {
+				return err
+			}
+			m.Profile = *profile
+			if m.Name == "" {
+				m.Name = cloudProfileNameFromSession(profile)
+			}
+		} else if m.Profile.Cloud {
 			profile, err := cloudProfileFromAPIKey(m.Profile.APIKey)
 			if err != nil {
 				return err
@@ -57,8 +70,12 @@ credentials. All settings are saved to ~/.config/pb/config.toml.`,
 	},
 }
 
+func init() {
+	LoginCmd.Flags().StringVar(&cloudOrchestratorAuthToken, "orchestrator-auth-token", cloudDefaultOrchestratorAuthToken, "Parseable Cloud orchestrator auth token")
+}
+
 func cloudProfileFromAPIKey(apiKey string) (*config.Profile, error) {
-	orchestratorURL := cloudOrchestratorURLFromEnv()
+	orchestratorURL := cloudDefaultOrchestratorURL
 	result, err := validateCloudAPIKey(orchestratorURL, apiKey)
 	if err != nil {
 		return nil, err

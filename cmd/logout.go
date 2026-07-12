@@ -17,8 +17,10 @@ package cmd
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -31,8 +33,20 @@ var LogoutCmd = &cobra.Command{
 	Use:     "logout",
 	Short:   "Logout from the current Parseable profile",
 	Long:    "Removes the active profile (URL and credentials) from config.",
-	Example: "  pb logout",
-	RunE: func(_ *cobra.Command, _ []string) error {
+	Example: "  pb logout\n  pb logout --yes -o json",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		outputFormat, err := cmd.Flags().GetString("output")
+		if err != nil {
+			return err
+		}
+		yes, err := cmd.Flags().GetBool("yes")
+		if err != nil {
+			return err
+		}
+		if outputFormat == "json" && !yes {
+			return fmt.Errorf("use --yes with -o json to avoid interactive prompts")
+		}
+
 		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
 			return fmt.Errorf("no config found — nothing to logout from")
@@ -42,6 +56,9 @@ var LogoutCmd = &cobra.Command{
 		activeProfile, exists := fileConfig.Profiles[profileName]
 		if !exists || profileName == "" {
 			if len(fileConfig.Profiles) == 0 {
+				return fmt.Errorf("no active profile found")
+			}
+			if outputFormat == "json" && len(fileConfig.Profiles) > 1 {
 				return fmt.Errorf("no active profile found")
 			}
 			selectedProfile, err := selectLogoutProfile(fileConfig.Profiles)
@@ -56,7 +73,7 @@ var LogoutCmd = &cobra.Command{
 			activeProfile = fileConfig.Profiles[profileName]
 		}
 
-		if !confirmLogout(profileName, activeProfile.URL) {
+		if !yes && !confirmLogout(profileName, activeProfile.URL) {
 			fmt.Println("Logout canceled")
 			return nil
 		}
@@ -72,22 +89,37 @@ var LogoutCmd = &cobra.Command{
 				newDefaultProfile = name
 			}
 		default:
-			fmt.Println("Select a new default profile:")
-			_m, err := tea.NewProgram(defaultprofile.New(fileConfig.Profiles)).Run()
-			if err != nil {
-				return fmt.Errorf("error selecting new default profile: %w", err)
-			}
-			m := _m.(defaultprofile.Model)
-			if m.Success {
-				fileConfig.DefaultProfile = m.Choice
-				newDefaultProfile = m.Choice
+			if yes {
+				fileConfig.DefaultProfile = firstSortedProfileName(fileConfig.Profiles)
+				newDefaultProfile = fileConfig.DefaultProfile
 			} else {
-				fileConfig.DefaultProfile = ""
+				fmt.Println("Select a new default profile:")
+				_m, err := tea.NewProgram(defaultprofile.New(fileConfig.Profiles)).Run()
+				if err != nil {
+					return fmt.Errorf("error selecting new default profile: %w", err)
+				}
+				m := _m.(defaultprofile.Model)
+				if m.Success {
+					fileConfig.DefaultProfile = m.Choice
+					newDefaultProfile = m.Choice
+				} else {
+					fileConfig.DefaultProfile = ""
+				}
 			}
 		}
 
 		if err := config.WriteConfigToFile(fileConfig); err != nil {
 			return fmt.Errorf("failed to update config: %w", err)
+		}
+
+		if outputFormat == "json" {
+			return printLogoutJSON(logoutOutput{
+				Status:         "ok",
+				Profile:        profileName,
+				URL:            activeProfile.URL,
+				Removed:        true,
+				DefaultProfile: fileConfig.DefaultProfile,
+			})
 		}
 
 		fmt.Printf("Logged out and removed profile '%s'\n", profileName)
@@ -96,6 +128,35 @@ var LogoutCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+type logoutOutput struct {
+	Status         string `json:"status"`
+	Profile        string `json:"profile"`
+	URL            string `json:"url"`
+	Removed        bool   `json:"removed"`
+	DefaultProfile string `json:"default_profile"`
+}
+
+func printLogoutJSON(result logoutOutput) error {
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal logout JSON: %w", err)
+	}
+	fmt.Println(string(jsonData))
+	return nil
+}
+
+func firstSortedProfileName(profiles map[string]config.Profile) string {
+	names := make([]string, 0, len(profiles))
+	for name := range profiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return ""
+	}
+	return names[0]
 }
 
 func selectLogoutProfile(profiles map[string]config.Profile) (string, error) {
@@ -137,4 +198,9 @@ func confirmLogout(profileName, profileURL string) bool {
 	default:
 		return false
 	}
+}
+
+func init() {
+	LogoutCmd.Flags().Bool("yes", false, "confirm logout without prompting")
+	LogoutCmd.Flags().StringP("output", "o", "text", "Output format (text|json)")
 }

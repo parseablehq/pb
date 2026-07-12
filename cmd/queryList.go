@@ -19,9 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/parseablehq/pb/pkg/config"
 	internalHTTP "github.com/parseablehq/pb/pkg/http"
@@ -52,10 +50,8 @@ var SavedQueryList = &cobra.Command{
 				userProfile = profile
 			}
 
-			client := &http.Client{
-				Timeout: time.Second * 60,
-			}
-			userSavedQueries := fetchFilters(client, &userProfile)
+			client := internalHTTP.DefaultClient(&userProfile)
+			userSavedQueries := fetchFilters(&client)
 			// Collect all filter titles in a slice and join with commas
 			var filterDetails []string
 
@@ -182,17 +178,14 @@ type Item struct {
 	To     string `json:"to,omitempty"`
 }
 
-func fetchFilters(client *http.Client, profile *config.Profile) []Item {
-	endpoint := fmt.Sprintf("%s/%s", profile.URL, "api/v1/filters")
-	req, err := http.NewRequest("GET", endpoint, nil)
+func fetchFilters(client *internalHTTP.HTTPClient) []Item {
+	req, err := client.NewRequest("GET", "filters", nil)
 	if err != nil {
 		fmt.Println("Error creating request:", err)
 		return nil
 	}
 
-	internalHTTP.AddAuthHeaders(req, profile)
-	req.Header.Add("Content-Type", "application/json")
-	resp, err := client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		fmt.Println("Error making request:", err)
 		return nil

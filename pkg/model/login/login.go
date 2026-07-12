@@ -31,10 +31,11 @@ type step int
 const (
 	stepChooseType step = iota
 	stepEnterURL
+	stepChooseCloudAuth
 	stepChooseAuth
 	stepEnterUsername
 	stepEnterPassword
-	stepEnterToken
+	stepEnterAPIKey
 	stepEnterProfileName
 	stepConfirmReplace
 	stepDone
@@ -64,24 +65,26 @@ var (
 
 // Model is the BubbleTea model for the interactive login wizard.
 type Model struct {
-	step         step
-	typeIndex    int // 0 = self-hosted, 1 = cloud
-	authIndex    int // 0 = username+password, 1 = token
-	replaceIndex int // 0 = Replace, 1 = Change name
+	step           step
+	typeIndex      int // 0 = self-hosted, 1 = cloud
+	cloudAuthIndex int // 0 = OAuth browser, 1 = API key
+	authIndex      int // 0 = username+password, 1 = api key
+	replaceIndex   int // 0 = Replace, 1 = Change name
 
 	urlInput         textinput.Model
 	usernameInput    textinput.Model
 	passwordInput    textinput.Model
-	tokenInput       textinput.Model
+	apiKeyInput      textinput.Model
 	profileNameInput textinput.Model
 
 	serverURL string
 	errMsg    string
 
 	// Result fields — set when Done is true.
-	Done    bool
-	Profile config.Profile
-	Name    string
+	Done              bool
+	Profile           config.Profile
+	Name              string
+	CloudBrowserLogin bool
 }
 
 func newInput(placeholder string, charLimit int) textinput.Model {
@@ -104,7 +107,7 @@ func New() Model {
 	passwordInput.EchoMode = textinput.EchoPassword
 	passwordInput.EchoCharacter = '•'
 
-	tokenInput := newInput("paste API key here", 512)
+	apiKeyInput := newInput("paste API key here", 512)
 
 	profileInput := newInput("e.g. local, staging, prod", 64)
 	profileInput.SetValue("default")
@@ -114,7 +117,7 @@ func New() Model {
 		urlInput:         urlInput,
 		usernameInput:    usernameInput,
 		passwordInput:    passwordInput,
-		tokenInput:       tokenInput,
+		apiKeyInput:      apiKeyInput,
 		profileNameInput: profileInput,
 	}
 }
@@ -152,13 +155,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, textinput.Blink
 				}
 				m.errMsg = ""
-				m.step = stepEnterToken
-				m.tokenInput.Focus()
+				m.step = stepChooseCloudAuth
+				return m, nil
+			}
+			return m, nil
+
+		// ── Step 2a: cloud auth method ───────────────────────────────────────
+		case stepChooseCloudAuth:
+			switch key.Type {
+			case tea.KeyEsc:
+				m.errMsg = ""
+				m.step = stepChooseType
+				return m, nil
+			case tea.KeyUp:
+				if m.cloudAuthIndex > 0 {
+					m.cloudAuthIndex--
+				}
+				return m, nil
+			case tea.KeyDown:
+				if m.cloudAuthIndex < 1 {
+					m.cloudAuthIndex++
+				}
+				return m, nil
+			case tea.KeyEnter:
+				m.errMsg = ""
+				if m.cloudAuthIndex == 0 {
+					m.step = stepEnterProfileName
+					m.profileNameInput.Focus()
+				} else {
+					m.step = stepEnterAPIKey
+					m.apiKeyInput.Focus()
+				}
 				return m, textinput.Blink
 			}
 			return m, nil
 
-		// ── Step 2: server URL ───────────────────────────────────────────────
+		// ── Step 2b: server URL ──────────────────────────────────────────────
 		case stepEnterURL:
 			switch key.Type {
 			case tea.KeyEsc:
@@ -203,8 +235,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.step = stepEnterUsername
 					m.usernameInput.Focus()
 				} else {
-					m.step = stepEnterToken
-					m.tokenInput.Focus()
+					m.step = stepEnterAPIKey
+					m.apiKeyInput.Focus()
 				}
 				return m, textinput.Blink
 			}
@@ -251,26 +283,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, textinput.Blink
 			}
 
-		// ── Step 4c: token ───────────────────────────────────────────────────
-		case stepEnterToken:
+		// ── Step 4c: API key ─────────────────────────────────────────────────
+		case stepEnterAPIKey:
 			switch key.Type {
 			case tea.KeyEsc:
 				m.errMsg = ""
 				if m.typeIndex == 1 {
-					m.step = stepChooseType
+					m.step = stepChooseCloudAuth
 				} else {
 					m.step = stepChooseAuth
 				}
-				m.tokenInput.Blur()
+				m.apiKeyInput.Blur()
 				return m, nil
 			case tea.KeyEnter:
-				if strings.TrimSpace(m.tokenInput.Value()) == "" {
+				if strings.TrimSpace(m.apiKeyInput.Value()) == "" {
 					m.errMsg = "API key is required"
 					return m, nil
 				}
 				m.errMsg = ""
 				m.step = stepEnterProfileName
-				m.tokenInput.Blur()
+				m.apiKeyInput.Blur()
 				m.profileNameInput.Focus()
 				return m, textinput.Blink
 			}
@@ -281,12 +313,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyEsc:
 				m.errMsg = ""
 				m.profileNameInput.Blur()
-				if m.authIndex == 0 {
+				if m.typeIndex == 1 {
+					if m.cloudAuthIndex == 0 {
+						m.step = stepChooseCloudAuth
+					} else {
+						m.step = stepEnterAPIKey
+						m.apiKeyInput.Focus()
+					}
+				} else if m.authIndex == 0 {
 					m.step = stepEnterPassword
 					m.passwordInput.Focus()
 				} else {
-					m.step = stepEnterToken
-					m.tokenInput.Focus()
+					m.step = stepEnterAPIKey
+					m.apiKeyInput.Focus()
 				}
 				return m, textinput.Blink
 			case tea.KeyEnter:
@@ -350,8 +389,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.usernameInput, cmd = m.usernameInput.Update(msg)
 	case stepEnterPassword:
 		m.passwordInput, cmd = m.passwordInput.Update(msg)
-	case stepEnterToken:
-		m.tokenInput, cmd = m.tokenInput.Update(msg)
+	case stepEnterAPIKey:
+		m.apiKeyInput, cmd = m.apiKeyInput.Update(msg)
 	case stepEnterProfileName:
 		m.profileNameInput, cmd = m.profileNameInput.Update(msg)
 	}
@@ -360,21 +399,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) finalize(name string) (tea.Model, tea.Cmd) {
 	m.Name = name
-	if m.typeIndex == 1 {
+	if m.typeIndex == 1 && m.cloudAuthIndex == 0 {
+		m.CloudBrowserLogin = true
+		m.Profile = config.Profile{
+			Cloud: true,
+		}
+	} else if m.typeIndex == 1 {
 		m.Profile = config.Profile{
 			Cloud:  true,
-			APIKey: strings.TrimSpace(m.tokenInput.Value()),
+			APIKey: strings.TrimSpace(m.apiKeyInput.Value()),
 		}
 	} else if m.authIndex == 0 {
 		m.Profile = config.Profile{
+			Cloud:    false,
 			URL:      m.serverURL,
 			Username: strings.TrimSpace(m.usernameInput.Value()),
 			Password: m.passwordInput.Value(),
 		}
 	} else {
 		m.Profile = config.Profile{
-			URL:   m.serverURL,
-			Token: strings.TrimSpace(m.tokenInput.Value()),
+			Cloud:  false,
+			URL:    m.serverURL,
+			APIKey: strings.TrimSpace(m.apiKeyInput.Value()),
 		}
 	}
 	m.Done = true
@@ -441,6 +487,21 @@ func (m Model) View() string {
 		b.WriteString(renderErr(m.errMsg))
 		b.WriteString(hint([2]string{"esc", "back"}, [2]string{"enter", "continue"}))
 
+	case stepChooseCloudAuth:
+		b.WriteString(labelStyle.Render("CLOUD AUTHENTICATION"))
+		b.WriteString("\n\n")
+		authEntries := []string{"OAuth (browser)", "API key"}
+		for i, entry := range authEntries {
+			if i == m.cloudAuthIndex {
+				b.WriteString(rowSelected(entry))
+			} else {
+				b.WriteString(rowIdle(entry))
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+		b.WriteString(hint([2]string{"esc", "back"}, [2]string{"↑↓", "navigate"}, [2]string{"enter", "select"}))
+
 	case stepChooseAuth:
 		b.WriteString(labelStyle.Render("AUTHENTICATION"))
 		b.WriteString("\n\n")
@@ -472,14 +533,14 @@ func (m Model) View() string {
 		b.WriteString(renderErr(m.errMsg))
 		b.WriteString(hint([2]string{"esc", "back"}, [2]string{"enter", "continue"}))
 
-	case stepEnterToken:
+	case stepEnterAPIKey:
 		if m.typeIndex == 1 {
 			b.WriteString(labelStyle.Render("CLOUD API KEY"))
 		} else {
 			b.WriteString(labelStyle.Render("API KEY"))
 		}
 		b.WriteString("\n\n  ")
-		b.WriteString(m.tokenInput.View())
+		b.WriteString(m.apiKeyInput.View())
 		b.WriteString("\n\n")
 		b.WriteString(renderErr(m.errMsg))
 		b.WriteString(hint([2]string{"esc", "back"}, [2]string{"enter", "continue"}))
@@ -525,7 +586,7 @@ func (m Model) View() string {
 			b.WriteString(normalStyle.Render(m.Profile.Username))
 			b.WriteString("\n")
 		}
-		if m.Profile.Token != "" {
+		if m.Profile.APIKey != "" {
 			b.WriteString("  " + labelStyle.Render("AUTH "))
 			b.WriteString(normalStyle.Render("API key (stored)"))
 			b.WriteString("\n")
