@@ -81,10 +81,10 @@ type Model struct {
 	errMsg    string
 
 	// Result fields — set when Done is true.
-	Done              bool
-	Profile           config.Profile
-	Name              string
-	CloudBrowserLogin bool
+	Done             bool
+	Profile          config.Profile
+	Name             string
+	CloudDeviceLogin bool
 }
 
 func newInput(placeholder string, charLimit int) textinput.Model {
@@ -108,6 +108,8 @@ func New() Model {
 	passwordInput.EchoCharacter = '•'
 
 	apiKeyInput := newInput("paste API key here", 512)
+	apiKeyInput.EchoMode = textinput.EchoPassword
+	apiKeyInput.EchoCharacter = '•'
 
 	profileInput := newInput("e.g. local, staging, prod", 64)
 	profileInput.SetValue("default")
@@ -400,7 +402,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) finalize(name string) (tea.Model, tea.Cmd) {
 	m.Name = name
 	if m.typeIndex == 1 && m.cloudAuthIndex == 0 {
-		m.CloudBrowserLogin = true
+		m.CloudDeviceLogin = true
 		m.Profile = config.Profile{
 			Cloud: true,
 		}
@@ -453,6 +455,11 @@ func hint(pairs ...[2]string) string {
 // card with a fixed UPPERCASE title strip. Each step writes its own
 // label row + body + hint row, joined into the card.
 func (m Model) View() string {
+	// Device authorization and persistence happen after the wizard exits.
+	if m.step == stepDone && m.CloudDeviceLogin {
+		return ""
+	}
+
 	var b strings.Builder
 
 	b.WriteString(titleStyle.Render("PARSEABLE LOGIN"))
@@ -490,7 +497,7 @@ func (m Model) View() string {
 	case stepChooseCloudAuth:
 		b.WriteString(labelStyle.Render("CLOUD AUTHENTICATION"))
 		b.WriteString("\n\n")
-		authEntries := []string{"OAuth (browser)", "API key"}
+		authEntries := []string{"Device login (browser)", "API key"}
 		for i, entry := range authEntries {
 			if i == m.cloudAuthIndex {
 				b.WriteString(rowSelected(entry))
@@ -592,9 +599,11 @@ func (m Model) View() string {
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")
-		b.WriteString(dimStyle.Render("  add more profiles:"))
+		b.WriteString(dimStyle.Render("  Next steps:"))
 		b.WriteString("\n  ")
-		b.WriteString(hintStyle.Render("pb profile add <name> <url> [user] [pass]"))
+		b.WriteString(hintStyle.Render("pb status        Verify active connection"))
+		b.WriteString("\n  ")
+		b.WriteString(hintStyle.Render("pb dataset list  Explore available datasets"))
 	}
 
 	return lipgloss.NewStyle().

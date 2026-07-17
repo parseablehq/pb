@@ -31,7 +31,7 @@ var LoginCmd = &cobra.Command{
 
 Select self-hosted or Parseable Cloud and enter the required
 credentials. All settings are saved to ~/.config/pb/config.toml.`,
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		_m, err := tea.NewProgram(login.New()).Run()
 		if err != nil {
 			return err
@@ -42,12 +42,8 @@ credentials. All settings are saved to ~/.config/pb/config.toml.`,
 			return nil
 		}
 
-		if m.CloudBrowserLogin {
-			profile, err := cloudProfileFromBrowserLogin(
-				cloudDefaultOrchestratorURL,
-				cloudDefaultClerkPublishableKey,
-				cloudDefaultCallbackAddr,
-			)
+		if m.CloudDeviceLogin {
+			profile, err := cloudProfileFromDeviceLogin(cmd.Context(), cloudDefaultOrchestratorURL)
 			if err != nil {
 				return err
 			}
@@ -66,12 +62,17 @@ credentials. All settings are saved to ~/.config/pb/config.toml.`,
 		if err := writeProfile(m.Profile, m.Name); err != nil {
 			return fmt.Errorf("failed to save profile: %w", err)
 		}
+		if m.CloudDeviceLogin {
+			printDeviceLoginSuccess(m.Name)
+		}
 		return nil
 	},
 }
 
-func init() {
-	LoginCmd.Flags().StringVar(&cloudOrchestratorAuthToken, "orchestrator-auth-token", cloudDefaultOrchestratorAuthToken, "Parseable Cloud orchestrator auth token")
+func printDeviceLoginSuccess(profileName string) {
+	fmt.Printf("  ✓ Profile '%s' saved.\n\n", profileName)
+	fmt.Println("  💡 Tip: You can add more profiles anytime using:")
+	fmt.Println("     pb profile add <name> <url> [user] [pass]")
 }
 
 func cloudProfileFromAPIKey(apiKey string) (*config.Profile, error) {
@@ -107,8 +108,6 @@ func writeProfile(profile config.Profile, profileName string) error {
 		fileConfig.Profiles = make(map[string]config.Profile)
 	}
 	fileConfig.Profiles[profileName] = profile
-	if fileConfig.DefaultProfile == "" {
-		fileConfig.DefaultProfile = profileName
-	}
+	fileConfig.DefaultProfile = profileName
 	return config.WriteConfigToFile(fileConfig)
 }

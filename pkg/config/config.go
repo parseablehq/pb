@@ -24,6 +24,7 @@ import (
 	"os"
 	path "path/filepath"
 	"runtime"
+	"sync"
 
 	toml "github.com/pelletier/go-toml/v2"
 )
@@ -31,6 +32,7 @@ import (
 var (
 	configFilename = "config.toml"
 	configAppName  = "pb"
+	configFileMu   sync.Mutex
 )
 
 // Path returns the config file path.
@@ -58,6 +60,27 @@ func Path() (string, error) {
 	return path.Join(dir, configAppName, configFilename), nil
 }
 
+// UpdateCloudTokens persists a rotated cloud session and refresh token.
+func UpdateCloudTokens(oldRefreshToken, sessionToken, refreshToken string) error {
+	configFileMu.Lock()
+	defer configFileMu.Unlock()
+
+	fileConfig, err := ReadConfigFromFile()
+	if err != nil {
+		return err
+	}
+	for name, profile := range fileConfig.Profiles {
+		if !profile.Cloud || profile.RefreshToken != oldRefreshToken {
+			continue
+		}
+		profile.SessionToken = sessionToken
+		profile.RefreshToken = refreshToken
+		fileConfig.Profiles[name] = profile
+		return WriteConfigToFile(fileConfig)
+	}
+	return errors.New("cloud profile for refresh token not found")
+}
+
 // Config is the struct that holds the configuration
 type Config struct {
 	Profiles       map[string]Profile
@@ -79,7 +102,6 @@ type Profile struct {
 	WorkspaceID     string `toml:"workspace_id,omitempty" json:"workspace_id,omitempty"`
 	WorkspaceName   string `toml:"workspace_name,omitempty" json:"workspace_name,omitempty"`
 	OrchestratorURL string `toml:"orchestrator_url,omitempty" json:"orchestrator_url,omitempty"`
-	ClerkSessionID  string `toml:"clerk_session_id,omitempty" json:"clerk_session_id,omitempty"`
 }
 
 type AuthMode string
@@ -144,7 +166,10 @@ func (p *Profile) GrpcAddr(port string) string {
 
 // WriteConfigToFile writes the configuration to the config file
 func WriteConfigToFile(config *Config) error {
-	tomlData, _ := toml.Marshal(config)
+	tomlData, err := toml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to encode config: %w", err)
+	}
 	filePath, err := Path()
 	if err != nil {
 		return err

@@ -19,11 +19,14 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/apache/arrow/go/v13/arrow/array"
@@ -34,6 +37,7 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -81,8 +85,12 @@ func tail(profile config.Profile, stream string, jsonOutput bool) error {
 		return err
 	}
 	url := profile.GrpcAddr(fmt.Sprint(about.GRPCPort))
+	transportCredentials, err := tailTransportCredentials(profile)
+	if err != nil {
+		return err
+	}
 
-	flightClient, err := flight.NewClientWithMiddleware(url, nil, nil, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	flightClient, err := flight.NewClientWithMiddleware(url, nil, nil, grpc.WithTransportCredentials(transportCredentials))
 	if err != nil {
 		return err
 	}
@@ -142,6 +150,25 @@ func tail(profile config.Profile, stream string, jsonOutput bool) error {
 		watching()
 		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+func tailTransportCredentials(profile config.Profile) (credentials.TransportCredentials, error) {
+	profileURL, err := url.Parse(profile.URL)
+	if err != nil || profileURL.Hostname() == "" {
+		return nil, fmt.Errorf("invalid profile URL %q", profile.URL)
+	}
+
+	scheme := strings.ToLower(profileURL.Scheme)
+	if profile.Cloud || scheme == "https" {
+		return credentials.NewTLS(&tls.Config{
+			MinVersion: tls.VersionTLS12,
+			ServerName: profileURL.Hostname(),
+		}), nil
+	}
+	if scheme == "http" {
+		return insecure.NewCredentials(), nil
+	}
+	return nil, fmt.Errorf("unsupported profile URL scheme %q", profileURL.Scheme)
 }
 
 func tailAuthMetadata(profile config.Profile) (metadata.MD, error) {

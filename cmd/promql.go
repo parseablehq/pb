@@ -184,11 +184,10 @@ func renderPromqlHelp(cmd *cobra.Command, _ []string) {
 // ---------------------------------------------------------------------------
 
 func promqlGet(path string, params url.Values) ([]byte, error) {
-	client := internalHTTP.DefaultClient(&DefaultProfile)
-	client.Client.Timeout = 120 * time.Second
-	client.Client.Transport = &http.Transport{
+	client := internalHTTP.DefaultClientWithTransport(&DefaultProfile, &http.Transport{
 		TLSNextProto: make(map[string]func(string, *tls.Conn) http.RoundTripper),
-	}
+	})
+	client.Client.Timeout = 120 * time.Second
 	reqURL, err := url.JoinPath(DefaultProfile.URL, path)
 	if err != nil {
 		return nil, err

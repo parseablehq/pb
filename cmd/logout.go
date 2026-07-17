@@ -58,8 +58,8 @@ var LogoutCmd = &cobra.Command{
 			if len(fileConfig.Profiles) == 0 {
 				return fmt.Errorf("no active profile found")
 			}
-			if outputFormat == "json" && len(fileConfig.Profiles) > 1 {
-				return fmt.Errorf("no active profile found")
+			if len(fileConfig.Profiles) > 1 && (yes || outputFormat == "json") {
+				return fmt.Errorf("no active profile found; set one with: pb profile default <name>")
 			}
 			selectedProfile, err := selectLogoutProfile(fileConfig.Profiles)
 			if err != nil {

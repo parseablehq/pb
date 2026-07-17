@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -40,13 +41,13 @@ var StatusCmd = &cobra.Command{
 
 		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
-			return fmt.Errorf("no profile configured. run: pb login")
+			return statusPreflightError(outputFormat, "no profile configured. run: pb login")
 		}
 
 		profileName := fileConfig.DefaultProfile
 		profile, exists := fileConfig.Profiles[profileName]
 		if !exists || profileName == "" {
-			return fmt.Errorf("no active profile. run: pb login")
+			return statusPreflightError(outputFormat, "no active profile. run: pb login")
 		}
 
 		if outputFormat != "json" {
@@ -96,10 +97,23 @@ var StatusCmd = &cobra.Command{
 type statusOutput struct {
 	Status  string `json:"status"`
 	Healthy bool   `json:"healthy"`
-	Profile string `json:"profile"`
-	URL     string `json:"url"`
+	Profile string `json:"profile,omitempty"`
+	URL     string `json:"url,omitempty"`
 	Version string `json:"version,omitempty"`
 	Error   string `json:"error,omitempty"`
+}
+
+func statusPreflightError(outputFormat, message string) error {
+	if outputFormat == "json" {
+		if err := printStatusJSON(statusOutput{
+			Status:  "error",
+			Healthy: false,
+			Error:   message,
+		}); err != nil {
+			return err
+		}
+	}
+	return errors.New(message)
 }
 
 func printStatusJSON(result statusOutput) error {

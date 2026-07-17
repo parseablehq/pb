@@ -40,9 +40,20 @@ type HTTPClient struct {
 }
 
 func DefaultClient(profile *config.Profile) HTTPClient {
+	return DefaultClientWithTransport(profile, http.DefaultTransport)
+}
+
+func DefaultClientWithTransport(profile *config.Profile, transport http.RoundTripper) HTTPClient {
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
 	return HTTPClient{
 		Client: http.Client{
 			Timeout: 60 * time.Second,
+			Transport: &cloudRefreshTransport{
+				base:    transport,
+				profile: profile,
+			},
 		},
 		Profile: profile,
 	}
@@ -54,6 +65,9 @@ func (client *HTTPClient) baseAPIURL(path string) (x string) {
 }
 
 func (client *HTTPClient) NewRequest(method string, path string, body io.Reader) (req *http.Request, err error) {
+	if client.Profile == nil {
+		return nil, errors.New("profile is nil")
+	}
 	req, err = http.NewRequest(method, client.baseAPIURL(path), body)
 	if err != nil {
 		return

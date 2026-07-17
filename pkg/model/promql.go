@@ -2215,12 +2215,10 @@ func promqlModelFetch(profile config.Profile, path string, params url.Values) ([
 		reqURL += "?" + params.Encode()
 	}
 
-	client := &http.Client{
-		Timeout: 120 * time.Second,
-		Transport: &http.Transport{
-			TLSNextProto: make(map[string]func(string, *tls.Conn) http.RoundTripper),
-		},
-	}
+	client := internalHTTP.DefaultClientWithTransport(&profile, &http.Transport{
+		TLSNextProto: make(map[string]func(string, *tls.Conn) http.RoundTripper),
+	})
+	client.Client.Timeout = 120 * time.Second
 
 	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
@@ -2230,7 +2228,7 @@ func promqlModelFetch(profile config.Profile, path string, params url.Values) ([
 		return nil, err
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		if strings.Contains(err.Error(), "connection reset") {
 			return nil, fmt.Errorf("server reset the connection — query timed out")
@@ -2601,7 +2599,8 @@ type promqlLabelListResp struct {
 }
 
 func builderHTTPGetCtx(ctx context.Context, profile config.Profile, rawURL string) ([]byte, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := internalHTTP.DefaultClient(&profile)
+	client.Client.Timeout = 30 * time.Second
 	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
 	if err != nil {
 		return nil, err
@@ -2609,7 +2608,7 @@ func builderHTTPGetCtx(ctx context.Context, profile config.Profile, rawURL strin
 	if err := internalHTTP.AddAuthHeaders(req, &profile); err != nil {
 		return nil, err
 	}
-	resp, err := client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return nil, err
 	}
