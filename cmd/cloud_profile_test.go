@@ -46,7 +46,7 @@ func TestCloudRequestsRequireConfiguredOrchestratorURL(t *testing.T) {
 	if _, err := cloudProfileFromDeviceLogin(context.Background(), ""); err == nil || !strings.Contains(err.Error(), "URL is not configured") {
 		t.Fatalf("unexpected device login error: %v", err)
 	}
-	if _, err := validateCloudAPIKey("", "api-key"); err == nil || !strings.Contains(err.Error(), "URL is not configured") {
+	if _, err := validateCloudAPIKey(context.Background(), "", "api-key"); err == nil || !strings.Contains(err.Error(), "URL is not configured") {
 		t.Fatalf("unexpected API-key validation error: %v", err)
 	}
 }

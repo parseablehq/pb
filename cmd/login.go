@@ -16,6 +16,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -52,7 +53,7 @@ credentials. All settings are saved to ~/.config/pb/config.toml.`,
 				m.Name = cloudProfileNameFromSession(profile)
 			}
 		} else if m.Profile.Cloud {
-			profile, err := cloudProfileFromAPIKey(m.Profile.APIKey)
+			profile, err := cloudProfileFromAPIKey(cmd.Context(), m.Profile.APIKey)
 			if err != nil {
 				return err
 			}
@@ -75,9 +76,9 @@ func printDeviceLoginSuccess(profileName string) {
 	fmt.Println("     pb profile add <name> <url> [user] [pass]")
 }
 
-func cloudProfileFromAPIKey(apiKey string) (*config.Profile, error) {
+func cloudProfileFromAPIKey(ctx context.Context, apiKey string) (*config.Profile, error) {
 	orchestratorURL := config.CloudOrchestratorURL
-	result, err := validateCloudAPIKey(orchestratorURL, apiKey)
+	result, err := validateCloudAPIKey(ctx, orchestratorURL, apiKey)
 	if err != nil {
 		return nil, err
 	}

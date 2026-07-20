@@ -214,7 +214,7 @@ var CloudProfileAddCmd = &cobra.Command{
 		}
 
 		orchestratorURL := cloudOrchestratorEndpoint()
-		result, err := validateCloudAPIKey(orchestratorURL, apiKey)
+		result, err := validateCloudAPIKey(cmd.Context(), orchestratorURL, apiKey)
 		if err != nil {
 			return err
 		}
@@ -500,7 +500,7 @@ func doCloudJSON(ctx context.Context, client *http.Client, method, endpoint stri
 	return nil
 }
 
-func validateCloudAPIKey(orchestratorURL, apiKey string) (*cloudAPIKeyValidationResponse, error) {
+func validateCloudAPIKey(ctx context.Context, orchestratorURL, apiKey string) (*cloudAPIKeyValidationResponse, error) {
 	if strings.TrimSpace(orchestratorURL) == "" {
 		return nil, errors.New("cloud orchestrator URL is not configured")
 	}
@@ -508,7 +508,7 @@ func validateCloudAPIKey(orchestratorURL, apiKey string) (*cloudAPIKeyValidation
 	if err != nil {
 		return nil, fmt.Errorf("invalid orchestrator URL: %w", err)
 	}
-	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
