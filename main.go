@@ -147,7 +147,7 @@ var profile = &cobra.Command{
 	Use:               "profile",
 	Short:             "Manage different Parseable targets",
 	Long:              "\nuse profile command to configure different Parseable instances. Each profile takes a URL and credentials.",
-	PersistentPreRunE: analytics.CheckAndCreateULID,
+	PersistentPreRunE: analyticsPreRun,
 	PersistentPostRun: postRunAnalytics("profile"),
 }
 
