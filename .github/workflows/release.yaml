@@ -27,7 +27,8 @@ jobs:
       - name: Validate release configuration
         env:
           PB_CLOUD_ORCHESTRATOR_URL: ${{ vars.PB_CLOUD_ORCHESTRATOR_URL }}
-        run: test -n "$PB_CLOUD_ORCHESTRATOR_URL"
+          PB_CLOUD_ORCHESTRATOR_AUTH_TOKEN: ${{ secrets.PB_CLOUD_ORCHESTRATOR_AUTH_TOKEN }}
+        run: test -n "$PB_CLOUD_ORCHESTRATOR_URL" && test -n "$PB_CLOUD_ORCHESTRATOR_AUTH_TOKEN"
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
@@ -38,6 +39,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PB_CLOUD_ORCHESTRATOR_URL: ${{ vars.PB_CLOUD_ORCHESTRATOR_URL }}
+          PB_CLOUD_ORCHESTRATOR_AUTH_TOKEN: ${{ secrets.PB_CLOUD_ORCHESTRATOR_AUTH_TOKEN }}
 
       - name: Update Homebrew tap
         env:

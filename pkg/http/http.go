@@ -105,6 +105,19 @@ func AddAuthHeaders(req *http.Request, profile *config.Profile) error {
 	return nil
 }
 
+// AddCloudOrchestratorAuth adds the bearer token required by CLI auth routes.
+func AddCloudOrchestratorAuth(req *http.Request) error {
+	if req == nil {
+		return errors.New("request is nil")
+	}
+	token := strings.TrimSpace(config.CloudOrchestratorAuthToken)
+	if token == "" {
+		return errors.New("cloud orchestrator auth token is not configured")
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	return nil
+}
+
 func debugRequestHeaders(req *http.Request) {
 	if os.Getenv("PB_DEBUG_HTTP_HEADERS") == "" {
 		return

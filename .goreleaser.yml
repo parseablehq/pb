@@ -18,7 +18,7 @@ builds:
       - -trimpath
       - -tags=kqueue
     ldflags:
-      - -s -w -X main.Version=v{{ .Version }} -X main.Commit={{ .ShortCommit }} -X github.com/parseablehq/pb/pkg/config.CloudOrchestratorURL={{ .Env.PB_CLOUD_ORCHESTRATOR_URL }}
+      - -s -w -X main.Version=v{{ .Version }} -X main.Commit={{ .ShortCommit }} -X github.com/parseablehq/pb/pkg/config.CloudOrchestratorURL={{ .Env.PB_CLOUD_ORCHESTRATOR_URL }} -X github.com/parseablehq/pb/pkg/config.CloudOrchestratorAuthToken={{ .Env.PB_CLOUD_ORCHESTRATOR_AUTH_TOKEN }}
 
 archives:
   - name_template: "pb_{{ .Version }}_{{ .Os }}_{{ .Arch }}"

@@ -38,6 +38,9 @@ func TestNewRequestWithNilProfileReturnsError(t *testing.T) {
 }
 
 func TestCloudSessionRefreshesAndRetriesWorkspaceRequest(t *testing.T) {
+	oldAuthToken := config.CloudOrchestratorAuthToken
+	config.CloudOrchestratorAuthToken = "orchestrator-auth-token"
+	t.Cleanup(func() { config.CloudOrchestratorAuthToken = oldAuthToken })
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	profile := config.Profile{
 		URL:             "https://workspace.example.com",
@@ -61,6 +64,9 @@ func TestCloudSessionRefreshesAndRetriesWorkspaceRequest(t *testing.T) {
 		switch req.URL.Host {
 		case "orchestrator.example.com":
 			refreshCalls++
+			if got := req.Header.Get("Authorization"); got != "Bearer orchestrator-auth-token" {
+				t.Fatalf("unexpected orchestrator authorization header %q", got)
+			}
 			var payload cloudRefreshRequest
 			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
 				t.Fatal(err)
@@ -142,6 +148,9 @@ func TestCloudSessionDoesNotRefreshCrossOriginRequest(t *testing.T) {
 }
 
 func TestCloudSessionReturnsRefreshPersistenceError(t *testing.T) {
+	oldAuthToken := config.CloudOrchestratorAuthToken
+	config.CloudOrchestratorAuthToken = "orchestrator-auth-token"
+	t.Cleanup(func() { config.CloudOrchestratorAuthToken = oldAuthToken })
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	profile := config.Profile{
 		URL:             "https://workspace.example.com",
@@ -184,5 +193,27 @@ func TestCloudSessionReturnsRefreshPersistenceError(t *testing.T) {
 	}
 	if profile.SessionToken != "new-session" || profile.RefreshToken != "new-refresh" {
 		t.Fatalf("rotated tokens were not retained in memory: %#v", profile)
+	}
+}
+
+func TestAddCloudOrchestratorAuth(t *testing.T) {
+	oldAuthToken := config.CloudOrchestratorAuthToken
+	t.Cleanup(func() { config.CloudOrchestratorAuthToken = oldAuthToken })
+
+	req, err := http.NewRequest(http.MethodPost, "https://orchestrator.example.com/api/v1/cli/oauth/token", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.CloudOrchestratorAuthToken = "test-token"
+	if err := AddCloudOrchestratorAuth(req); err != nil {
+		t.Fatal(err)
+	}
+	if got := req.Header.Get("Authorization"); got != "Bearer test-token" {
+		t.Fatalf("unexpected authorization header %q", got)
+	}
+
+	config.CloudOrchestratorAuthToken = ""
+	if err := AddCloudOrchestratorAuth(req); err == nil {
+		t.Fatal("expected missing cloud orchestrator auth token error")
 	}
 }

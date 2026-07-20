@@ -9,9 +9,12 @@ package config
 
 import "fmt"
 
-// CloudOrchestratorURL uses staging for local/development builds. Release
-// builds replace it with the production URL through Go's -X linker flag.
-var CloudOrchestratorURL = "ADD ORCHESTRATOR URL HERE"
+// CloudOrchestratorURL and CloudOrchestratorAuthToken are populated in release
+// binaries through Go's -X linker flag.
+var (
+	CloudOrchestratorURL       string
+	CloudOrchestratorAuthToken string
+)
 
 // Service and user-facing URL defaults used by pb.
 const (
