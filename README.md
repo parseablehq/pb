@@ -113,12 +113,6 @@ On macOS, a manually downloaded binary may be blocked on first run. Allow it onc
 xattr -d com.apple.quarantine /usr/local/bin/pb
 ```
 
-**Go install:**
-
-```bash
-go install github.com/parseablehq/pb@latest
-```
-
 **Verify:** `pb --help`
 
 ## Authentication
@@ -152,27 +146,6 @@ pb profile add local-key http://localhost:8000 --api-key psk_xxx
 ```bash
 pb cloud profile add --api-key psk_xxx --name production
 ```
-
-For non-interactive agent or CI authentication, load the API key from the
-platform's secret store and request structured output:
-
-```bash
-# Self-hosted
-pb profile add agent https://parseable.example.com \
-  --api-key "$PARSEABLE_API_KEY" -o json
-
-# Parseable Cloud
-pb cloud profile add --name agent \
-  --api-key "$PARSEABLE_CLOUD_API_KEY" -o json
-```
-
-The saved profile can then be used by subsequent `pb` commands without an
-interactive login prompt. Do not commit API keys to source control.
-
-> ⚠️ **Warning for agent access:** Create a dedicated read-only API key or role
-> with the minimum permissions required for queries and metadata reads. Do not
-> give an agent an administrator or shared human credential. Read-only access
-> must be enforced by Parseable on the server.
 
 **Manage profiles:**
 
@@ -368,6 +341,58 @@ pb promql run "up" --dataset otel_metrics --instant --output json
 Use `pb <command> --help` to check output support. For automation, omit `-i`
 so SQL and PromQL commands print output instead of opening the terminal UI.
 
+## Using pb with AI agents
+
+An AI agent uses the same installed `pb` binary and local profiles as a human.
+Before starting the agent, a human should install `pb`, configure the intended
+profile, and verify the connection:
+
+```bash
+pb login
+pb status -o json
+```
+
+For non-interactive setup, load an API key from a secret store or environment
+variable. The profile name is user-defined; it does not need to be `agent`:
+
+```bash
+# Self-hosted
+pb profile add automation-readonly https://parseable.example.com \
+  --api-key "$PARSEABLE_API_KEY" -o json
+
+# Parseable Cloud
+pb cloud profile add --name automation-readonly \
+  --api-key "$PARSEABLE_CLOUD_API_KEY" -o json
+```
+
+If multiple profiles exist, the human should select the intended one before
+handing control to the agent:
+
+```bash
+pb profile default automation-readonly -o json
+pb status -o json
+```
+
+Agents should prefer structured output and read operations:
+
+```bash
+pb status -o json
+pb dataset list -o json
+pb dataset info <dataset> -o json
+pb sql run "SELECT * FROM <dataset> LIMIT 10" -o json
+pb promql run "up" --dataset <metrics-dataset> --instant -o json
+```
+
+> ⚠️ **Agent access warning:** Create a dedicated read-only API key or role
+> with only the query and metadata permissions the agent needs. Never give an
+> agent an administrator key or a shared human credential. Read-only access
+> must be enforced by Parseable on the server; CLI instructions alone cannot
+> prevent create, update, or delete attempts.
+
+Do not place API keys in prompts, source control, logs, or agent instructions.
+The agent can use the profile after the human configures it; it does not need
+to read `~/.config/pb/config.toml` or receive the credential directly.
+
 ## Documentation
 
 | Topic | Description |
@@ -380,6 +405,26 @@ so SQL and PromQL commands print output instead of opening the terminal UI.
 ## Contributing
 
 See the [contributing guide](CONTRIBUTING.md).
+
+### Building with Parseable Cloud support
+
+Parseable Cloud builds require the orchestrator URL and bearer token at link
+time. Local Cloud-enabled builds can provide both values to `make build`:
+
+```bash
+PB_CLOUD_ORCHESTRATOR_URL='https://orchestrator.example.com' \
+PB_CLOUD_ORCHESTRATOR_AUTH_TOKEN='token-value' \
+make build
+```
+
+Official releases read these values from GitHub Actions:
+
+| Name | GitHub Actions type | Purpose |
+|---|---|---|
+| `PB_CLOUD_ORCHESTRATOR_URL` | Repository variable | Production orchestrator URL |
+| `PB_CLOUD_ORCHESTRATOR_AUTH_TOKEN` | Repository secret | Bearer token matching the orchestrator `API_AUTH_TOKEN` |
+
+The release workflow stops before GoReleaser when either value is missing.
 
 ## License
 
