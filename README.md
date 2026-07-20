@@ -25,6 +25,7 @@ Query production logs. Explore metrics. Stream new events. Save repeatable inves
 - Metrics metadata exploration: labels, series, cardinality, and TSDB stats
 - Live event tailing from Parseable datasets
 - Dataset, user, role, and profile management
+- Human-readable terminal output and structured JSON for automation and agents
 
 ## Quick Start
 
@@ -122,7 +123,9 @@ go install github.com/parseablehq/pb@latest
 
 ## Authentication
 
-`pb login` creates a profile for a Parseable server and stores it locally. You can authenticate with username/password or an API key.
+`pb` supports self-hosted Parseable and Parseable Cloud. Authentication details
+are stored in a named local profile so subsequent commands can connect without
+asking for credentials again.
 
 **Interactive login wizard:**
 
@@ -130,14 +133,46 @@ go install github.com/parseablehq/pb@latest
 pb login
 ```
 
-The wizard asks for the server URL, auth method, credentials, and profile name. The first saved profile becomes the default.
+Choose one of the following targets in the wizard:
 
-**Add a profile without prompts:**
+- **Self-hosted:** enter the Parseable URL and authenticate with a username and
+  password or an API key.
+- **Parseable Cloud:** authenticate through the browser or with a Parseable
+  Cloud API key. The selected workspace is saved as a local profile.
+
+**Add a self-hosted profile without prompts:**
 
 ```bash
 pb profile add local http://localhost:8000 admin admin
-pb profile add prod https://parseable.example.com
+pb profile add local-key http://localhost:8000 --api-key psk_xxx
 ```
+
+**Add a Parseable Cloud API-key profile without prompts:**
+
+```bash
+pb cloud profile add --api-key psk_xxx --name production
+```
+
+For non-interactive agent or CI authentication, load the API key from the
+platform's secret store and request structured output:
+
+```bash
+# Self-hosted
+pb profile add agent https://parseable.example.com \
+  --api-key "$PARSEABLE_API_KEY" -o json
+
+# Parseable Cloud
+pb cloud profile add --name agent \
+  --api-key "$PARSEABLE_CLOUD_API_KEY" -o json
+```
+
+The saved profile can then be used by subsequent `pb` commands without an
+interactive login prompt. Do not commit API keys to source control.
+
+> ⚠️ **Warning for agent access:** Create a dedicated read-only API key or role
+> with the minimum permissions required for queries and metadata reads. Do not
+> give an agent an administrator or shared human credential. Read-only access
+> must be enforced by Parseable on the server.
 
 **Manage profiles:**
 
@@ -313,20 +348,25 @@ pb promql ps
 | Query metrics | `pb promql` | Run PromQL, inspect labels/series/cardinality |
 | Stream events | `pb tail` | Watch new events from a dataset |
 | Datasets | `pb dataset` | List, inspect, create, and remove datasets |
-| Profiles | `pb login`, `pb profile`, `pb logout` | Manage Parseable server connections |
+| Profiles | `pb login`, `pb cloud profile`, `pb profile`, `pb logout` | Manage self-hosted and Parseable Cloud connections |
 | Access control | `pb user`, `pb role` | Manage users and roles |
 | System | `pb status`, `pb version` | Check connectivity and versions |
 
 ## Automation
 
-Use JSON output for scripts and CI:
+Commands print human-readable text by default. Commands that support
+`-o json` return structured output for scripts, CI, and agent workflows:
 
 ```bash
+pb status -o json
+pb profile list -o json
+pb dataset list -o json
 pb sql run "SELECT count(*) FROM backend" --from=1h --output json
 pb promql run "up" --dataset otel_metrics --instant --output json
 ```
 
-For scripts and CI, omit `-i` so commands print machine-readable output instead of opening the terminal UI.
+Use `pb <command> --help` to check output support. For automation, omit `-i`
+so SQL and PromQL commands print output instead of opening the terminal UI.
 
 ## Documentation
 

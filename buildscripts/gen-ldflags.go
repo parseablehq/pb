@@ -32,6 +32,9 @@ func genLDFlags(version string) string {
 	if orchestratorURL := os.Getenv("PB_CLOUD_ORCHESTRATOR_URL"); orchestratorURL != "" {
 		ldflagsStr += " -X github.com/parseablehq/pb/pkg/config.CloudOrchestratorURL=" + orchestratorURL
 	}
+	if orchestratorAuthToken := os.Getenv("PB_CLOUD_ORCHESTRATOR_AUTH_TOKEN"); orchestratorAuthToken != "" {
+		ldflagsStr += " -X github.com/parseablehq/pb/pkg/config.CloudOrchestratorAuthToken=" + orchestratorAuthToken
+	}
 	return ldflagsStr
 }
 

@@ -26,6 +26,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/parseablehq/pb/pkg/config"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
 	"github.com/parseablehq/pb/pkg/ui"
 	"github.com/spf13/cobra"
 )
@@ -41,7 +42,14 @@ var (
 	cloudProfileName     string
 	cloudOrchestratorURL string
 	cloudForceOverwrite  bool
+	cloudOutputFormat    string
 )
+
+type cloudProfileAddOutput struct {
+	Status  string        `json:"status"`
+	Name    string        `json:"name"`
+	Profile profileOutput `json:"profile"`
+}
 
 type cloudAPIKeyValidationResponse struct {
 	OrgID         string `json:"org_id"`
@@ -196,10 +204,13 @@ var CloudProfileAddCmd = &cobra.Command{
 	Example: "  pb cloud profile add --api-key psk_xxx\n  pb cloud profile add --api-key psk_xxx --name prod",
 	Short:   "Add a Parseable Cloud profile",
 	Long:    "\nAdd a Parseable Cloud profile using an API key created in Parseable Cloud.",
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		apiKey := strings.TrimSpace(cloudAPIKey)
 		if apiKey == "" {
 			return errors.New("api key is required. pass --api-key")
+		}
+		if cloudOutputFormat != "text" && cloudOutputFormat != "json" {
+			return fmt.Errorf("unsupported output format %q (expected text or json)", cloudOutputFormat)
 		}
 
 		orchestratorURL := cloudOrchestratorEndpoint()
@@ -226,13 +237,21 @@ var CloudProfileAddCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("Cloud profile %s added successfully\n", profileName)
-		if result.WorkspaceName != "" {
-			fmt.Printf("Workspace: %s (%s)\n", result.WorkspaceName, result.WorkspaceID)
-		} else {
-			fmt.Printf("Workspace: %s\n", result.WorkspaceID)
+		if cloudOutputFormat == "json" {
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(cloudProfileAddOutput{
+				Status:  "success",
+				Name:    profileName,
+				Profile: safeProfileOutput(profile),
+			})
 		}
-		fmt.Printf("URL: %s\n", result.URL)
+
+		fmt.Fprintf(cmd.OutOrStdout(), "Cloud profile %s added successfully\n", profileName)
+		if result.WorkspaceName != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "Workspace: %s (%s)\n", result.WorkspaceName, result.WorkspaceID)
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "Workspace: %s\n", result.WorkspaceID)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "URL: %s\n", result.URL)
 		return nil
 	},
 }
@@ -242,6 +261,7 @@ func init() {
 	CloudProfileAddCmd.Flags().StringVar(&cloudProfileName, "name", "", "profile name")
 	CloudProfileAddCmd.Flags().StringVar(&cloudOrchestratorURL, "orchestrator-url", config.CloudOrchestratorURL, "Parseable Cloud orchestrator URL")
 	CloudProfileAddCmd.Flags().BoolVar(&cloudForceOverwrite, "force", false, "overwrite existing profile")
+	CloudProfileAddCmd.Flags().StringVarP(&cloudOutputFormat, "output", "o", "text", "Output format (text|json)")
 
 	CloudProfileCmd.AddCommand(CloudProfileAddCmd)
 	CloudCmd.AddCommand(CloudProfileCmd)
@@ -255,6 +275,9 @@ func cloudOrchestratorEndpoint() string {
 }
 
 func cloudProfileFromDeviceLogin(parent context.Context, orchestratorURL string) (*config.Profile, error) {
+	if strings.TrimSpace(orchestratorURL) == "" {
+		return nil, errors.New("cloud orchestrator URL is not configured")
+	}
 	client := &http.Client{Timeout: 30 * time.Second}
 	device, err := requestCloudDeviceCode(parent, client, orchestratorURL)
 	if err != nil {
@@ -394,6 +417,9 @@ func doCloudOAuthTokenRequest(ctx context.Context, client *http.Client, endpoint
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
+	if err := internalHTTP.AddCloudOrchestratorAuth(req); err != nil {
+		return nil, err
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -453,6 +479,9 @@ func doCloudJSON(ctx context.Context, client *http.Client, method, endpoint stri
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
+	if err := internalHTTP.AddCloudOrchestratorAuth(req); err != nil {
+		return err
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -472,7 +501,10 @@ func doCloudJSON(ctx context.Context, client *http.Client, method, endpoint stri
 }
 
 func validateCloudAPIKey(orchestratorURL, apiKey string) (*cloudAPIKeyValidationResponse, error) {
-	endpoint, err := url.JoinPath(orchestratorURL, "api/v1/apikey/validate")
+	if strings.TrimSpace(orchestratorURL) == "" {
+		return nil, errors.New("cloud orchestrator URL is not configured")
+	}
+	endpoint, err := url.JoinPath(orchestratorURL, "api/v1/cli/apikey/validate")
 	if err != nil {
 		return nil, fmt.Errorf("invalid orchestrator URL: %w", err)
 	}
@@ -480,7 +512,10 @@ func validateCloudAPIKey(orchestratorURL, apiKey string) (*cloudAPIKeyValidation
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	if err := internalHTTP.AddCloudOrchestratorAuth(req); err != nil {
+		return nil, err
+	}
+	req.Header.Set("x-api-key", apiKey)
 	client := http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {

@@ -101,6 +101,9 @@ func (transport *cloudRefreshTransport) refresh(original *http.Request) error {
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
+	if err := AddCloudOrchestratorAuth(req); err != nil {
+		return err
+	}
 	resp, err := transport.base.RoundTrip(req)
 	if err != nil {
 		return err
