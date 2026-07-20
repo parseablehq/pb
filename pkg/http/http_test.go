@@ -140,3 +140,49 @@ func TestCloudSessionDoesNotRefreshCrossOriginRequest(t *testing.T) {
 		t.Fatalf("external_calls=%d refresh_calls=%d", externalCalls, refreshCalls)
 	}
 }
+
+func TestCloudSessionReturnsRefreshPersistenceError(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	profile := config.Profile{
+		URL:             "https://workspace.example.com",
+		Cloud:           true,
+		SessionToken:    "old-session",
+		RefreshToken:    "old-refresh",
+		TenantID:        "tenant-id",
+		WorkspaceID:     "workspace-id",
+		OrchestratorURL: "https://orchestrator.example.com",
+	}
+	if err := config.WriteConfigToFile(&config.Config{
+		Profiles: map[string]config.Profile{
+			"different": {
+				Cloud:        true,
+				RefreshToken: "different-refresh",
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	base := testRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Host == "orchestrator.example.com" {
+			return testHTTPResponse(req, http.StatusOK, `{"access_token":"new-session","refresh_token":"new-refresh"}`), nil
+		}
+		return testHTTPResponse(req, http.StatusUnauthorized, ``), nil
+	})
+
+	client := DefaultClientWithTransport(&profile, base)
+	req, err := client.NewRequest(http.MethodGet, "about", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Client.Do(req)
+	if err == nil || !strings.Contains(err.Error(), "failed to persist refreshed cloud tokens") {
+		t.Fatalf("response=%v error=%v", resp, err)
+	}
+	if resp != nil {
+		t.Fatalf("expected nil response, got %v", resp)
+	}
+	if profile.SessionToken != "new-session" || profile.RefreshToken != "new-refresh" {
+		t.Fatalf("rotated tokens were not retained in memory: %#v", profile)
+	}
+}

@@ -41,7 +41,8 @@ func (transport *cloudRefreshTransport) RoundTrip(req *http.Request) (*http.Resp
 	requestToken := requestSessionCookie(req)
 	if requestToken == transport.profile.SessionToken {
 		if err := transport.refresh(req); err != nil {
-			return resp, nil
+			resp.Body.Close()
+			return nil, fmt.Errorf("cloud session refresh failed: %w", err)
 		}
 	}
 
@@ -119,11 +120,11 @@ func (transport *cloudRefreshTransport) refresh(original *http.Request) error {
 	if result.AccessToken == "" || result.RefreshToken == "" {
 		return fmt.Errorf("cloud session refresh response missing access_token or refresh_token")
 	}
-	if err := config.UpdateCloudTokens(oldRefreshToken, result.AccessToken, result.RefreshToken); err != nil {
-		return err
-	}
 	transport.profile.SessionToken = result.AccessToken
 	transport.profile.RefreshToken = result.RefreshToken
+	if err := config.UpdateCloudTokens(oldRefreshToken, result.AccessToken, result.RefreshToken); err != nil {
+		return fmt.Errorf("failed to persist refreshed cloud tokens: %w", err)
+	}
 	return nil
 }
 

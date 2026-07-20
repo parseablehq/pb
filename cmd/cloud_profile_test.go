@@ -7,9 +7,6 @@ import (
 )
 
 func TestCloudCommandsDoNotExposeDefaultFlag(t *testing.T) {
-	if flag := CloudLoginCmd.Flags().Lookup("default"); flag != nil {
-		t.Fatal("cloud login still exposes --default")
-	}
 	if flag := CloudProfileAddCmd.Flags().Lookup("default"); flag != nil {
 		t.Fatal("cloud profile add still exposes --default")
 	}

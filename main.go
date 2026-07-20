@@ -44,12 +44,14 @@ var (
 	rootOutputFormat string
 )
 
+const analyticsEnabled = false
+
 // Root command
 var cli = &cobra.Command{
 	Use:               "pb",
 	Short:             "\nParseable command line interface",
 	Long:              "\npb is the command line interface for Parseable",
-	PersistentPreRunE: analytics.CheckAndCreateULID,
+	PersistentPreRunE: analyticsPreRun,
 	RunE: func(command *cobra.Command, _ []string) error {
 		if p, _ := command.Flags().GetBool(versionFlag); p {
 			pb.PrintVersion(Version, Commit)
@@ -64,7 +66,7 @@ var cli = &cobra.Command{
 		return command.Help()
 	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		if os.Getenv("PB_ANALYTICS") == "disable" {
+		if !analyticsEnabled || os.Getenv("PB_ANALYTICS") == "disable" {
 			return
 		}
 		go func() {
@@ -75,11 +77,18 @@ var cli = &cobra.Command{
 
 func postRunAnalytics(name string) func(*cobra.Command, []string) {
 	return func(cmd *cobra.Command, args []string) {
-		if os.Getenv("PB_ANALYTICS") == "disable" {
+		if !analyticsEnabled || os.Getenv("PB_ANALYTICS") == "disable" {
 			return
 		}
 		go analytics.PostRunAnalytics(cmd, name, args)
 	}
+}
+
+func analyticsPreRun(cmd *cobra.Command, args []string) error {
+	if !analyticsEnabled {
+		return nil
+	}
+	return analytics.CheckAndCreateULID(cmd, args)
 }
 
 type rootHelpCommand struct {
@@ -546,8 +555,10 @@ func combinedPreRun(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("error initializing default profile: %w", err)
 	}
 
-	if err := analytics.CheckAndCreateULID(cmd, args); err != nil {
-		return fmt.Errorf("error while creating ulid: %v", err)
+	if analyticsEnabled {
+		if err := analytics.CheckAndCreateULID(cmd, args); err != nil {
+			return fmt.Errorf("error while creating ulid: %v", err)
+		}
 	}
 
 	return nil

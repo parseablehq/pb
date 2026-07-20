@@ -82,16 +82,22 @@ func TestPromqlPositionalArgumentsOverrideFlags(t *testing.T) {
 			},
 		},
 		{
-			name:      "cardinality label values stream and label",
-			cmd:       promqlCardinalityLabelValuesCmd,
-			args:      []string{"positional-cardinality", "service.name"},
+			name: "cardinality label values stream and label",
+			cmd:  promqlCardinalityLabelValuesCmd,
+			args: []string{"positional-cardinality", "service.name"},
+			flagSetup: map[string]string{
+				"label": "flag-label",
+			},
 			wantPath:  "/prometheus/api/v1/cardinality/label_values",
 			wantQuery: map[string]string{"stream": "positional-cardinality", "label_name": "service.name"},
 		},
 		{
-			name:      "active series stream and selector",
-			cmd:       promqlCardinalityActiveSeriesCmd,
-			args:      []string{"positional-active", `{job="api"}`},
+			name: "active series stream and selector",
+			cmd:  promqlCardinalityActiveSeriesCmd,
+			args: []string{"positional-active", `{job="api"}`},
+			flagSetup: map[string]string{
+				"selector": `{job="flag-value"}`,
+			},
 			wantPath:  "/prometheus/api/v1/cardinality/active_series",
 			wantQuery: map[string]string{"stream": "positional-active", "selector": `{job="api"}`},
 		},

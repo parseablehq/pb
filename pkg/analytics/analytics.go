@@ -154,7 +154,7 @@ func PostRunAnalytics(cmd *cobra.Command, name string, _ []string) {
 	// contain queries, passwords, API keys, session tokens, or server details.
 	err := sendEvent(name, executionTime)
 	if err != nil {
-		fmt.Println("Error sending analytics event:", err)
+		fmt.Fprintln(os.Stderr, "Error sending analytics event:", err)
 	}
 }
 

@@ -186,33 +186,6 @@ var CloudCmd = &cobra.Command{
 	Long:  "\ncloud command is used to configure Parseable Cloud access.",
 }
 
-var CloudLoginCmd = &cobra.Command{
-	Use:     "login",
-	Example: "  pb cloud login\n  pb cloud login --name prod",
-	Short:   "Login to Parseable Cloud",
-	Long:    "\nLogin to Parseable Cloud using the device authorization flow.",
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		orchestratorURL := cloudOrchestratorEndpoint()
-		profile, err := cloudProfileFromDeviceLogin(cmd.Context(), orchestratorURL)
-		if err != nil {
-			return err
-		}
-
-		profileName := strings.TrimSpace(cloudProfileName)
-		if profileName == "" {
-			profileName = cloudProfileNameFromSession(profile)
-		}
-		if err := saveCloudProfile(profileName, *profile, cloudForceOverwrite, false); err != nil {
-			return err
-		}
-
-		fmt.Printf("Cloud profile %s added successfully\n", profileName)
-		fmt.Printf("Workspace: %s\n", profile.WorkspaceID)
-		fmt.Printf("URL: %s\n", profile.URL)
-		return nil
-	},
-}
-
 var CloudProfileCmd = &cobra.Command{
 	Use:   "profile",
 	Short: "Manage Parseable Cloud profiles",
@@ -266,17 +239,12 @@ var CloudProfileAddCmd = &cobra.Command{
 }
 
 func init() {
-	CloudLoginCmd.Flags().StringVar(&cloudProfileName, "name", "", "profile name")
-	CloudLoginCmd.Flags().StringVar(&cloudOrchestratorURL, "orchestrator-url", cloudDefaultOrchestratorURL, "Parseable Cloud orchestrator URL")
-	CloudLoginCmd.Flags().BoolVar(&cloudForceOverwrite, "force", false, "overwrite existing profile")
-
 	CloudProfileAddCmd.Flags().StringVar(&cloudAPIKey, "api-key", "", "Parseable Cloud API key")
 	CloudProfileAddCmd.Flags().StringVar(&cloudProfileName, "name", "", "profile name")
 	CloudProfileAddCmd.Flags().StringVar(&cloudOrchestratorURL, "orchestrator-url", cloudDefaultOrchestratorURL, "Parseable Cloud orchestrator URL")
 	CloudProfileAddCmd.Flags().BoolVar(&cloudForceOverwrite, "force", false, "overwrite existing profile")
 
 	CloudProfileCmd.AddCommand(CloudProfileAddCmd)
-	CloudCmd.AddCommand(CloudLoginCmd)
 	CloudCmd.AddCommand(CloudProfileCmd)
 }
 
