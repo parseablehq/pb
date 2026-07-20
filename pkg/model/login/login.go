@@ -99,7 +99,7 @@ func newInput(placeholder string, charLimit int) textinput.Model {
 
 // New returns a fresh login wizard model.
 func New() Model {
-	urlInput := newInput("http://localhost:8000", 256)
+	urlInput := newInput(config.LocalParseableURL, 256)
 
 	usernameInput := newInput("admin", 64)
 

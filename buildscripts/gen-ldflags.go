@@ -29,6 +29,9 @@ func genLDFlags(version string) string {
 	var ldflagsStr string
 	ldflagsStr = "-s -w -X main.Version=" + version + " "
 	ldflagsStr = ldflagsStr + "-X main.Commit=" + commitID()[:6]
+	if orchestratorURL := os.Getenv("PB_CLOUD_ORCHESTRATOR_URL"); orchestratorURL != "" {
+		ldflagsStr += " -X github.com/parseablehq/pb/pkg/config.CloudOrchestratorURL=" + orchestratorURL
+	}
 	return ldflagsStr
 }
 

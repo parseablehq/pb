@@ -31,10 +31,9 @@ import (
 )
 
 const (
-	cloudDefaultOrchestratorURL = "https://orchestrator.cloud-staging.parseable.com"
-	cloudDeviceClientID         = "pb-cli"
-	cloudDefaultPollInterval    = 5 * time.Second
-	cloudDefaultLoginTimeout    = 5 * time.Minute
+	cloudDeviceClientID      = "pb-cli"
+	cloudDefaultPollInterval = 5 * time.Second
+	cloudDefaultLoginTimeout = 5 * time.Minute
 )
 
 var (
@@ -241,7 +240,7 @@ var CloudProfileAddCmd = &cobra.Command{
 func init() {
 	CloudProfileAddCmd.Flags().StringVar(&cloudAPIKey, "api-key", "", "Parseable Cloud API key")
 	CloudProfileAddCmd.Flags().StringVar(&cloudProfileName, "name", "", "profile name")
-	CloudProfileAddCmd.Flags().StringVar(&cloudOrchestratorURL, "orchestrator-url", cloudDefaultOrchestratorURL, "Parseable Cloud orchestrator URL")
+	CloudProfileAddCmd.Flags().StringVar(&cloudOrchestratorURL, "orchestrator-url", config.CloudOrchestratorURL, "Parseable Cloud orchestrator URL")
 	CloudProfileAddCmd.Flags().BoolVar(&cloudForceOverwrite, "force", false, "overwrite existing profile")
 
 	CloudProfileCmd.AddCommand(CloudProfileAddCmd)
@@ -252,7 +251,7 @@ func cloudOrchestratorEndpoint() string {
 	if endpoint := strings.TrimSpace(cloudOrchestratorURL); endpoint != "" {
 		return endpoint
 	}
-	return cloudDefaultOrchestratorURL
+	return config.CloudOrchestratorURL
 }
 
 func cloudProfileFromDeviceLogin(parent context.Context, orchestratorURL string) (*config.Profile, error) {

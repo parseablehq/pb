@@ -43,7 +43,7 @@ credentials. All settings are saved to ~/.config/pb/config.toml.`,
 		}
 
 		if m.CloudDeviceLogin {
-			profile, err := cloudProfileFromDeviceLogin(cmd.Context(), cloudDefaultOrchestratorURL)
+			profile, err := cloudProfileFromDeviceLogin(cmd.Context(), config.CloudOrchestratorURL)
 			if err != nil {
 				return err
 			}
@@ -76,7 +76,7 @@ func printDeviceLoginSuccess(profileName string) {
 }
 
 func cloudProfileFromAPIKey(apiKey string) (*config.Profile, error) {
-	orchestratorURL := cloudDefaultOrchestratorURL
+	orchestratorURL := config.CloudOrchestratorURL
 	result, err := validateCloudAPIKey(orchestratorURL, apiKey)
 	if err != nil {
 		return nil, err
