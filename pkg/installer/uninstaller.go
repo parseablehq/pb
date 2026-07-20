@@ -26,6 +26,7 @@ import (
 
 	"github.com/manifoldco/promptui"
 	"github.com/parseablehq/pb/pkg/common"
+	"github.com/parseablehq/pb/pkg/config"
 	"github.com/parseablehq/pb/pkg/helm"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -93,7 +94,7 @@ func Uninstaller(verbose bool) error {
 		ReleaseName: selectedCluster.Name,
 		Namespace:   selectedCluster.Namespace,
 		RepoName:    "parseable",
-		RepoURL:     "https://charts.parseable.com",
+		RepoURL:     config.HelmChartRepositoryURL,
 		ChartName:   "parseable",
 		Version:     selectedCluster.Version,
 	}

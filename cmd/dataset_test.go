@@ -19,7 +19,7 @@ func TestFetchInfoUsesTelemetryType(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := internalHTTP.DefaultClient(&config.Profile{URL: server.URL})
+	client := internalHTTP.DefaultClient(&config.Profile{URL: server.URL, APIKey: "test-api-key"})
 	got, err := fetchInfo(&client, "fly_logs")
 	if err != nil {
 		t.Fatalf("fetchInfo returned error: %v", err)
@@ -63,7 +63,7 @@ func TestFetchInfoReturnsNotFoundError(t *testing.T) {
 	server := httptest.NewServer(http.NotFoundHandler())
 	defer server.Close()
 
-	client := internalHTTP.DefaultClient(&config.Profile{URL: server.URL})
+	client := internalHTTP.DefaultClient(&config.Profile{URL: server.URL, APIKey: "test-api-key"})
 	_, err := fetchInfo(&client, "missing")
 	if err == nil {
 		t.Fatal("expected not found error")

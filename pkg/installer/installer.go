@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/parseablehq/pb/pkg/common"
+	"github.com/parseablehq/pb/pkg/config"
 	"github.com/parseablehq/pb/pkg/helm"
 
 	"github.com/manifoldco/promptui"
@@ -95,7 +96,7 @@ func waterFall(verbose bool) {
 			ReleaseName: pbInfo.Name,
 			Namespace:   pbInfo.Namespace,
 			RepoName:    "parseable",
-			RepoURL:     "https://charts.parseable.com",
+			RepoURL:     config.HelmChartRepositoryURL,
 			ChartName:   "parseable",
 			Version:     "2.6.6",
 			Values:      agentValues,
@@ -157,7 +158,7 @@ func waterFall(verbose bool) {
 		ReleaseName: pbInfo.Name,
 		Namespace:   pbInfo.Namespace,
 		RepoName:    "parseable",
-		RepoURL:     "https://charts.parseable.com",
+		RepoURL:     config.HelmChartRepositoryURL,
 		ChartName:   "parseable",
 		Version:     "2.6.6",
 		Values:      storeConfigs,
@@ -536,8 +537,8 @@ func promptStoreConfigs(store ObjectStore, chartValues []string, plan Plan) (Obj
 
 		// Dynamically construct the URL after Region is set
 		storeValues.S3Store.URL = promptForInputWithDefault(
-			common.Yellow+"  Enter S3 URL (default: https://s3."+storeValues.S3Store.Region+".amazonaws.com): "+common.Reset,
-			"https://s3."+storeValues.S3Store.Region+".amazonaws.com",
+			common.Yellow+"  Enter S3 URL (default: "+config.AmazonS3URL(storeValues.S3Store.Region)+"): "+common.Reset,
+			config.AmazonS3URL(storeValues.S3Store.Region),
 		)
 
 		sc, err := promptStorageClass()
@@ -574,9 +575,9 @@ func promptStoreConfigs(store ObjectStore, chartValues []string, plan Plan) (Obj
 		// Dynamically construct the URL after Region is set
 		storeValues.BlobStore.URL = promptForInputWithDefault(
 			common.Yellow+
-				"  Enter Blob URL (default: https://"+storeValues.BlobStore.StorageAccountName+".blob.core.windows.net): "+
+				"  Enter Blob URL (default: "+config.AzureBlobStorageURL(storeValues.BlobStore.StorageAccountName)+"): "+
 				common.Reset,
-			"https://"+storeValues.BlobStore.StorageAccountName+".blob.core.windows.net")
+			config.AzureBlobStorageURL(storeValues.BlobStore.StorageAccountName))
 
 		storeValues.StorageClass = sc
 		storeValues.ObjectStore = BlobStore
@@ -598,7 +599,7 @@ func promptStoreConfigs(store ObjectStore, chartValues []string, plan Plan) (Obj
 		storeValues.GCSStore = GCS{
 			Bucket:    promptForInputWithDefault(common.Yellow+"  Enter GCS Bucket: "+common.Reset, ""),
 			Region:    promptForInputWithDefault(common.Yellow+"  Enter GCS Region (default: us-east1): "+common.Reset, "us-east1"),
-			URL:       promptForInputWithDefault(common.Yellow+"  Enter GCS URL (default: https://storage.googleapis.com):", "https://storage.googleapis.com"),
+			URL:       promptForInputWithDefault(common.Yellow+"  Enter GCS URL (default: "+config.GoogleCloudStorageURL+"):", config.GoogleCloudStorageURL),
 			AccessKey: promptForInputWithDefault(common.Yellow+"  Enter GCS Access Key: "+common.Reset, ""),
 			SecretKey: promptForInputWithDefault(common.Yellow+"  Enter GCS Secret Key: "+common.Reset, ""),
 		}
@@ -841,8 +842,8 @@ func printSuccessBanner(pbInfo ParseableInfo, version, ingestorURL, queryURL str
 	fmt.Printf("  • Ingestion URL:    %s\n", ingestorURL)
 
 	fmt.Println("\n" + common.Blue + "🔗  Resources:" + common.Reset)
-	fmt.Println(common.Blue + "  • Documentation:   https://www.parseable.com/docs/server/introduction")
-	fmt.Println(common.Blue + "  • Stream Management: https://www.parseable.com/docs/server/api")
+	fmt.Println(common.Blue + "  • Documentation:   " + config.DocumentationURL)
+	fmt.Println(common.Blue + "  • Stream Management: " + config.StreamManagementDocsURL)
 
 	fmt.Println("\n" + common.Blue + "Happy Logging!" + common.Reset)
 

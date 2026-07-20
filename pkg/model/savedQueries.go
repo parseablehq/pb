@@ -22,9 +22,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/parseablehq/pb/pkg/config"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
 	"github.com/parseablehq/pb/pkg/ui"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -282,10 +282,8 @@ func SavedQueriesMenu() *tea.Program {
 		userProfile = profile
 	}
 
-	client := &http.Client{
-		Timeout: time.Second * 60,
-	}
-	userSavedQueries := fetchFilters(client, &userProfile)
+	client := internalHTTP.DefaultClient(&userProfile)
+	userSavedQueries := fetchFilters(&client)
 
 	m := modelSavedQueries{list: list.New(userSavedQueries, itemDelegate{}, 0, 0)}
 	m.list.SetShowTitle(false)
@@ -297,17 +295,14 @@ func SavedQueriesMenu() *tea.Program {
 }
 
 // fetchFilters fetches saved SQL queries for the active user from the server
-func fetchFilters(client *http.Client, profile *config.Profile) []list.Item {
-	endpoint := fmt.Sprintf("%s/%s", profile.URL, "api/v1/filters")
-	req, err := http.NewRequest("GET", endpoint, nil)
+func fetchFilters(client *internalHTTP.HTTPClient) []list.Item {
+	req, err := client.NewRequest("GET", "filters", nil)
 	if err != nil {
 		fmt.Println("Error creating request:", err)
 		return nil
 	}
 
-	req.SetBasicAuth(profile.Username, profile.Password)
-	req.Header.Add("Content-Type", "application/json")
-	resp, err := client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		fmt.Println("Error making request:", err)
 		return nil
@@ -357,7 +352,7 @@ func QueryToDelete() Item {
 	return selectedQueryDelete
 }
 
-func RunQuery(client *http.Client, profile *config.Profile, query string, startTime string, endTime string) (string, error) {
+func RunQuery(client *internalHTTP.HTTPClient, _ *config.Profile, query string, startTime string, endTime string) (string, error) {
 	queryTemplate := `{
 		"query": "%s",
 		"startTime": "%s",
@@ -366,15 +361,12 @@ func RunQuery(client *http.Client, profile *config.Profile, query string, startT
 
 	finalQuery := fmt.Sprintf(queryTemplate, query, startTime, endTime)
 
-	endpoint := fmt.Sprintf("%s/%s", profile.URL, "api/v1/query")
-	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer([]byte(finalQuery)))
+	req, err := client.NewRequest("POST", "query", bytes.NewBuffer([]byte(finalQuery)))
 	if err != nil {
 		return "", err
 	}
-	req.SetBasicAuth(profile.Username, profile.Password)
-	req.Header.Add("Content-Type", "application/json")
 
-	resp, err := client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return "", err
 	}

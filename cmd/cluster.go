@@ -23,6 +23,7 @@ import (
 
 	"github.com/olekukonko/tablewriter"
 	"github.com/parseablehq/pb/pkg/common"
+	"github.com/parseablehq/pb/pkg/config"
 	"github.com/parseablehq/pb/pkg/helm"
 	"github.com/parseablehq/pb/pkg/installer"
 	"github.com/spf13/cobra"
@@ -196,7 +197,7 @@ func uninstallCluster(entry common.InstallerEntry) error {
 		ReleaseName: entry.Name,
 		Namespace:   entry.Namespace,
 		RepoName:    "parseable",
-		RepoURL:     "https://charts.parseable.com",
+		RepoURL:     config.HelmChartRepositoryURL,
 		ChartName:   "parseable",
 		Version:     entry.Version,
 	}

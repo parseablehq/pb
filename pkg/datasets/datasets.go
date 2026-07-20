@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/parseablehq/pb/pkg/config"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
 )
 
 const (
@@ -24,6 +25,7 @@ const (
 
 type Dataset struct {
 	Title         string `json:"title"`
+	Name          string `json:"name,omitempty"`
 	DatasetType   string `json:"datasetType"`
 	DatasetFormat string `json:"datasetFormat"`
 	Ingestion     bool   `json:"ingestion"`
@@ -33,20 +35,37 @@ type homeResponse struct {
 	Datasets []Dataset `json:"datasets"`
 }
 
+type httpStatusError struct {
+	statusCode int
+	status     string
+	body       string
+}
+
+func (err httpStatusError) Error() string {
+	return fmt.Sprintf("HTTP %d: %s", err.statusCode, strings.TrimSpace(err.body))
+}
+
 func FetchHomeDatasets(profile config.Profile) ([]Dataset, error) {
+	return fetchPrismHomeDatasets(profile)
+}
+
+func fetchPrismHomeDatasets(profile config.Profile) ([]Dataset, error) {
 	reqURL, err := url.JoinPath(profile.URL, "api/prism/v1/home")
 	if err != nil {
 		return nil, err
 	}
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := internalHTTP.DefaultClient(&profile)
+	client.Client.Timeout = 15 * time.Second
 	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	authenticate(req, profile)
+	if err := authenticate(req, profile); err != nil {
+		return nil, err
+	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -57,17 +76,25 @@ func FetchHomeDatasets(profile config.Profile) ([]Dataset, error) {
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, httpStatusError{statusCode: resp.StatusCode, status: resp.Status, body: string(body)}
 	}
 
 	var result homeResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, err
 	}
-	sort.Slice(result.Datasets, func(i, j int) bool {
-		return result.Datasets[i].Title < result.Datasets[j].Title
-	})
+	sortDatasets(result.Datasets)
 	return result.Datasets, nil
+}
+
+func FetchAPIDatasets(profile config.Profile) ([]Dataset, error) {
+	return fetchPrismHomeDatasets(profile)
+}
+
+func sortDatasets(items []Dataset) {
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Title < items[j].Title
+	})
 }
 
 func NamesByType(items []Dataset, datasetType string) []string {
@@ -81,11 +108,10 @@ func NamesByType(items []Dataset, datasetType string) []string {
 	return names
 }
 
-func authenticate(req *http.Request, profile config.Profile) {
-	if profile.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+profile.Token)
-	} else {
-		req.SetBasicAuth(profile.Username, profile.Password)
+func authenticate(req *http.Request, profile config.Profile) error {
+	if err := internalHTTP.AddAuthHeaders(req, &profile); err != nil {
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	return nil
 }

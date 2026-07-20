@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -34,31 +35,69 @@ type ProfileListItem struct {
 	title, url, user string
 }
 
+type profileOutput struct {
+	URL             string `json:"url"`
+	Username        string `json:"username,omitempty"`
+	Cloud           bool   `json:"cloud"`
+	TenantID        string `json:"tenant_id,omitempty"`
+	IngestURL       string `json:"ingest_url,omitempty"`
+	WorkspaceID     string `json:"workspace_id,omitempty"`
+	WorkspaceName   string `json:"workspace_name,omitempty"`
+	OrchestratorURL string `json:"orchestrator_url,omitempty"`
+}
+
+func safeProfileOutput(profile config.Profile) profileOutput {
+	return profileOutput{
+		URL:             profile.URL,
+		Username:        profile.Username,
+		Cloud:           profile.Cloud,
+		TenantID:        profile.TenantID,
+		IngestURL:       profile.IngestURL,
+		WorkspaceID:     profile.WorkspaceID,
+		WorkspaceName:   profile.WorkspaceName,
+		OrchestratorURL: profile.OrchestratorURL,
+	}
+}
+
+func safeProfilesOutput(profiles map[string]config.Profile) map[string]profileOutput {
+	result := make(map[string]profileOutput, len(profiles))
+	for name, profile := range profiles {
+		result[name] = safeProfileOutput(profile)
+	}
+	return result
+}
+
 func (item *ProfileListItem) Render(highlight bool) string {
 	if highlight {
-		render := fmt.Sprintf(
-			"%s\n%s\n%s",
+		lines := []string{
 			SelectedStyle.Render(item.title),
 			SelectedStyleAlt.Render(fmt.Sprintf("url: %s", item.url)),
-			SelectedStyleAlt.Render(fmt.Sprintf("user: %s", item.user)),
-		)
-		return SelectedItemOuter.Render(render)
+		}
+		if item.user != "" {
+			lines = append(lines, SelectedStyleAlt.Render(fmt.Sprintf("user: %s", item.user)))
+		}
+		return SelectedItemOuter.Render(strings.Join(lines, "\n"))
 	}
-	render := fmt.Sprintf(
-		"%s\n%s\n%s",
+	lines := []string{
 		StandardStyle.Render(item.title),
 		StandardStyleAlt.Render(fmt.Sprintf("url: %s", item.url)),
-		StandardStyleAlt.Render(fmt.Sprintf("user: %s", item.user)),
-	)
-	return ItemOuter.Render(render)
+	}
+	if item.user != "" {
+		lines = append(lines, StandardStyleAlt.Render(fmt.Sprintf("user: %s", item.user)))
+	}
+	return ItemOuter.Render(strings.Join(lines, "\n"))
 }
 
 // Add an output flag to specify the output format.
-var outputFormat string
+var (
+	outputFormat  string
+	profileAPIKey string
+)
 
 // Initialize flags
 func init() {
 	AddProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+	AddProfileCmd.Flags().StringVar(&profileAPIKey, "api-key", "", "API key for self-hosted authentication")
 	RemoveProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
 	DefaultProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
 	ListProfileCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
@@ -78,13 +117,16 @@ func outputResult(v interface{}) error {
 }
 
 var AddProfileCmd = &cobra.Command{
-	Use:     "add profile-name url <username?> <password?>",
-	Example: "  pb profile add local_parseable http://0.0.0.0:8000 admin admin",
+	Use:     "add profile-name url [username] [password]",
+	Example: "  pb profile add local_parseable http://0.0.0.0:8000 admin admin\n  pb profile add local_parseable http://0.0.0.0:8000 --api-key psk_xxx",
 	Short:   "Add a new profile",
 	Long:    "Add a new profile to the config file",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if err := cobra.MinimumNArgs(2)(cmd, args); err != nil {
 			return err
+		}
+		if strings.TrimSpace(profileAPIKey) != "" && len(args) != 2 {
+			return errors.New("--api-key cannot be combined with username/password")
 		}
 		return cobra.MaximumNArgs(4)(cmd, args)
 	},
@@ -104,22 +146,29 @@ var AddProfileCmd = &cobra.Command{
 			return commandError
 		}
 
-		var username, password string
-		if len(args) < 4 {
-			_m, err := tea.NewProgram(credential.New()).Run()
-			if err != nil {
-				commandError = fmt.Errorf("error reading credentials: %s", err)
-				cmd.Annotations["error"] = commandError.Error()
-				return commandError
-			}
-			m := _m.(credential.Model)
-			username, password = m.Values()
+		apiKey := strings.TrimSpace(profileAPIKey)
+		profile := config.Profile{Cloud: false, URL: url.String()}
+		if apiKey != "" {
+			profile.APIKey = apiKey
 		} else {
-			username = args[2]
-			password = args[3]
+			var username, password string
+			if len(args) < 4 {
+				_m, err := tea.NewProgram(credential.New()).Run()
+				if err != nil {
+					commandError = fmt.Errorf("error reading credentials: %s", err)
+					cmd.Annotations["error"] = commandError.Error()
+					return commandError
+				}
+				m := _m.(credential.Model)
+				username, password = m.Values()
+			} else {
+				username = args[2]
+				password = args[3]
+			}
+			profile.Username = username
+			profile.Password = password
 		}
 
-		profile := config.Profile{URL: url.String(), Username: username, Password: password}
 		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
 			newConfig := config.Config{
@@ -133,9 +182,7 @@ var AddProfileCmd = &cobra.Command{
 				fileConfig.Profiles = make(map[string]config.Profile)
 			}
 			fileConfig.Profiles[name] = profile
-			if fileConfig.DefaultProfile == "" {
-				fileConfig.DefaultProfile = name
-			}
+			fileConfig.DefaultProfile = name
 			commandError = config.WriteConfigToFile(fileConfig)
 		}
 
@@ -146,7 +193,7 @@ var AddProfileCmd = &cobra.Command{
 		}
 
 		if outputFormat == "json" {
-			return outputResult(profile)
+			return outputResult(safeProfileOutput(profile))
 		}
 		fmt.Printf("Profile %s added successfully\n", name)
 		return nil
@@ -320,7 +367,7 @@ var UpdateProfileCmd = &cobra.Command{
 		}
 
 		if outputFormat == "json" {
-			return outputResult(profile)
+			return outputResult(safeProfileOutput(profile))
 		}
 		fmt.Printf("Profile '%s' URL updated to %s\n", name, rawURL)
 		return nil
@@ -345,7 +392,7 @@ var ListProfileCmd = &cobra.Command{
 		}
 
 		if outputFormat == "json" {
-			commandError := outputResult(fileConfig.Profiles)
+			commandError := outputResult(safeProfilesOutput(fileConfig.Profiles))
 			cmd.Annotations["executionTime"] = time.Since(startTime).String()
 			if commandError != nil {
 				cmd.Annotations["error"] = commandError.Error()

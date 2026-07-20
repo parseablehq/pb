@@ -16,6 +16,8 @@
 package cmd
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -30,30 +32,59 @@ import (
 var StatusCmd = &cobra.Command{
 	Use:     "status",
 	Short:   "Check connection status for the active profile",
-	Example: "  pb status",
-	RunE: func(_ *cobra.Command, _ []string) error {
+	Example: "  pb status\n  pb status -o json",
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		outputFormat, err := cmd.Flags().GetString("output")
+		if err != nil {
+			return err
+		}
+
 		fileConfig, err := config.ReadConfigFromFile()
 		if err != nil {
-			return fmt.Errorf("no profile configured. run: pb login")
+			return statusPreflightError(outputFormat, "no profile configured. run: pb login")
 		}
 
 		profileName := fileConfig.DefaultProfile
 		profile, exists := fileConfig.Profiles[profileName]
 		if !exists || profileName == "" {
-			return fmt.Errorf("no active profile. run: pb login")
+			return statusPreflightError(outputFormat, "no active profile. run: pb login")
 		}
 
-		fmt.Printf("Profile : %s\n", profileName)
-		fmt.Printf("URL     : %s\n", profile.URL)
+		if outputFormat != "json" {
+			fmt.Printf("Profile : %s\n", profileName)
+			fmt.Printf("URL     : %s\n", profile.URL)
+		}
 
 		client := internalHTTP.DefaultClient(&profile)
 		about, err := analytics.FetchAbout(&client)
 		if err != nil {
 			statusMessage := statusErrorMessage(err)
-			errStyle := lipgloss.NewStyle().Foreground(ui.Active.Err).Bold(true)
-			fmt.Printf("Status  : %s\n", errStyle.Render("✗ Not connected"))
-			fmt.Printf("Error   : %s\n", statusMessage)
+			if outputFormat == "json" {
+				if jsonErr := printStatusJSON(statusOutput{
+					Status:  "error",
+					Healthy: false,
+					Profile: profileName,
+					URL:     profile.URL,
+					Error:   statusMessage,
+				}); jsonErr != nil {
+					return jsonErr
+				}
+			} else {
+				errStyle := lipgloss.NewStyle().Foreground(ui.Active.Err).Bold(true)
+				fmt.Printf("Status  : %s\n", errStyle.Render("✗ Not connected"))
+				fmt.Printf("Error   : %s\n", statusMessage)
+			}
 			return fmt.Errorf("status check failed: %s", statusMessage)
+		}
+
+		if outputFormat == "json" {
+			return printStatusJSON(statusOutput{
+				Status:  "ok",
+				Healthy: true,
+				Profile: profileName,
+				URL:     profile.URL,
+				Version: about.Version,
+			})
 		}
 
 		okStyle := lipgloss.NewStyle().Foreground(ui.Active.Ok).Bold(true)
@@ -63,10 +94,45 @@ var StatusCmd = &cobra.Command{
 	},
 }
 
+type statusOutput struct {
+	Status  string `json:"status"`
+	Healthy bool   `json:"healthy"`
+	Profile string `json:"profile,omitempty"`
+	URL     string `json:"url,omitempty"`
+	Version string `json:"version,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+func statusPreflightError(outputFormat, message string) error {
+	if outputFormat == "json" {
+		if err := printStatusJSON(statusOutput{
+			Status:  "error",
+			Healthy: false,
+			Error:   message,
+		}); err != nil {
+			return err
+		}
+	}
+	return errors.New(message)
+}
+
+func printStatusJSON(result statusOutput) error {
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal status JSON: %w", err)
+	}
+	fmt.Println(string(jsonData))
+	return nil
+}
+
 func statusErrorMessage(err error) string {
 	message := err.Error()
 	if strings.Contains(message, "Status Code: 401") || strings.Contains(message, "Status Code: 403") {
 		return "Authentication failed: invalid username/password or API key"
 	}
 	return message
+}
+
+func init() {
+	StatusCmd.Flags().StringP("output", "o", "text", "Output format (text|json)")
 }

@@ -44,6 +44,7 @@ import (
 	table "github.com/evertras/bubble-table/table"
 	"github.com/parseablehq/pb/pkg/config"
 	"github.com/parseablehq/pb/pkg/datasets"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
 	"github.com/parseablehq/pb/pkg/ui"
 	"golang.org/x/term"
 )
@@ -2214,24 +2215,20 @@ func promqlModelFetch(profile config.Profile, path string, params url.Values) ([
 		reqURL += "?" + params.Encode()
 	}
 
-	client := &http.Client{
-		Timeout: 120 * time.Second,
-		Transport: &http.Transport{
-			TLSNextProto: make(map[string]func(string, *tls.Conn) http.RoundTripper),
-		},
-	}
+	client := internalHTTP.DefaultClientWithTransport(&profile, &http.Transport{
+		TLSNextProto: make(map[string]func(string, *tls.Conn) http.RoundTripper),
+	})
+	client.Client.Timeout = 120 * time.Second
 
 	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	if profile.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+profile.Token)
-	} else {
-		req.SetBasicAuth(profile.Username, profile.Password)
+	if err := internalHTTP.AddAuthHeaders(req, &profile); err != nil {
+		return nil, err
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		if strings.Contains(err.Error(), "connection reset") {
 			return nil, fmt.Errorf("server reset the connection — query timed out")
@@ -2602,17 +2599,16 @@ type promqlLabelListResp struct {
 }
 
 func builderHTTPGetCtx(ctx context.Context, profile config.Profile, rawURL string) ([]byte, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := internalHTTP.DefaultClient(&profile)
+	client.Client.Timeout = 30 * time.Second
 	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	if profile.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+profile.Token)
-	} else {
-		req.SetBasicAuth(profile.Username, profile.Password)
+	if err := internalHTTP.AddAuthHeaders(req, &profile); err != nil {
+		return nil, err
 	}
-	resp, err := client.Do(req)
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		return nil, err
 	}

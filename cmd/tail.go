@@ -19,11 +19,14 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/apache/arrow/go/v13/arrow/array"
@@ -34,6 +37,7 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -45,56 +49,81 @@ var TailCmd = &cobra.Command{
 	Short:   "Stream live events from a dataset",
 	Args:    cobra.ExactArgs(1),
 	PreRunE: PreRunDefaultProfile,
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		output, err := cmd.Flags().GetString("output")
+		if err != nil {
+			return err
+		}
+		if output != "text" && output != "json" {
+			return fmt.Errorf("unsupported output format %q (expected text or json)", output)
+		}
 		name := args[0]
 		profile := DefaultProfile
-		return tail(profile, name)
+		return tail(profile, name, output == "json")
 	},
 }
 
-func tail(profile config.Profile, stream string) error {
+func init() {
+	TailCmd.Flags().StringP("output", "o", "text", "Output format (text|json)")
+}
+
+func tail(profile config.Profile, stream string, jsonOutput bool) error {
 	payload, _ := json.Marshal(struct {
 		Stream string `json:"stream"`
 	}{
 		Stream: stream,
 	})
 
-	stopConnect := tailSpinner("connecting...")
-	httpClient := internalHTTP.DefaultClient(&DefaultProfile)
+	stopConnect := func() {}
+	if !jsonOutput {
+		stopConnect = tailSpinner("connecting...")
+	}
+	httpClient := internalHTTP.DefaultClient(&profile)
 	about, err := analytics.FetchAbout(&httpClient)
 	stopConnect()
 	if err != nil {
 		return err
 	}
 	url := profile.GrpcAddr(fmt.Sprint(about.GRPCPort))
-
-	flightClient, err := flight.NewClientWithMiddleware(url, nil, nil, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	transportCredentials, err := tailTransportCredentials(profile)
 	if err != nil {
 		return err
 	}
 
-	authHeader := basicAuth(profile.Username, profile.Password)
+	flightClient, err := flight.NewClientWithMiddleware(url, nil, nil, grpc.WithTransportCredentials(transportCredentials))
+	if err != nil {
+		return err
+	}
+
+	authMetadata, err := tailAuthMetadata(profile)
+	if err != nil {
+		return err
+	}
 
 	watching := func() {
-		fmt.Fprintf(os.Stderr, "\r\033[K● watching %s... (ctrl+c to stop)", stream)
+		if !jsonOutput {
+			fmt.Fprintf(os.Stderr, "\r\033[K● watching %s... (ctrl+c to stop)", stream)
+		}
 	}
 	watching()
 
 	for {
 		resp, err := flightClient.DoGet(
-			metadata.NewOutgoingContext(context.Background(), metadata.New(map[string]string{
-				"Authorization": "Basic " + authHeader,
-			})),
+			metadata.NewOutgoingContext(context.Background(), authMetadata),
 			&flight.Ticket{Ticket: payload},
 		)
 		if err != nil {
-			fmt.Fprint(os.Stderr, "\r\033[K")
+			if !jsonOutput {
+				fmt.Fprint(os.Stderr, "\r\033[K")
+			}
 			return err
 		}
 
 		records, err := flight.NewRecordReader(resp)
 		if err != nil {
-			fmt.Fprint(os.Stderr, "\r\033[K")
+			if !jsonOutput {
+				fmt.Fprint(os.Stderr, "\r\033[K")
+			}
 			return err
 		}
 
@@ -105,10 +134,14 @@ func tail(profile config.Profile, stream string) error {
 				if isStreamEnd(err) {
 					break
 				}
-				fmt.Fprint(os.Stderr, "\r\033[K")
+				if !jsonOutput {
+					fmt.Fprint(os.Stderr, "\r\033[K")
+				}
 				return err
 			}
-			fmt.Fprint(os.Stderr, "\r\033[K") // clear watching line before printing record
+			if !jsonOutput {
+				fmt.Fprint(os.Stderr, "\r\033[K")
+			} // clear watching line before printing record
 			var buf bytes.Buffer
 			array.RecordToJSON(record, &buf)
 			fmt.Println(buf.String())
@@ -116,6 +149,53 @@ func tail(profile config.Profile, stream string) error {
 
 		watching()
 		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func tailTransportCredentials(profile config.Profile) (credentials.TransportCredentials, error) {
+	profileURL, err := url.Parse(profile.URL)
+	if err != nil || profileURL.Hostname() == "" {
+		return nil, fmt.Errorf("invalid profile URL %q", profile.URL)
+	}
+
+	scheme := strings.ToLower(profileURL.Scheme)
+	if profile.Cloud || scheme == "https" {
+		return credentials.NewTLS(&tls.Config{
+			MinVersion: tls.VersionTLS12,
+			ServerName: profileURL.Hostname(),
+		}), nil
+	}
+	if scheme == "http" {
+		return insecure.NewCredentials(), nil
+	}
+	return nil, fmt.Errorf("unsupported profile URL scheme %q", profileURL.Scheme)
+}
+
+func tailAuthMetadata(profile config.Profile) (metadata.MD, error) {
+	mode, err := profile.AuthMode()
+	if err != nil {
+		return nil, err
+	}
+
+	switch mode {
+	case config.AuthCloudAPIKey:
+		values := map[string]string{"x-api-key": profile.APIKey}
+		values["x-p-tenant"] = profile.TenantID
+		return metadata.New(values), nil
+	case config.AuthCloudOAuth:
+		values := map[string]string{"cookie": "session=" + profile.SessionToken}
+		values["x-p-tenant"] = profile.TenantID
+		return metadata.New(values), nil
+	case config.AuthSelfHostedAPIKey:
+		return metadata.New(map[string]string{
+			"x-api-key": profile.APIKey,
+		}), nil
+	case config.AuthSelfHostedBasic:
+		return metadata.New(map[string]string{
+			"Authorization": "Basic " + basicAuth(profile.Username, profile.Password),
+		}), nil
+	default:
+		return nil, fmt.Errorf("unsupported auth mode %q", mode)
 	}
 }
 

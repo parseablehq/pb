@@ -35,7 +35,6 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"gopkg.in/yaml.v2"
 )
 
@@ -148,63 +147,41 @@ func CheckAndCreateULID(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func PostRunAnalytics(cmd *cobra.Command, name string, args []string) {
+func PostRunAnalytics(cmd *cobra.Command, name string, _ []string) {
 	executionTime := cmd.Annotations["executionTime"]
-	commandError := cmd.Annotations["error"]
-	flags := make(map[string]string)
-	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
-		flags[flag.Name] = flag.Value.String()
-	})
 
-	// Call SendEvent in PostRunE
-	err := sendEvent(
-		name,
-		append(args, cmd.Name()),
-		&commandError, // Pass the error here if there was one
-		executionTime,
-		flags,
-	)
+	// Never collect arguments, flag values, errors, or profile data. They may
+	// contain queries, passwords, API keys, session tokens, or server details.
+	err := sendEvent(name, executionTime)
 	if err != nil {
-		fmt.Println("Error sending analytics event:", err)
+		fmt.Fprintln(os.Stderr, "Error sending analytics event:", err)
 	}
 }
 
 // sendEvent is a placeholder function to simulate sending an event after command execution.
-func sendEvent(commandName string, arguments []string, errors *string, executionTimestamp string, flags map[string]string) error {
+func sendEvent(commandName string, executionTimestamp string) error {
 	ulid, err := ReadUULD()
 	if err != nil {
 		return fmt.Errorf("could not load ULID: %v", err)
 	}
 
-	profile, err := GetProfile()
-	if err != nil {
-		return fmt.Errorf("failed to get profile: %v", err)
-	}
-
-	httpClient := internalHTTP.DefaultClient(&profile)
-
-	about, _ := FetchAbout(&httpClient)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to get about metadata for profile: %v", err)
-	// }
-
 	// Create the Command struct
 	cmd := Command{
 		Name:      commandName,
-		Arguments: arguments,
-		Flags:     flags,
+		Arguments: []string{},
+		Flags:     map[string]string{},
 	}
 
 	// Populate the Event struct with OS details and timestamp
 	event := Event{
-		CLIVersion:         about.Commit,
+		CLIVersion:         "",
 		ULID:               ulid,
-		CommitHash:         about.Commit,
+		CommitHash:         "",
 		OSName:             GetOSName(),
 		OSVersion:          GetOSVersion(),
 		ReportCreatedAt:    GetCurrentTimestamp(),
 		Command:            cmd,
-		Errors:             errors,
+		Errors:             nil,
 		ExecutionTimestamp: executionTimestamp,
 	}
 
@@ -215,7 +192,7 @@ func sendEvent(commandName string, arguments []string, errors *string, execution
 	}
 
 	// Define the target URL for the HTTP request
-	url := "https://analytics.parseable.io:80/pb"
+	url := config.AnalyticsURL
 
 	// Create the HTTP POST request
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(eventJSON))
@@ -226,7 +203,8 @@ func sendEvent(commandName string, arguments []string, errors *string, execution
 	req.Header.Set("X-P-Stream", "pb-usage")
 
 	// Execute the HTTP request
-	resp, err := httpClient.Client.Do(req)
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send event: %v", err)
 	}

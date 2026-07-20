@@ -40,6 +40,7 @@ import (
 	"github.com/muesli/reflow/truncate"
 	"github.com/parseablehq/pb/pkg/config"
 	"github.com/parseablehq/pb/pkg/datasets"
+	internalHTTP "github.com/parseablehq/pb/pkg/http"
 	"github.com/parseablehq/pb/pkg/iterator"
 	"github.com/parseablehq/pb/pkg/ui"
 	"golang.org/x/exp/slices"
@@ -2582,11 +2583,10 @@ func NewFetchTask(profile config.Profile, query string, startTime string, endTim
 			}
 		}()
 
-		client := &http.Client{
-			Timeout: time.Second * 50,
-		}
+		client := internalHTTP.DefaultClient(&profile)
+		client.Client.Timeout = time.Second * 50
 
-		data, status, errMsg := fetchData(client, &profile, query, startTime, endTime)
+		data, status, errMsg := fetchData(&client, &profile, query, startTime, endTime)
 
 		if status == fetchOk {
 			res.data = data.Records
@@ -2616,11 +2616,10 @@ func NewSQLWindowFetchTask(profile config.Profile, runID int, baseQuery string, 
 			}
 		}()
 
-		client := &http.Client{
-			Timeout: time.Second * 50,
-		}
+		client := internalHTTP.DefaultClient(&profile)
+		client.Client.Timeout = time.Second * 50
 		query := injectSQLWindow(baseQuery, fetchLimit, baseOffset+windowIndex*windowSize)
-		data, status, errMsg := fetchDataRaw(client, &profile, query, startTime, endTime)
+		data, status, errMsg := fetchDataRaw(&client, &profile, query, startTime, endTime)
 		if status == fetchOk {
 			res.data = data.Records
 			res.schema = data.Fields
@@ -2673,14 +2672,14 @@ func IteratorPrev(iter *iterator.QueryIterator[QueryData, FetchResult]) tea.Cmd 
 	}
 }
 
-func fetchData(client *http.Client, profile *config.Profile, query string, startTime string, endTime string) (data QueryData, res FetchResult, errMsg string) {
+func fetchData(client *internalHTTP.HTTPClient, profile *config.Profile, query string, startTime string, endTime string) (data QueryData, res FetchResult, errMsg string) {
 	query = quoteUnsafeSQLTableNames(query)
 	query = quoteUnsafeSQLFieldNames(query)
 	query = ensureDefaultSQLLimit(query)
 	return fetchDataRaw(client, profile, query, startTime, endTime)
 }
 
-func fetchDataRaw(client *http.Client, profile *config.Profile, query string, startTime string, endTime string) (data QueryData, res FetchResult, errMsg string) {
+func fetchDataRaw(client *internalHTTP.HTTPClient, _ *config.Profile, query string, startTime string, endTime string) (data QueryData, res FetchResult, errMsg string) {
 	data = QueryData{}
 	res = fetchErr
 	body, err := json.Marshal(map[string]string{
@@ -2693,20 +2692,16 @@ func fetchDataRaw(client *http.Client, profile *config.Profile, query string, st
 		return
 	}
 
-	endpoint, _ := url.JoinPath(profile.URL, "api/v1/query")
-	endpoint += "?fields=true"
-	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(body))
+	req, err := client.NewRequest("POST", "query", bytes.NewBuffer(body))
 	if err != nil {
 		errMsg = err.Error()
 		return
 	}
-	if profile.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+profile.Token)
-	} else {
-		req.SetBasicAuth(profile.Username, profile.Password)
-	}
-	req.Header.Add("Content-Type", "application/json")
-	resp, err := client.Do(req)
+	queryParams := req.URL.Query()
+	queryParams.Set("fields", "true")
+	req.URL.RawQuery = queryParams.Encode()
+
+	resp, err := client.Client.Do(req)
 	if err != nil {
 		errMsg = err.Error()
 		return
@@ -3048,18 +3043,17 @@ func fetchStreamSchema(profile config.Profile, stream string) tea.Cmd {
 		if stream == "" {
 			return schemaMsg{}
 		}
-		client := &http.Client{Timeout: 15 * time.Second}
+		client := internalHTTP.DefaultClient(&profile)
+		client.Client.Timeout = 15 * time.Second
 
 		// Primary: GET /api/v1/logstream/{stream}/schema
 		schemaURL, _ := url.JoinPath(profile.URL, "api/v1/logstream", stream, "schema")
 		req, err := http.NewRequest("GET", schemaURL, nil)
 		if err == nil {
-			if profile.Token != "" {
-				req.Header.Set("Authorization", "Bearer "+profile.Token)
-			} else {
-				req.SetBasicAuth(profile.Username, profile.Password)
+			if err := internalHTTP.AddAuthHeaders(req, &profile); err != nil {
+				return schemaMsg{errMsg: err.Error()}
 			}
-			if resp, err := client.Do(req); err == nil {
+			if resp, err := client.Client.Do(req); err == nil {
 				body, _ := io.ReadAll(resp.Body)
 				resp.Body.Close()
 				if resp.StatusCode == http.StatusOK {
@@ -3088,7 +3082,7 @@ func fetchStreamSchema(profile config.Profile, stream string) tea.Cmd {
 		// Stream names with hyphens (e.g. my-stream) are invalid bare SQL
 		// identifiers, so single-quote them — same as resolveDatasetPlaceholder.
 		endTime := time.Now().UTC().Format(time.RFC3339)
-		data, res, errMsg := fetchData(client, &profile,
+		data, res, errMsg := fetchData(&client, &profile,
 			fmt.Sprintf("SELECT * FROM '%s' LIMIT 1", stream),
 			"2000-01-01T00:00:00+00:00", endTime)
 		if res != fetchOk {

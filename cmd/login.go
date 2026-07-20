@@ -29,9 +29,9 @@ var LoginCmd = &cobra.Command{
 	Short: "Login to Parseable",
 	Long: `Interactive login wizard for Parseable.
 
-Select self-hosted and enter your server URL, credentials, and a
-profile name. All settings are saved to ~/.config/pb/config.toml.`,
-	RunE: func(_ *cobra.Command, _ []string) error {
+Select self-hosted or Parseable Cloud and enter the required
+credentials. All settings are saved to ~/.config/pb/config.toml.`,
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		_m, err := tea.NewProgram(login.New()).Run()
 		if err != nil {
 			return err
@@ -42,11 +42,56 @@ profile name. All settings are saved to ~/.config/pb/config.toml.`,
 			return nil
 		}
 
+		if m.CloudDeviceLogin {
+			profile, err := cloudProfileFromDeviceLogin(cmd.Context(), config.CloudOrchestratorURL)
+			if err != nil {
+				return err
+			}
+			m.Profile = *profile
+			if m.Name == "" {
+				m.Name = cloudProfileNameFromSession(profile)
+			}
+		} else if m.Profile.Cloud {
+			profile, err := cloudProfileFromAPIKey(m.Profile.APIKey)
+			if err != nil {
+				return err
+			}
+			m.Profile = *profile
+		}
+
 		if err := writeProfile(m.Profile, m.Name); err != nil {
 			return fmt.Errorf("failed to save profile: %w", err)
 		}
+		if m.CloudDeviceLogin {
+			printDeviceLoginSuccess(m.Name)
+		}
 		return nil
 	},
+}
+
+func printDeviceLoginSuccess(profileName string) {
+	fmt.Printf("  ✓ Profile '%s' saved.\n\n", profileName)
+	fmt.Println("  💡 Tip: You can add more profiles anytime using:")
+	fmt.Println("     pb profile add <name> <url> [user] [pass]")
+}
+
+func cloudProfileFromAPIKey(apiKey string) (*config.Profile, error) {
+	orchestratorURL := config.CloudOrchestratorURL
+	result, err := validateCloudAPIKey(orchestratorURL, apiKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return &config.Profile{
+		URL:             result.URL,
+		Cloud:           true,
+		APIKey:          apiKey,
+		TenantID:        result.TenantID,
+		IngestURL:       result.IngestURL,
+		WorkspaceID:     result.WorkspaceID,
+		WorkspaceName:   result.WorkspaceName,
+		OrchestratorURL: orchestratorURL,
+	}, nil
 }
 
 func writeProfile(profile config.Profile, profileName string) error {
@@ -63,8 +108,6 @@ func writeProfile(profile config.Profile, profileName string) error {
 		fileConfig.Profiles = make(map[string]config.Profile)
 	}
 	fileConfig.Profiles[profileName] = profile
-	if fileConfig.DefaultProfile == "" {
-		fileConfig.DefaultProfile = profileName
-	}
+	fileConfig.DefaultProfile = profileName
 	return config.WriteConfigToFile(fileConfig)
 }

@@ -17,12 +17,21 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/parseablehq/pb/pkg/config"
+)
+
+const (
+	apiKeyHeader = "x-api-key"
+	tenantHeader = "X-P-Tenant"
 )
 
 type HTTPClient struct {
@@ -31,9 +40,20 @@ type HTTPClient struct {
 }
 
 func DefaultClient(profile *config.Profile) HTTPClient {
+	return DefaultClientWithTransport(profile, http.DefaultTransport)
+}
+
+func DefaultClientWithTransport(profile *config.Profile, transport http.RoundTripper) HTTPClient {
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
 	return HTTPClient{
 		Client: http.Client{
 			Timeout: 60 * time.Second,
+			Transport: &cloudRefreshTransport{
+				base:    transport,
+				profile: profile,
+			},
 		},
 		Profile: profile,
 	}
@@ -45,15 +65,58 @@ func (client *HTTPClient) baseAPIURL(path string) (x string) {
 }
 
 func (client *HTTPClient) NewRequest(method string, path string, body io.Reader) (req *http.Request, err error) {
+	if client.Profile == nil {
+		return nil, errors.New("profile is nil")
+	}
 	req, err = http.NewRequest(method, client.baseAPIURL(path), body)
 	if err != nil {
 		return
 	}
-	if client.Profile.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+client.Profile.Token)
-	} else {
-		req.SetBasicAuth(client.Profile.Username, client.Profile.Password)
+	if err = AddAuthHeaders(req, client.Profile); err != nil {
+		return
 	}
 	req.Header.Add("Content-Type", "application/json")
+	debugRequestHeaders(req)
 	return
+}
+
+func AddAuthHeaders(req *http.Request, profile *config.Profile) error {
+	if profile == nil {
+		return errors.New("profile is nil")
+	}
+
+	mode, err := profile.AuthMode()
+	if err != nil {
+		return err
+	}
+
+	switch mode {
+	case config.AuthCloudAPIKey:
+		req.Header.Set(apiKeyHeader, profile.APIKey)
+		req.Header.Set(tenantHeader, profile.TenantID)
+	case config.AuthCloudOAuth:
+		req.AddCookie(&http.Cookie{Name: "session", Value: profile.SessionToken})
+		req.Header.Set(tenantHeader, profile.TenantID)
+	case config.AuthSelfHostedAPIKey:
+		req.Header.Set(apiKeyHeader, profile.APIKey)
+	case config.AuthSelfHostedBasic:
+		req.SetBasicAuth(profile.Username, profile.Password)
+	}
+	return nil
+}
+
+func debugRequestHeaders(req *http.Request) {
+	if os.Getenv("PB_DEBUG_HTTP_HEADERS") == "" {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "pb debug request: %s %s\n", req.Method, req.URL.String())
+	for key, values := range req.Header {
+		value := strings.Join(values, ",")
+		switch strings.ToLower(key) {
+		case "authorization", apiKeyHeader, "cookie":
+			value = "<redacted>"
+		}
+		fmt.Fprintf(os.Stderr, "pb debug header: %s: %s\n", key, value)
+	}
 }
