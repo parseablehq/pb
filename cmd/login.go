@@ -88,7 +88,6 @@ func cloudProfileFromAPIKey(ctx context.Context, apiKey string) (*config.Profile
 		Cloud:           true,
 		APIKey:          apiKey,
 		TenantID:        result.TenantID,
-		IngestURL:       result.IngestURL,
 		WorkspaceID:     result.WorkspaceID,
 		WorkspaceName:   result.WorkspaceName,
 		OrchestratorURL: orchestratorURL,

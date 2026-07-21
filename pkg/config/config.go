@@ -98,7 +98,6 @@ type Profile struct {
 	SessionToken    string `toml:"session_token,omitempty" json:"session_token,omitempty"`
 	RefreshToken    string `toml:"refresh_token,omitempty" json:"refresh_token,omitempty"`
 	TenantID        string `toml:"tenant_id,omitempty" json:"tenant_id,omitempty"`
-	IngestURL       string `toml:"ingest_url,omitempty" json:"ingest_url,omitempty"`
 	WorkspaceID     string `toml:"workspace_id,omitempty" json:"workspace_id,omitempty"`
 	WorkspaceName   string `toml:"workspace_name,omitempty" json:"workspace_name,omitempty"`
 	OrchestratorURL string `toml:"orchestrator_url,omitempty" json:"orchestrator_url,omitempty"`

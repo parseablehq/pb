@@ -58,7 +58,6 @@ type cloudAPIKeyValidationResponse struct {
 	WorkspaceName string `json:"workspace_name"`
 	TenantID      string `json:"tenant_id"`
 	URL           string `json:"url"`
-	IngestURL     string `json:"ingest_url"`
 	State         string `json:"state"`
 	MultiTenant   bool   `json:"multi_tenant"`
 }
@@ -228,7 +227,6 @@ var CloudProfileAddCmd = &cobra.Command{
 			Cloud:           true,
 			APIKey:          apiKey,
 			TenantID:        result.TenantID,
-			IngestURL:       result.IngestURL,
 			WorkspaceID:     result.WorkspaceID,
 			WorkspaceName:   result.WorkspaceName,
 			OrchestratorURL: orchestratorURL,
