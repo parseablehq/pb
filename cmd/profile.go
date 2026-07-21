@@ -40,7 +40,6 @@ type profileOutput struct {
 	Username        string `json:"username,omitempty"`
 	Cloud           bool   `json:"cloud"`
 	TenantID        string `json:"tenant_id,omitempty"`
-	IngestURL       string `json:"ingest_url,omitempty"`
 	WorkspaceID     string `json:"workspace_id,omitempty"`
 	WorkspaceName   string `json:"workspace_name,omitempty"`
 	OrchestratorURL string `json:"orchestrator_url,omitempty"`
@@ -52,7 +51,6 @@ func safeProfileOutput(profile config.Profile) profileOutput {
 		Username:        profile.Username,
 		Cloud:           profile.Cloud,
 		TenantID:        profile.TenantID,
-		IngestURL:       profile.IngestURL,
 		WorkspaceID:     profile.WorkspaceID,
 		WorkspaceName:   profile.WorkspaceName,
 		OrchestratorURL: profile.OrchestratorURL,
