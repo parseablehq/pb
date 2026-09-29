@@ -103,7 +103,7 @@ func newAgentManifest() agentManifest {
 			{Command: "pb -o json", Description: "Discover the complete reachable CLI command tree and flags", Scope: "local", Mutates: false, RequiresProfile: false},
 			{Command: "pb help <command...> -o json", Description: "Inspect one command and its flags or subcommands", Scope: "local", Mutates: false, RequiresProfile: false},
 			{Command: "pb status -o json", Description: "Check the active profile and server connection", Scope: "local+server", Mutates: false, RequiresProfile: false},
-			{Command: "pb version -o json", Description: "Show client and connected-server versions", Scope: "local+server", Mutates: false, RequiresProfile: true},
+			{Command: "pb version -o json", Description: "Show the local client version. For server and connection details, use pb status -o json", Scope: "local", Mutates: false, RequiresProfile: false},
 			{Command: "pb profile list -o json", Description: "List locally configured profiles without credentials", Scope: "local", Mutates: false, RequiresProfile: false, Constraints: []string{"Requires the local pb config file"}},
 			{Command: "pb dataset list -o json", Description: "List datasets", Scope: "server", Mutates: false, RequiresProfile: true},
 			{Command: "pb dataset info <dataset> -o json", Description: "Read dataset statistics and configuration", Scope: "server", Mutates: false, RequiresProfile: true},

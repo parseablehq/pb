@@ -17,10 +17,9 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/parseablehq/pb/pkg/analytics"
-	internalHTTP "github.com/parseablehq/pb/pkg/http"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +27,7 @@ import (
 var VersionCmd = &cobra.Command{
 	Use:     "version",
 	Short:   "Print version",
-	Long:    "Print version and commit information",
+	Long:    "Print the client version. For server and connection details, use pb status.",
 	Example: "  pb version",
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		if cmd.Annotations == nil {
@@ -54,48 +53,16 @@ func init() {
 }
 
 // PrintVersion prints version information
-func PrintVersion(cmd *cobra.Command, version, commit string) error {
+func PrintVersion(cmd *cobra.Command, version, _ string) error {
 	format, err := commandOutputFormat(cmd)
 	if err != nil {
 		return err
 	}
-	client := internalHTTP.DefaultClient(&DefaultProfile)
-
-	// Fetch server information
-	if err := PreRun(); err != nil {
-		return fmt.Errorf("error in PreRun: %w", err)
+	version = strings.TrimPrefix(version, "v")
+	if format != outputJSON {
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "pb version %s\n", version)
+		return err
 	}
 
-	about, err := analytics.FetchAbout(&client)
-	if err != nil {
-		return fmt.Errorf("error fetching server information: %w", err)
-	}
-
-	// Output as JSON if specified
-	if format == outputJSON {
-		versionInfo := map[string]interface{}{
-			"client": map[string]string{
-				"version": version,
-				"commit":  commit,
-			},
-			"server": map[string]string{
-				"url":     DefaultProfile.URL,
-				"version": about.Version,
-				"commit":  about.Commit,
-			},
-		}
-		return writeJSON(cmd.OutOrStdout(), versionInfo)
-	}
-
-	// Default: Output as text
-	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "\n%s \n", StandardStyleAlt.Render("pb version"))
-	fmt.Fprintf(out, "- %s %s\n", StandardStyleBold.Render("version: "), version)
-	fmt.Fprintf(out, "- %s %s\n\n", StandardStyleBold.Render("commit:  "), commit)
-
-	fmt.Fprintf(out, "%s %s \n", StandardStyleAlt.Render("Connected to"), StandardStyleBold.Render(DefaultProfile.URL))
-	fmt.Fprintf(out, "- %s %s\n", StandardStyleBold.Render("version: "), about.Version)
-	fmt.Fprintf(out, "- %s %s\n\n", StandardStyleBold.Render("commit:  "), about.Commit)
-
-	return nil
+	return writeJSON(cmd.OutOrStdout(), map[string]string{"version": version})
 }

@@ -291,10 +291,12 @@ pb role list
 pb role add <role>
 pb role remove <role>
 
-# Server status and versions
+# Client version and server status
 pb status
 pb version
 ```
+
+`pb version` prints the local client version on one line. Use `pb version -o json` for the same version as JSON. For server and connection details, use `pb status`.
 
 User and role behavior:
 
