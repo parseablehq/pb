@@ -363,9 +363,9 @@ var StatDatasetCmd = &cobra.Command{
 		ingestionCount := stats.Ingestion.Count
 		ingestionSize := stats.Ingestion.Size
 		storageSize := stats.Storage.Size
-		var compressionRatio float64
-		if ingestionSize > 0 {
-			compressionRatio = 100 - (float64(storageSize) / float64(ingestionSize) * 100)
+		compressionRatio := "n/a"
+		if ingestionSize > 0 && storageSize > 0 {
+			compressionRatio = fmt.Sprintf("%.2f%%", 100-(float64(storageSize)/float64(ingestionSize)*100))
 		}
 
 		// Fetch retention data
@@ -394,9 +394,9 @@ var StatDatasetCmd = &cobra.Command{
 			data := map[string]interface{}{
 				"info": map[string]interface{}{
 					"event_count":       ingestionCount,
-					"ingestion_size":    humanize.Bytes(uint64(ingestionSize)),
-					"storage_size":      humanize.Bytes(uint64(storageSize)),
-					"compression_ratio": fmt.Sprintf("%.2f%%", compressionRatio),
+					"ingestion_size":    humanize.IBytes(uint64(ingestionSize)),
+					"storage_size":      humanize.IBytes(uint64(storageSize)),
+					"compression_ratio": compressionRatio,
 				},
 				"retention":    retention,
 				"alerts":       nonNilSlice(alertsData.Alerts),
@@ -415,9 +415,9 @@ var StatDatasetCmd = &cobra.Command{
 			// Render the info section with consistent alignment
 			fmt.Println(SelectedStyle.Render("\nInfo:"))
 			fmt.Printf("  %-18s %d\n", "Event Count:", ingestionCount)
-			fmt.Printf("  %-18s %s\n", "Ingestion Size:", humanize.Bytes(uint64(ingestionSize)))
-			fmt.Printf("  %-18s %s\n", "Storage Size:", humanize.Bytes(uint64(storageSize)))
-			fmt.Printf("  %-18s %.2f%s\n", "Compression Ratio:", compressionRatio, "%")
+			fmt.Printf("  %-18s %s\n", "Ingestion Size:", humanize.IBytes(uint64(ingestionSize)))
+			fmt.Printf("  %-18s %s\n", "Storage Size:", humanize.IBytes(uint64(storageSize)))
+			fmt.Printf("  %-18s %s\n", "Compression Ratio:", compressionRatio)
 			fmt.Printf("  %-18s %s\n", "Dataset Type:", SelectedStyle.Render(datasetType))
 			fmt.Println()
 
