@@ -234,6 +234,11 @@ pb sql save "SELECT * FROM backend WHERE status = 500" --name=server-errors
 pb sql list
 ```
 
+SQL queries without an explicit `LIMIT` return at most 500 rows. Add a SQL
+`LIMIT` when you need more rows, including with `--output json`; JSON output
+does not fetch additional pages. Interactive mode (`-i`) fetches 500-row
+windows up to the SQL limit.
+
 OTel fields with dots like `service.name` and `http.status_code` work directly in queries without manual quoting.
 
 ## PromQL Workflows
