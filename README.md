@@ -239,6 +239,10 @@ SQL queries without an explicit `LIMIT` return at most 500 rows. Add a SQL
 does not fetch additional pages. Interactive mode (`-i`) fetches 500-row
 windows up to the SQL limit.
 
+Non-interactive SQL results are pretty-printed JSON arrays by default, with
+theme colors in a terminal. Piped output and `-o json` stay uncolored for
+scripts. Use `-i` for the interactive table view.
+
 OTel fields with dots like `service.name` and `http.status_code` work directly in queries without manual quoting.
 
 ## PromQL Workflows

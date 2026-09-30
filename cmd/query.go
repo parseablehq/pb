@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/parseablehq/pb/pkg/model"
+	"github.com/parseablehq/pb/pkg/ui"
 
 	internalHTTP "github.com/parseablehq/pb/pkg/http"
 
@@ -55,7 +56,7 @@ var query = &cobra.Command{
 	Use:          "run [query] [flags]",
 	Example:      "  pb sql run \"select * from frontend\" --from=10m --to=now\n  pb sql run \"select * from frontend\" -i",
 	Short:        "Run SQL query on a dataset",
-	Long:         "\nRun SQL query on a dataset. Default output format is text.\nUse --output json for JSON output, or -i for interactive table view.\nQueries without a SQL LIMIT return at most 500 rows.\nExplicit limits are not capped at 500 by pb; choose a reasonable value.",
+	Long:         "\nRun SQL query on a dataset. Results are pretty-printed JSON by default, with theme colors in a terminal.\nUse -o json for uncolored JSON or -i for the interactive table view.\nQueries without a SQL LIMIT return at most 500 rows.\nExplicit limits are not capped at 500 by pb; choose a reasonable value.",
 	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	PreRunE:      PreRunDefaultProfile,
@@ -155,7 +156,7 @@ var query = &cobra.Command{
 func init() {
 	query.Flags().StringP(startFlag, startFlagShort, defaultStart, "Start time for query.")
 	query.Flags().StringP(endFlag, endFlagShort, defaultEnd, "End time for query.")
-	query.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json)")
+	query.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format (text|json); text colors JSON in terminals")
 	query.Flags().BoolP("interactive", "i", false, "Open interactive table view")
 	query.Flags().StringVar(&saveAsName, "save-as", "", "Save this query with a name for later use")
 }
@@ -746,7 +747,12 @@ func fetchData(client *internalHTTP.HTTPClient, query string, startTime, endTime
 	if outputFormat == "json" {
 		return streamSQLJSONResponse(os.Stdout, reader, resp.Status)
 	}
-	return streamSQLTextResponse(os.Stdout, reader, resp.Status)
+	return streamSQLTextResponse(os.Stdout, reader, resp.Status, shouldColorSQLTextOutput())
+}
+
+func shouldColorSQLTextOutput() bool {
+	_, noColor := os.LookupEnv("NO_COLOR")
+	return term.IsTerminal(int(os.Stdout.Fd())) && !noColor && os.Getenv("TERM") != "dumb"
 }
 
 func readLimitedErrorPreview(body io.Reader) (string, error) {
@@ -766,49 +772,23 @@ func readLimitedErrorPreview(body io.Reader) (string, error) {
 	return preview, nil
 }
 
-func streamSQLTextResponse(out io.Writer, reader *bufio.Reader, status string) error {
-	prefix, empty, err := readResponsePrefix(reader)
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
-	}
-	if empty {
-		fmt.Fprintf(out, "No response body returned (status: %s).\n", status)
-		return nil
-	}
-
-	body := io.Reader(reader)
-	if firstNonSpace(prefix) == '[' {
-		isEmpty, consumed, err := consumeEmptyJSONArray(reader)
-		if err != nil {
-			return fmt.Errorf("failed to read response body: %w", err)
-		}
-		if isEmpty {
-			fmt.Fprintf(out, "Query succeeded: no rows returned (status: %s).\n", status)
-			return nil
-		}
-		body = io.MultiReader(bytes.NewReader(consumed), reader)
-	}
-
-	tracker := &trailingNewlineWriter{w: out}
-	if _, err := io.Copy(tracker, io.MultiReader(bytes.NewReader(prefix), body)); err != nil {
-		return fmt.Errorf("failed to stream response body: %w", err)
-	}
-	if tracker.wrote && tracker.last != '\n' {
-		fmt.Fprintln(out)
-	}
-	return nil
+func streamSQLTextResponse(out io.Writer, reader *bufio.Reader, status string, color bool) error {
+	return streamSQLResponse(out, reader, status, color)
 }
 
 func streamSQLJSONResponse(out io.Writer, reader *bufio.Reader, status string) error {
+	return streamSQLResponse(out, reader, status, false)
+}
+
+func streamSQLResponse(out io.Writer, reader *bufio.Reader, status string, color bool) error {
 	prefix, empty, err := readResponsePrefix(reader)
 	if err != nil {
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
 	if empty {
-		fmt.Fprintf(out, "No response body returned (status: %s).\n", status)
-		return nil
+		return fmt.Errorf("empty SQL response body (status: %s)", status)
 	}
-	if err := writePrettyJSONArray(out, io.MultiReader(bytes.NewReader(prefix), reader)); err != nil {
+	if err := writePrettyJSONArray(out, io.MultiReader(bytes.NewReader(prefix), reader), color); err != nil {
 		return fmt.Errorf("error decoding JSON response: %w", err)
 	}
 	return nil
@@ -831,42 +811,7 @@ func readResponsePrefix(reader *bufio.Reader) ([]byte, bool, error) {
 	}
 }
 
-func consumeEmptyJSONArray(reader *bufio.Reader) (bool, []byte, error) {
-	var consumed []byte
-	for {
-		b, err := reader.ReadByte()
-		if err == io.EOF {
-			return false, consumed, nil
-		}
-		if err != nil {
-			return false, consumed, err
-		}
-		consumed = append(consumed, b)
-		if isSQLSpace(b) {
-			continue
-		}
-		if b != ']' {
-			return false, consumed, nil
-		}
-		break
-	}
-
-	for {
-		b, err := reader.ReadByte()
-		if err == io.EOF {
-			return true, consumed, nil
-		}
-		if err != nil {
-			return false, consumed, err
-		}
-		consumed = append(consumed, b)
-		if !isSQLSpace(b) {
-			return false, consumed, nil
-		}
-	}
-}
-
-func writePrettyJSONArray(out io.Writer, body io.Reader) error {
+func writePrettyJSONArray(out io.Writer, body io.Reader, color bool) error {
 	decoder := json.NewDecoder(body)
 	token, err := decoder.Token()
 	if err != nil {
@@ -880,12 +825,12 @@ func writePrettyJSONArray(out io.Writer, body io.Reader) error {
 	first := true
 	fmt.Fprint(out, "[")
 	for decoder.More() {
-		var item interface{}
+		var item json.RawMessage
 		if err := decoder.Decode(&item); err != nil {
 			return err
 		}
-		encoded, err := json.MarshalIndent(item, "", "  ")
-		if err != nil {
+		var encoded bytes.Buffer
+		if err := json.Indent(&encoded, item, "", "  "); err != nil {
 			return err
 		}
 		if first {
@@ -895,7 +840,11 @@ func writePrettyJSONArray(out io.Writer, body io.Reader) error {
 			fmt.Fprintln(out, ",")
 		}
 		fmt.Fprint(out, "  ")
-		fmt.Fprint(out, string(bytes.ReplaceAll(encoded, []byte("\n"), []byte("\n  "))))
+		formatted := string(bytes.ReplaceAll(encoded.Bytes(), []byte("\n"), []byte("\n  ")))
+		if color {
+			formatted = ui.HighlightJSON(formatted)
+		}
+		fmt.Fprint(out, formatted)
 	}
 	if _, err := decoder.Token(); err != nil {
 		return err
@@ -907,30 +856,6 @@ func writePrettyJSONArray(out io.Writer, body io.Reader) error {
 		fmt.Fprintln(out, "]")
 	}
 	return nil
-}
-
-func firstNonSpace(data []byte) byte {
-	for _, b := range data {
-		if !isSQLSpace(b) {
-			return b
-		}
-	}
-	return 0
-}
-
-type trailingNewlineWriter struct {
-	w     io.Writer
-	wrote bool
-	last  byte
-}
-
-func (w *trailingNewlineWriter) Write(p []byte) (int, error) {
-	n, err := w.w.Write(p)
-	if n > 0 {
-		w.wrote = true
-		w.last = p[n-1]
-	}
-	return n, err
 }
 
 func extractStreamName(query string) string {
