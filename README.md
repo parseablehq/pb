@@ -277,6 +277,7 @@ pb promql active-queries
 # Datasets
 pb dataset list
 pb dataset info <dataset>
+pb dataset schema <dataset>
 pb dataset add <dataset>
 pb dataset remove <dataset>
 
@@ -353,6 +354,7 @@ Commands that support `-o json` return structured output:
 pb status -o json
 pb profile list -o json
 pb dataset list -o json
+pb dataset schema <dataset> -o json
 pb sql list -o json
 pb sql run "SELECT count(*) FROM backend" --from=1h --output json
 pb promql run "up" --dataset otel_metrics --instant --output json

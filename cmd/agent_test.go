@@ -26,7 +26,7 @@ func TestAgentManifestContainsOnlyReadOnlyCommands(t *testing.T) {
 		}
 		seen[item.Command] = struct{}{}
 	}
-	for _, command := range []string{"pb -o json", "pb help <command...> -o json", "pb dataset list -o json", "pb sql list -o json", "pb promql active-queries -o json"} {
+	for _, command := range []string{"pb -o json", "pb help <command...> -o json", "pb dataset list -o json", "pb dataset schema <dataset> -o json", "pb sql list -o json", "pb promql active-queries -o json"} {
 		if _, exists := seen[command]; !exists {
 			t.Fatalf("read-only command missing from agent catalog: %s", command)
 		}
