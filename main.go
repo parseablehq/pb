@@ -245,6 +245,7 @@ func main() {
 	dataset.AddCommand(pb.RemoveDatasetCmd)
 	dataset.AddCommand(pb.ListDatasetCmd)
 	dataset.AddCommand(pb.StatDatasetCmd)
+	dataset.AddCommand(pb.SchemaDatasetCmd)
 
 	sql.AddCommand(pb.QueryCmd)
 	sql.AddCommand(pb.SaveSQLCmd)

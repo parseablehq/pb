@@ -107,6 +107,7 @@ func newAgentManifest() agentManifest {
 			{Command: "pb profile list -o json", Description: "List locally configured profiles without credentials", Scope: "local", Mutates: false, RequiresProfile: false, Constraints: []string{"Requires the local pb config file"}},
 			{Command: "pb dataset list -o json", Description: "List datasets", Scope: "server", Mutates: false, RequiresProfile: true},
 			{Command: "pb dataset info <dataset> -o json", Description: "Read dataset statistics and configuration", Scope: "server", Mutates: false, RequiresProfile: true},
+			{Command: "pb dataset schema <dataset> -o json", Description: "Read dataset field names and types", Scope: "server", Mutates: false, RequiresProfile: true},
 			{Command: "pb user list -o json", Description: "List users and their roles", Scope: "server", Mutates: false, RequiresProfile: true},
 			{Command: "pb role list -o json", Description: "List roles and privileges", Scope: "server", Mutates: false, RequiresProfile: true},
 			{Command: "pb sql run \"<SELECT query>\" --from <time> --to <time> -o json", Description: "Run a read-only SQL query", Scope: "server", Mutates: false, RequiresProfile: true, Constraints: []string{"Use SELECT-only SQL", "Queries without a SQL LIMIT return at most 500 rows", "An explicit SQL LIMIT is not capped at 500 by pb; choose a reasonable limit to avoid large JSON responses", "Never use --save-as because it creates a saved query"}},
