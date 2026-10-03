@@ -109,7 +109,7 @@ func newAgentManifest() agentManifest {
 			{Command: "pb dataset info <dataset> -o json", Description: "Read dataset statistics and configuration", Scope: "server", Mutates: false, RequiresProfile: true},
 			{Command: "pb user list -o json", Description: "List users and their roles", Scope: "server", Mutates: false, RequiresProfile: true},
 			{Command: "pb role list -o json", Description: "List roles and privileges", Scope: "server", Mutates: false, RequiresProfile: true},
-			{Command: "pb sql run \"<SELECT query>\" --from <time> --to <time> -o json", Description: "Run a read-only SQL query", Scope: "server", Mutates: false, RequiresProfile: true, Constraints: []string{"Use SELECT-only SQL", "Never use --save-as because it creates a saved query"}},
+			{Command: "pb sql run \"<SELECT query>\" --from <time> --to <time> -o json", Description: "Run a read-only SQL query", Scope: "server", Mutates: false, RequiresProfile: true, Constraints: []string{"Use SELECT-only SQL", "Queries without a SQL LIMIT return at most 500 rows", "An explicit SQL LIMIT is not capped at 500 by pb; choose a reasonable limit to avoid large JSON responses", "Never use --save-as because it creates a saved query"}},
 			{Command: "pb sql list -o json", Description: "List saved SQL queries without opening the TUI", Scope: "server", Mutates: false, RequiresProfile: true},
 			{Command: "pb promql run \"<expression>\" --dataset <dataset> -o json", Description: "Run a PromQL query", Scope: "server", Mutates: false, RequiresProfile: true},
 			{Command: "pb promql labels <dataset> -o json", Description: "List PromQL label names", Scope: "server", Mutates: false, RequiresProfile: true},

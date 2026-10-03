@@ -34,6 +34,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var (
@@ -54,7 +55,7 @@ var query = &cobra.Command{
 	Use:          "run [query] [flags]",
 	Example:      "  pb sql run \"select * from frontend\" --from=10m --to=now\n  pb sql run \"select * from frontend\" -i",
 	Short:        "Run SQL query on a dataset",
-	Long:         "\nRun SQL query on a dataset. Default output format is text.\nUse --output json for JSON output, or -i for interactive table view.",
+	Long:         "\nRun SQL query on a dataset. Default output format is text.\nUse --output json for JSON output, or -i for interactive table view.\nQueries without a SQL LIMIT return at most 500 rows.\nExplicit limits are not capped at 500 by pb; choose a reasonable value.",
 	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	PreRunE:      PreRunDefaultProfile,
@@ -180,9 +181,13 @@ func parseTimeStr(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("unrecognized time format %q (use: now, 10m, 2h, 1d, or RFC3339)", s)
 }
 
-// startSpinner prints an animated spinner to stderr while a fetch is in progress.
+// startSpinner prints an animated spinner to stderr while a fetch is in progress and stderr is a terminal.
 // Call the returned function to stop it and clear the line.
 func startSpinner() func() {
+	if !term.IsTerminal(int(os.Stderr.Fd())) {
+		return func() {}
+	}
+
 	frames := []string{"|", "/", "-", "\\"}
 	done := make(chan struct{})
 	stopped := make(chan struct{})
