@@ -3,7 +3,6 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
-	"net/http"
 	"testing"
 
 	"github.com/parseablehq/pb/pkg/config"
@@ -14,15 +13,12 @@ func TestPrintVersionUsesCallingCommandOutputFormat(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	if err := config.WriteConfigToFile(&config.Config{
 		Profiles: map[string]config.Profile{
-			"test": {URL: "https://example.com", APIKey: "test-key"},
+			"test": {URL: "http://127.0.0.1:1", APIKey: "test-key"},
 		},
 		DefaultProfile: "test",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	useCommandTransport(t, func(*http.Request) (*http.Response, error) {
-		return commandHTTPResponse(http.StatusOK, "200 OK", `{"version":"v2","commit":"server-commit"}`), nil
-	})
 
 	command := &cobra.Command{Use: "pb"}
 	command.Flags().StringP("output", "o", "text", "output format")
@@ -35,14 +31,77 @@ func TestPrintVersionUsesCallingCommandOutputFormat(t *testing.T) {
 	if err := PrintVersion(command, "v1", "client-commit"); err != nil {
 		t.Fatal(err)
 	}
-	var result struct {
-		Client map[string]string `json:"client"`
-		Server map[string]string `json:"server"`
-	}
+	var result map[string]string
 	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
 		t.Fatalf("invalid version JSON %q: %v", output.String(), err)
 	}
-	if result.Client["version"] != "v1" || result.Server["version"] != "v2" {
+	if len(result) != 1 || result["version"] != "1" {
 		t.Fatalf("unexpected version output: %+v", result)
+	}
+}
+
+func TestPrintVersionTextWithProfile(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := config.WriteConfigToFile(&config.Config{
+		Profiles: map[string]config.Profile{
+			"test": {URL: "http://127.0.0.1:1", APIKey: "test-key"},
+		},
+		DefaultProfile: "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	command := &cobra.Command{Use: "pb"}
+	command.Flags().StringP("output", "o", "text", "output format")
+	var output bytes.Buffer
+	command.SetOut(&output)
+	if err := PrintVersion(command, "v1.0.0", "client-commit"); err != nil {
+		t.Fatal(err)
+	}
+	if got := output.String(); got != "pb version 1.0.0\n" {
+		t.Fatalf("unexpected version output: %q", got)
+	}
+}
+
+func TestPrintVersionWithoutProfile(t *testing.T) {
+	for _, scenario := range []struct {
+		name   string
+		config *config.Config
+	}{
+		{name: "no config file"},
+		{name: "no default profile", config: &config.Config{Profiles: map[string]config.Profile{}}},
+		{name: "missing default profile", config: &config.Config{DefaultProfile: "missing"}},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			if scenario.config != nil {
+				if err := config.WriteConfigToFile(scenario.config); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			for _, format := range []string{"text", "json"} {
+				t.Run(format, func(t *testing.T) {
+					command := &cobra.Command{Use: "pb"}
+					command.Flags().StringP("output", "o", format, "output format")
+					var output bytes.Buffer
+					command.SetOut(&output)
+					if err := PrintVersion(command, "v1", "client-commit"); err != nil {
+						t.Fatal(err)
+					}
+					if format == "json" {
+						var result map[string]string
+						if err := json.Unmarshal(output.Bytes(), &result); err != nil {
+							t.Fatalf("invalid version JSON %q: %v", output.String(), err)
+						}
+						if len(result) != 1 || result["version"] != "1" {
+							t.Fatalf("unexpected version information: %v", result)
+						}
+					} else if got := output.String(); got != "pb version 1\n" {
+						t.Fatalf("unexpected version output: %q", got)
+					}
+				})
+			}
+		})
 	}
 }
