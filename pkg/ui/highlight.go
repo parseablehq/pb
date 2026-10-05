@@ -27,8 +27,10 @@ import (
 
 // pbStyle is the chroma palette mapped onto our Palette tokens.
 // Built lazily on first call so it picks up whichever theme is active.
-var pbStyle *chroma.Style
-var pbJSONStyle *chroma.Style
+var (
+	pbStyle     *chroma.Style
+	pbJSONStyle *chroma.Style
+)
 
 func buildPBStyle(jsonMode bool) *chroma.Style {
 	p := Active
