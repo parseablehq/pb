@@ -16,6 +16,7 @@ require (
 	github.com/gofrs/flock v0.12.1
 	github.com/guptarohit/asciigraph v0.9.0
 	github.com/manifoldco/promptui v0.9.0
+	github.com/muesli/termenv v0.15.2
 	github.com/oklog/ulid/v2 v2.1.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pkg/errors v0.9.1
@@ -173,7 +174,6 @@ require (
 require (
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/evertras/bubble-table v0.19.2
-	github.com/muesli/termenv v0.15.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.9
 	github.com/sahilm/fuzzy v0.1.1 // indirect
 )

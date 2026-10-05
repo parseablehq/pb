@@ -747,12 +747,9 @@ func fetchData(client *internalHTTP.HTTPClient, query string, startTime, endTime
 	if outputFormat == "json" {
 		return streamSQLJSONResponse(os.Stdout, reader, resp.Status)
 	}
-	return streamSQLTextResponse(os.Stdout, reader, resp.Status, shouldColorSQLTextOutput())
-}
-
-func shouldColorSQLTextOutput() bool {
-	_, noColor := os.LookupEnv("NO_COLOR")
-	return term.IsTerminal(int(os.Stdout.Fd())) && !noColor && os.Getenv("TERM") != "dumb"
+	color, restore := setupSQLTextColor()
+	defer restore()
+	return streamSQLTextResponse(os.Stdout, reader, resp.Status, color)
 }
 
 func readLimitedErrorPreview(body io.Reader) (string, error) {
