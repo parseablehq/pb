@@ -27,9 +27,12 @@ import (
 
 // pbStyle is the chroma palette mapped onto our Palette tokens.
 // Built lazily on first call so it picks up whichever theme is active.
-var pbStyle *chroma.Style
+var (
+	pbStyle     *chroma.Style
+	pbJSONStyle *chroma.Style
+)
 
-func buildPBStyle() *chroma.Style {
+func buildPBStyle(jsonMode bool) *chroma.Style {
 	p := Active
 	// Build entries — chroma uses token-type → style rules.
 	// Color values must be hex strings; pull directly from palette.
@@ -54,7 +57,19 @@ func buildPBStyle() *chroma.Style {
 		chroma.Punctuation:          string(p.Mute),
 		chroma.Text:                 string(p.Body),
 	}
-	builder := chroma.NewStyleBuilder("pb")
+	styleName := "pb"
+	if jsonMode {
+		styleName = "pb-json"
+		entries[chroma.Background] = string(p.Body)
+		entries[chroma.NameTag] = string(p.Accent)
+		entries[chroma.LiteralString] = string(p.Body)
+		entries[chroma.LiteralStringDouble] = string(p.Body)
+		entries[chroma.LiteralNumber] = string(p.Body)
+		entries[chroma.LiteralNumberInteger] = string(p.Body)
+		entries[chroma.LiteralNumberFloat] = string(p.Body)
+		entries[chroma.KeywordConstant] = string(p.Body)
+	}
+	builder := chroma.NewStyleBuilder(styleName)
 	for tok, entry := range entries {
 		builder.Add(tok, entry)
 	}
@@ -75,6 +90,14 @@ func HighlightSQL(src string) string {
 	return highlight(src, "sql")
 }
 
+// HighlightJSON colors JSON using the active pb palette.
+func HighlightJSON(src string) string {
+	if pbJSONStyle == nil {
+		pbJSONStyle = buildPBStyle(true)
+	}
+	return highlightWithStyle(src, "json", pbJSONStyle)
+}
+
 // HighlightPromQL highlights PromQL queries (chroma calls the lexer
 // `promql`).
 func HighlightPromQL(src string) string {
@@ -82,11 +105,15 @@ func HighlightPromQL(src string) string {
 }
 
 func highlight(src, lang string) string {
+	if pbStyle == nil {
+		pbStyle = buildPBStyle(false)
+	}
+	return highlightWithStyle(src, lang, pbStyle)
+}
+
+func highlightWithStyle(src, lang string, style *chroma.Style) string {
 	if src == "" {
 		return ""
-	}
-	if pbStyle == nil {
-		pbStyle = buildPBStyle()
 	}
 	lex := lexers.Get(lang)
 	if lex == nil {
@@ -103,7 +130,7 @@ func highlight(src, lang string) string {
 	if fmtter == nil {
 		fmtter = formatters.Fallback
 	}
-	if err := fmtter.Format(&buf, pbStyle, iter); err != nil {
+	if err := fmtter.Format(&buf, style, iter); err != nil {
 		return src
 	}
 	return buf.String()

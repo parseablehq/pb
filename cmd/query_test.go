@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"bytes"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -149,29 +150,57 @@ func TestEnsureDefaultLimitKeepsRealLimitWithComments(t *testing.T) {
 	}
 }
 
-func TestStreamSQLTextResponseStreamsBodyAndAddsTrailingNewline(t *testing.T) {
+func TestStreamSQLTextResponsePrettyPrintsJSON(t *testing.T) {
 	var output bytes.Buffer
 	reader := bufio.NewReader(strings.NewReader(`[{"a":1}]`))
 
-	if err := streamSQLTextResponse(&output, reader, "200 OK"); err != nil {
+	if err := streamSQLTextResponse(&output, reader, "200 OK", false); err != nil {
 		t.Fatalf("streamSQLTextResponse failed: %v", err)
 	}
 
-	if got, want := output.String(), "[{\"a\":1}]\n"; got != want {
+	if got, want := output.String(), "[\n  {\n    \"a\": 1\n  }\n]\n"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
 
-func TestStreamSQLTextResponsePrintsNoRowsForEmptyArray(t *testing.T) {
+func TestStreamSQLTextResponsePrintsEmptyArray(t *testing.T) {
 	var output bytes.Buffer
 	reader := bufio.NewReader(strings.NewReader("  []\n"))
 
-	if err := streamSQLTextResponse(&output, reader, "200 OK"); err != nil {
+	if err := streamSQLTextResponse(&output, reader, "200 OK", false); err != nil {
 		t.Fatalf("streamSQLTextResponse failed: %v", err)
 	}
 
-	if got, want := output.String(), "Query succeeded: no rows returned (status: 200 OK).\n"; got != want {
+	if got, want := output.String(), "[]\n"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestStreamSQLTextResponseColorsTerminalJSON(t *testing.T) {
+	var output bytes.Buffer
+	reader := bufio.NewReader(strings.NewReader(`[{"c":2400}]`))
+
+	if err := streamSQLTextResponse(&output, reader, "200 OK", true); err != nil {
+		t.Fatalf("streamSQLTextResponse failed: %v", err)
+	}
+	if !strings.Contains(output.String(), "\x1b[") {
+		t.Fatalf("expected themed ANSI colors, got %q", output.String())
+	}
+	plain := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(output.String(), "")
+	if want := "[\n  {\n    \"c\": 2400\n  }\n]\n"; plain != want {
+		t.Fatalf("colored output changed JSON layout: got %q, want %q", plain, want)
+	}
+}
+
+func TestStreamSQLJSONResponsePreservesLargeNumbers(t *testing.T) {
+	var output bytes.Buffer
+	reader := bufio.NewReader(strings.NewReader(`[{"time_unix_nano":1790784848161039008}]`))
+
+	if err := streamSQLJSONResponse(&output, reader, "200 OK"); err != nil {
+		t.Fatalf("streamSQLJSONResponse failed: %v", err)
+	}
+	if !strings.Contains(output.String(), "1790784848161039008") {
+		t.Fatalf("large integer changed: %s", output.String())
 	}
 }
 
