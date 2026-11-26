@@ -85,6 +85,14 @@ func UpdateCloudTokens(oldRefreshToken, sessionToken, refreshToken string) error
 type Config struct {
 	Profiles       map[string]Profile
 	DefaultProfile string
+	K8sContexts    map[string]K8sContext `toml:"k8s_contexts,omitempty"`
+}
+
+// K8sContext connects a local kubeconfig context to telemetry in Parseable.
+type K8sContext struct {
+	Profile        string `toml:"profile"`
+	MetricsDataset string `toml:"metrics_dataset"`
+	ClusterName    string `toml:"cluster_name,omitempty"`
 }
 
 // Profile is the struct that holds the profile configuration

@@ -108,6 +108,7 @@ var rootHelpGroups = []rootHelpGroup{
 			{name: "sql", desc: "Run SQL query on a dataset"},
 			{name: "promql", desc: "PromQL queries and metrics exploration"},
 			{name: "tail", desc: "Stream live events from a dataset"},
+			{name: "k8s", desc: "Inspect Kubernetes pod telemetry"},
 		},
 	},
 	{
@@ -285,6 +286,7 @@ func main() {
 	cli.AddCommand(user)
 	cli.AddCommand(role)
 	cli.AddCommand(pb.TailCmd)
+	cli.AddCommand(pb.K8sCmd)
 	// cli.AddCommand(cluster)
 
 	cli.AddCommand(pb.LoginCmd)
