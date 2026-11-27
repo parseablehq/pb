@@ -14,6 +14,45 @@ import (
 	"github.com/parseablehq/pb/pkg/config"
 )
 
+func TestK8sWorkloadPodPatternExcludesOtherWorkloads(t *testing.T) {
+	for _, test := range []struct {
+		kind, ownPod, otherPod string
+	}{
+		{"deployment", "api-7f8c9d6b5-abc12", "api-worker-7f8c9d6b5-abc12"},
+		{"statefulset", "api-0", "api-worker-0"},
+	} {
+		request := k8sDeploymentRequest{Namespace: "shop", Deployment: "api", Kind: test.kind}
+		pattern := k8sWorkloadPodPattern(request)
+		matcher := regexp.MustCompile("^" + pattern + "$")
+		if !matcher.MatchString(test.ownPod) || matcher.MatchString(test.otherPod) {
+			t.Errorf("%s pattern %q matched wrong pods", test.kind, pattern)
+		}
+		selector := k8sDeploymentSelector(request, "k8s.pod.cpu.usage")
+		if !strings.Contains(selector, `k8s.pod.name=~"`+pattern+`"`) {
+			t.Errorf("selector does not use %s pattern: %q", test.kind, selector)
+		}
+	}
+}
+
+func TestK8sDeploymentDashboardIgnoresOlderLoad(t *testing.T) {
+	model := newK8sDeploymentModel(k8sDeploymentRequest{From: "15m"})
+	changed, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	model = changed.(k8sDeploymentModel)
+	if model.loadID != 2 || model.request.From != "1h" {
+		t.Fatalf("range change did not start a new load: %+v", model)
+	}
+	changed, _ = model.Update(k8sDeploymentLoadedMsg{loadID: 1, data: k8sDeploymentData{updatedAt: time.Unix(1, 0)}})
+	model = changed.(k8sDeploymentModel)
+	if !model.loading || !model.data.updatedAt.IsZero() {
+		t.Fatal("older deployment result was accepted while newer load was pending")
+	}
+	changed, _ = model.Update(k8sDeploymentLoadedMsg{loadID: 2, data: k8sDeploymentData{updatedAt: time.Unix(2, 0)}})
+	model = changed.(k8sDeploymentModel)
+	if model.loading || model.data.updatedAt.Unix() != 2 {
+		t.Fatal("current deployment result was not accepted")
+	}
+}
+
 func TestK8sDeploymentDashboardUsesSeparatePodSeries(t *testing.T) {
 	now := time.Now().Unix()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -25,7 +64,7 @@ func TestK8sDeploymentDashboardUsesSeparatePodSeries(t *testing.T) {
 			t.Errorf("1h deployment metric step = %q, want 30s", got)
 		}
 		expression := r.URL.Query().Get("query")
-		if !strings.Contains(expression, `sum by (k8s.pod.name)`) || !strings.Contains(expression, `k8s.pod.name=~"demo-.+"`) || r.URL.Query().Get("stream") != "metrics" {
+		if !strings.Contains(expression, `sum by (k8s.pod.name)`) || !strings.Contains(expression, `k8s.pod.name=~"demo-[^-]+-[a-z0-9]{5}"`) || r.URL.Query().Get("stream") != "metrics" {
 			t.Errorf("unexpected deployment query: %s", r.URL.String())
 		}
 		if !strings.Contains(expression, "k8s.pod.cpu.usage") && !strings.Contains(expression, "k8s.pod.memory.usage") {
@@ -38,8 +77,9 @@ func TestK8sDeploymentDashboardUsesSeparatePodSeries(t *testing.T) {
 		}
 		var series []string
 		for i := 1; i <= 3; i++ {
-			series = append(series, fmt.Sprintf(`{"metric":{"k8s.pod.name":"demo-%d"},"values":[[%d,"%.0f"],[%d,"%.0f"]]}`, i, now-60, float64(i)*multiplier, now, float64(i)*multiplier))
+			series = append(series, fmt.Sprintf(`{"metric":{"k8s.pod.name":"demo-7f8c9d6b5-abc1%d"},"values":[[%d,"%.0f"],[%d,"%.0f"]]}`, i, now-60, float64(i)*multiplier, now, float64(i)*multiplier))
 		}
+		series = append(series, fmt.Sprintf(`{"metric":{"k8s.pod.name":"demo-worker-7f8c9d6b5-abc10"},"values":[[%d,"100"],[%d,"100"]]}`, now-60, now))
 		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` + strings.Join(series, ",") + `]}}`))
 	}))
 	defer server.Close()
@@ -62,7 +102,7 @@ func TestK8sDeploymentDashboardUsesSeparatePodSeries(t *testing.T) {
 	model := newK8sDeploymentModel(request)
 	model.loading, model.data, model.width, model.height = false, data, 180, 70
 	view := model.View()
-	for _, fragment := range []string{"pods 3", "CPU  /  cores  /  BY POD", "MEMORY  /  MiB  /  BY POD", "demo-1", "demo-2", "demo-3", "auto refresh 15s"} {
+	for _, fragment := range []string{"pods 3", "CPU  /  cores  /  BY POD", "MEMORY  /  MiB  /  BY POD", "demo-7f8c9d6b5-abc11", "demo-7f8c9d6b5-abc12", "demo-7f8c9d6b5-abc13", "auto refresh 15s"} {
 		if !strings.Contains(view, fragment) {
 			t.Errorf("deployment view missing %q", fragment)
 		}
@@ -107,7 +147,7 @@ func TestK8sDeploymentDashboardUsesSeparatePodSeries(t *testing.T) {
 	}
 	balancedLegend := false
 	for _, line := range strings.Split(chart, "\n") {
-		if strings.Contains(line, "demo-1") && strings.Contains(line, "demo-2") {
+		if strings.Contains(line, "demo-7f8c9d6b5-abc11") && strings.Contains(line, "demo-7f8c9d6b5-abc12") {
 			balancedLegend = true
 		}
 	}
@@ -169,10 +209,13 @@ func TestK8sDeploymentRequestsUseAvailableHTTPMetrics(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/prometheus/api/v1/series":
-			_, _ = w.Write([]byte(`{"status":"success","data":[{"__name__":"http.server.request.duration.count","http.response.status_code":"200"},{"__name__":"http.server.request.duration.bucket"}]}`))
+			if selector := r.URL.Query().Get("match[]"); !strings.Contains(selector, `k8s.pod.name=~"web-[^-]+-[a-z0-9]{5}"`) {
+				t.Errorf("HTTP metric discovery should cover the workload, got %q", selector)
+			}
+			_, _ = w.Write([]byte(`{"status":"success","data":[{"__name__":"http.server.request.duration.count","k8s.pod.name":"web-7f8c9d6b5-abc11","http.response.status_code":"200"},{"__name__":"http.server.request.duration.bucket","k8s.pod.name":"web-7f8c9d6b5-abc11"}]}`))
 		case "/prometheus/api/v1/query_range":
 			expression := r.URL.Query().Get("query")
-			if !strings.Contains(expression, `k8s.pod.name=~"web-.+"`) {
+			if !strings.Contains(expression, `k8s.pod.name=~"web-[^-]+-[a-z0-9]{5}"`) {
 				t.Errorf("HTTP metric query missing workload selector: %q", expression)
 			}
 			if strings.Contains(expression, "histogram_quantile") {
@@ -186,10 +229,10 @@ func TestK8sDeploymentRequestsUseAvailableHTTPMetrics(t *testing.T) {
 				return
 			}
 			if strings.Contains(expression, `=~"5.."`) {
-				_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"k8s.pod.name":"web-0"},"values":[[%d,"1"]]}]}}`, now)
+				_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"k8s.pod.name":"web-7f8c9d6b5-abc10"},"values":[[%d,"1"]]}]}}`, now)
 				return
 			}
-			_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"k8s.pod.name":"web-0"},"values":[[%d,"10"]]},{"metric":{"k8s.pod.name":"web-1"},"values":[[%d,"12"]]}]}}`, now, now)
+			_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"k8s.pod.name":"web-7f8c9d6b5-abc10"},"values":[[%d,"10"]]},{"metric":{"k8s.pod.name":"web-7f8c9d6b5-abc11"},"values":[[%d,"12"]]}]}}`, now, now)
 		default:
 			http.NotFound(w, r)
 		}
@@ -200,13 +243,13 @@ func TestK8sDeploymentRequestsUseAvailableHTTPMetrics(t *testing.T) {
 		Mapping:   config.K8sContext{MetricsDataset: "metrics"},
 		Namespace: "shop", Deployment: "web", From: "1h",
 	}
-	requests, errors, duration := fetchK8sDeploymentHTTP(request, "web-0")
-	if len(requests) != 2 || len(errors) != 2 || errors["web-1"].latest != 0 || duration["p95"].latest != 200 {
+	requests, errors, duration := fetchK8sDeploymentHTTP(request)
+	if len(requests) != 2 || len(errors) != 2 || errors["web-7f8c9d6b5-abc11"].latest != 0 || duration["p95"].latest != 200 {
 		t.Fatalf("unexpected HTTP metrics: requests=%v errors=%v duration=%v", requests, errors, duration)
 	}
 	model := newK8sDeploymentModel(request)
 	model.data = k8sDeploymentData{requests: requests, errors: errors, duration: duration, updatedAt: time.Unix(now, 0)}
-	section := deploymentRequestSection(model, []string{"web-0", "web-1"}, 180)
+	section := deploymentRequestSection(model, []string{"web-7f8c9d6b5-abc10", "web-7f8c9d6b5-abc11"}, 180)
 	joined := strings.Join(section, "\n")
 	for _, want := range []string{"REQUESTS", "Requests", "5xx errors", "Duration p95", "p99", "p50"} {
 		if !strings.Contains(joined, want) {

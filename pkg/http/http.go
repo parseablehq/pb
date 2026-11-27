@@ -59,6 +59,18 @@ func DefaultClientWithTransport(profile *config.Profile, transport http.RoundTri
 	}
 }
 
+// DoAuthenticated applies the current profile credentials before sending a request.
+func (client *HTTPClient) DoAuthenticated(req *http.Request) (*http.Response, error) {
+	transport := client.Client.Transport.(*cloudRefreshTransport)
+	transport.mu.Lock()
+	err := AddAuthHeaders(req, client.Profile)
+	transport.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return client.Client.Do(req)
+}
+
 func (client *HTTPClient) baseAPIURL(path string) (x string) {
 	x, _ = url.JoinPath(client.Profile.URL, "api/v1/", path)
 	return

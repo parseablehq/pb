@@ -55,6 +55,7 @@ func init() {
 
 type k8sDeploymentRequest struct {
 	Profile    config.Profile
+	client     *internalHTTP.HTTPClient
 	Mapping    config.K8sContext
 	Context    string
 	Namespace  string
@@ -95,9 +96,17 @@ func runK8sDeployment(cmd *cobra.Command, args []string) error {
 	return err
 }
 
-// k8sDeploymentSelector matches pods belonging to the named workload.
+// k8sWorkloadPodPattern distinguishes Deployment pods from StatefulSet ordinals.
+func k8sWorkloadPodPattern(request k8sDeploymentRequest) string {
+	if request.Kind == "statefulset" {
+		return regexp.QuoteMeta(request.Deployment) + `-[0-9]+`
+	}
+	return regexp.QuoteMeta(request.Deployment) + `-[^-]+-[a-z0-9]{5}`
+}
+
+// k8sDeploymentSelector selects pods matching the requested workload kind and name.
 func k8sDeploymentSelector(request k8sDeploymentRequest, name string) string {
-	selector := name + `{k8s.namespace.name="` + escapeK8sPromQLLabel(request.Namespace) + `",k8s.pod.name=~"` + escapeK8sPromQLLabel(regexp.QuoteMeta(request.Deployment)+`-.+`) + `"`
+	selector := name + `{k8s.namespace.name="` + escapeK8sPromQLLabel(request.Namespace) + `",k8s.pod.name=~"` + escapeK8sPromQLLabel(k8sWorkloadPodPattern(request)) + `"`
 	if request.Mapping.ClusterName != "" {
 		selector += `,k8s.cluster.name="` + escapeK8sPromQLLabel(request.Mapping.ClusterName) + `"`
 	}
@@ -128,11 +137,7 @@ func fetchK8sDeploymentExpression(request k8sDeploymentRequest, expression strin
 	if err != nil {
 		return nil, err
 	}
-	if err := internalHTTP.AddAuthHeaders(req, &request.Profile); err != nil {
-		return nil, err
-	}
-	client := internalHTTP.DefaultClient(&request.Profile)
-	resp, err := client.Client.Do(req)
+	resp, err := k8sMetricsClient(request.Profile, request.client).DoAuthenticated(req)
 	if err != nil {
 		return nil, err
 	}
@@ -148,10 +153,11 @@ func fetchK8sDeploymentExpression(request k8sDeploymentRequest, expression strin
 	if result.Status == "error" {
 		return nil, fmt.Errorf("workload metrics: %s", result.Error)
 	}
+	podMatcher := regexp.MustCompile("^" + k8sWorkloadPodPattern(request) + "$")
 	out := make(map[string]k8sPodMetric)
 	for _, series := range result.Data.Result {
 		pod := series.Metric["k8s.pod.name"]
-		if pod == "" || !strings.HasPrefix(pod, request.Deployment+"-") {
+		if !podMatcher.MatchString(pod) {
 			continue
 		}
 		var metric k8sPodMetric
@@ -194,6 +200,7 @@ type k8sDeploymentData struct {
 
 // loadK8sDeployment fetches resource and HTTP metrics for the view.
 func loadK8sDeployment(request k8sDeploymentRequest) k8sDeploymentData {
+	request.client = k8sMetricsClient(request.Profile, request.client)
 	var data k8sDeploymentData
 	var errorsBySignal [6]error
 	tasks := []struct {
@@ -224,7 +231,7 @@ func loadK8sDeployment(request k8sDeploymentRequest) k8sDeploymentData {
 	}
 	pods := k8sDeploymentPods(data)
 	if len(pods) > 0 {
-		data.requests, data.errors, data.duration = fetchK8sDeploymentHTTP(request, pods[0])
+		data.requests, data.errors, data.duration = fetchK8sDeploymentHTTP(request)
 	}
 	data.updatedAt = time.Now()
 	return data
@@ -246,11 +253,15 @@ func k8sDeploymentPods(data k8sDeploymentData) []string {
 	return pods
 }
 
-type k8sDeploymentLoadedMsg k8sDeploymentData
+type k8sDeploymentLoadedMsg struct {
+	loadID uint64
+	data   k8sDeploymentData
+}
 
 // k8sDeploymentModel holds dashboard data, controls, and scroll position.
 type k8sDeploymentModel struct {
 	request   k8sDeploymentRequest
+	loadID    uint64
 	data      k8sDeploymentData
 	loading   bool
 	width     int
@@ -261,7 +272,8 @@ type k8sDeploymentModel struct {
 }
 
 func newK8sDeploymentModel(request k8sDeploymentRequest) k8sDeploymentModel {
-	return k8sDeploymentModel{request: request, loading: true, width: 100, height: 25, aggregate: "total", perPod: true}
+	request.client = k8sMetricsClient(request.Profile, request.client)
+	return k8sDeploymentModel{request: request, loadID: 1, loading: true, width: 100, height: 25, aggregate: "total", perPod: true}
 }
 
 func (m k8sDeploymentModel) Init() tea.Cmd {
@@ -270,7 +282,8 @@ func (m k8sDeploymentModel) Init() tea.Cmd {
 
 func (m k8sDeploymentModel) load() tea.Cmd {
 	request := m.request
-	return func() tea.Msg { return k8sDeploymentLoadedMsg(loadK8sDeployment(request)) }
+	loadID := m.loadID
+	return func() tea.Msg { return k8sDeploymentLoadedMsg{loadID: loadID, data: loadK8sDeployment(request)} }
 }
 
 func (m k8sDeploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -278,12 +291,16 @@ func (m k8sDeploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = max(30, msg.Width), max(8, msg.Height)
 	case k8sDeploymentLoadedMsg:
-		m.data, m.loading = k8sDeploymentData(msg), false
+		if msg.loadID != m.loadID {
+			return m, nil
+		}
+		m.data, m.loading = msg.data, false
 	case k8sRefreshMsg:
 		if m.loading {
 			return m, k8sRefreshTick()
 		}
 		m.loading = true
+		m.loadID++
 		return m, tea.Batch(m.load(), k8sRefreshTick())
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -292,6 +309,7 @@ func (m k8sDeploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "1", "2", "3", "4":
 			m.request.From = map[string]string{"1": "15m", "2": "1h", "3": "6h", "4": "24h"}[msg.String()]
 			m.scroll, m.loading = 0, true
+			m.loadID++
 			return m, m.load()
 		case "t":
 			m.aggregate = "total"
@@ -309,6 +327,7 @@ func (m k8sDeploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.perPod = !m.perPod
 		case "r":
 			m.loading = true
+			m.loadID++
 			return m, m.load()
 		case "up", "k":
 			m.scroll = max(0, m.scroll-1)
@@ -836,12 +855,12 @@ func k8sChartSegments(metric k8sPodMetric, start, end time.Time, scale float64) 
 }
 
 // fetchK8sDeploymentHTTP reads request, 5xx, and duration signals when available.
-func fetchK8sDeploymentHTTP(request k8sDeploymentRequest, samplePod string) (map[string]k8sPodMetric, map[string]k8sPodMetric, map[string]k8sPodMetric) {
+func fetchK8sDeploymentHTTP(request k8sDeploymentRequest) (map[string]k8sPodMetric, map[string]k8sPodMetric, map[string]k8sPodMetric) {
 	podRequest := k8sPodRequest{
-		Profile: request.Profile, Mapping: request.Mapping, Context: request.Context,
-		Namespace: request.Namespace, Pod: samplePod, From: request.From,
+		Profile: request.Profile, client: request.client, Mapping: request.Mapping, Context: request.Context,
+		Namespace: request.Namespace, From: request.From,
 	}
-	catalog, err := fetchK8sPodMetricCatalog(podRequest)
+	catalog, err := fetchK8sMetricCatalog(podRequest, k8sDeploymentSelector(request, ""))
 	if err != nil {
 		return nil, nil, nil
 	}

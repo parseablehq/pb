@@ -2,9 +2,12 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/parseablehq/pb/pkg/config"
@@ -104,6 +107,71 @@ func TestCloudSessionRefreshesAndRetriesWorkspaceRequest(t *testing.T) {
 	}
 	if profile.SessionToken != "new-session" || profile.RefreshToken != "new-refresh" {
 		t.Fatalf("tokens not updated: %#v", profile)
+	}
+}
+
+func TestSharedClientCoordinatesConcurrentCloudRefresh(t *testing.T) {
+	oldAuthToken := config.CloudOrchestratorAuthToken
+	config.CloudOrchestratorAuthToken = "orchestrator-auth-token"
+	t.Cleanup(func() { config.CloudOrchestratorAuthToken = oldAuthToken })
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	profile := config.Profile{
+		URL: "https://workspace.example.com", Cloud: true,
+		SessionToken: "old-session", RefreshToken: "old-refresh",
+		TenantID: "tenant", WorkspaceID: "workspace",
+		OrchestratorURL: "https://orchestrator.example.com",
+	}
+	if err := config.WriteConfigToFile(&config.Config{
+		Profiles: map[string]config.Profile{"cloud": profile}, DefaultProfile: "cloud",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var refreshCalls atomic.Int32
+	base := testRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Host == "orchestrator.example.com" {
+			refreshCalls.Add(1)
+			return testHTTPResponse(req, http.StatusOK, `{"access_token":"new-session","refresh_token":"new-refresh"}`), nil
+		}
+		cookie, err := req.Cookie("session")
+		if err == nil && cookie.Value == "new-session" {
+			return testHTTPResponse(req, http.StatusOK, `{}`), nil
+		}
+		return testHTTPResponse(req, http.StatusUnauthorized, ``), nil
+	})
+	client := DefaultClientWithTransport(&profile, base)
+	var group sync.WaitGroup
+	errors := make(chan error, 4)
+	for range 4 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			req, err := http.NewRequest(http.MethodGet, profile.URL+"/prometheus/api/v1/query_range", nil)
+			if err != nil {
+				errors <- err
+				return
+			}
+			resp, err := client.DoAuthenticated(req)
+			if err != nil {
+				errors <- err
+				return
+			}
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				errors <- fmt.Errorf("unexpected status: %s", resp.Status)
+			}
+		}()
+	}
+	group.Wait()
+	close(errors)
+	for err := range errors {
+		t.Error(err)
+	}
+	saved, err := config.ReadConfigFromFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshCalls.Load() != 1 || profile.SessionToken != "new-session" || saved.Profiles["cloud"].RefreshToken != "new-refresh" {
+		t.Fatalf("refresh calls=%d, profile=%+v, saved=%+v", refreshCalls.Load(), profile, saved.Profiles["cloud"])
 	}
 }
 

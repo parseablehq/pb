@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -77,6 +78,65 @@ func TestK8sSetupMapsMetrics(t *testing.T) {
 	podCommand.Flags().Bool("interactive", false, "")
 	if err := runK8sPod(podCommand, []string{"payment-123"}); err == nil || errorDetails(err).Code != ErrorInvalidInput {
 		t.Fatalf("pod dashboard should require -i and a terminal, got %v", err)
+	}
+}
+
+func TestK8sSetupPreservesRefreshedCloudTokens(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	oldAuthToken := config.CloudOrchestratorAuthToken
+	config.CloudOrchestratorAuthToken = "orchestrator-auth-token"
+	t.Cleanup(func() { config.CloudOrchestratorAuthToken = oldAuthToken })
+
+	workspaceCalls, refreshCalls := 0, 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/prism/v1/home":
+			workspaceCalls++
+			cookie, err := r.Cookie("session")
+			if err != nil || cookie.Value != "new-session" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			_, _ = w.Write([]byte(`{"datasets":[{"title":"pai-metrics","datasetType":"metrics"}]}`))
+		case "/api/v1/cli/oauth/token":
+			refreshCalls++
+			_, _ = w.Write([]byte(`{"access_token":"new-session","refresh_token":"new-refresh"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	profile := config.Profile{
+		URL: server.URL, Cloud: true, SessionToken: "old-session", RefreshToken: "old-refresh",
+		TenantID: "tenant", WorkspaceID: "workspace", OrchestratorURL: server.URL,
+	}
+	if err := config.WriteConfigToFile(&config.Config{
+		DefaultProfile: "cloud", Profiles: map[string]config.Profile{"cloud": profile},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	command := &cobra.Command{}
+	command.Flags().String("context", "production", "")
+	command.Flags().String("profile", "", "")
+	command.Flags().String("metrics-dataset", "pai-metrics", "")
+	command.Flags().String("cluster-name", "", "")
+	command.SetOut(&bytes.Buffer{})
+	if err := runK8sSetup(command, nil); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := config.ReadConfigFromFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := saved.Profiles["cloud"]; got.SessionToken != "new-session" || got.RefreshToken != "new-refresh" {
+		t.Fatalf("setup overwrote refreshed Cloud tokens: %+v", got)
+	}
+	if got := saved.K8sContexts["production"]; got.Profile != "cloud" || got.MetricsDataset != "pai-metrics" {
+		t.Fatalf("unexpected context mapping: %+v", got)
+	}
+	if workspaceCalls != 2 || refreshCalls != 1 {
+		t.Fatalf("workspace calls=%d, refresh calls=%d", workspaceCalls, refreshCalls)
 	}
 }
 
@@ -160,6 +220,25 @@ func TestK8sPodDashboardRangesAndScrolling(t *testing.T) {
 	}
 }
 
+func TestK8sPodDashboardIgnoresOlderLoad(t *testing.T) {
+	model := newK8sPodModel(k8sPodRequest{From: "15m"})
+	changed, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	model = changed.(k8sPodModel)
+	if model.loadID != 2 || model.request.From != "1h" {
+		t.Fatalf("range change did not start a new load: %+v", model)
+	}
+	changed, _ = model.Update(k8sPodLoadedMsg{loadID: 1, cpu: k8sPodMetric{latest: 1}})
+	model = changed.(k8sPodModel)
+	if !model.loading || model.cpu.latest != 0 {
+		t.Fatal("older pod result was accepted while newer load was pending")
+	}
+	changed, _ = model.Update(k8sPodLoadedMsg{loadID: 2, cpu: k8sPodMetric{latest: 2}})
+	model = changed.(k8sPodModel)
+	if model.loading || model.cpu.latest != 2 {
+		t.Fatal("current pod result was not accepted")
+	}
+}
+
 func TestK8sPodFooterStaysAtBottom(t *testing.T) {
 	model := newK8sPodModel(k8sPodRequest{Namespace: "shop", Pod: "payment-123", From: "1h"})
 	model.loading, model.width, model.height = false, 100, 20
@@ -220,6 +299,83 @@ func TestK8sPodOptionalMetricsOnlyRenderWhenAvailable(t *testing.T) {
 	for _, fragment := range []string{"Requests", "REQUESTS/S", "5XX ERRORS/S", "LATENCY P95"} {
 		if !strings.Contains(view, fragment) {
 			t.Errorf("dashboard missing %q", fragment)
+		}
+	}
+}
+
+func TestK8sPodFailedErrorQueryDoesNotShowZero(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/prometheus/api/v1/series":
+			_, _ = w.Write([]byte(`{"status":"success","data":[{"__name__":"http.server.request.duration.count","http.response.status_code":"200"}]}`))
+		case "/prometheus/api/v1/query_range":
+			if strings.Contains(r.URL.Query().Get("query"), `=~"5.."`) {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1795080000,"2"]]}]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	request := k8sPodRequest{
+		Profile: config.Profile{URL: server.URL, Username: "admin", Password: "admin"},
+		Mapping: config.K8sContext{MetricsDataset: "metrics"}, Namespace: "shop", Pod: "pod", From: "1h",
+	}
+	extra, err := fetchK8sPodExtras(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if extra.requests.latest != 2 || !extra.errors.at.IsZero() {
+		t.Fatalf("failed 5xx query should be hidden, not shown as zero: %+v", extra)
+	}
+}
+
+func TestZeroK8sMetricKeepsChartSamples(t *testing.T) {
+	end := time.Now().UTC().Truncate(time.Minute)
+	source := k8sPodMetric{
+		values: []float64{3, 2, 1},
+		times:  []time.Time{end.Add(-2 * time.Minute), end.Add(-time.Minute), end},
+		latest: 1, at: end, windowEnd: end,
+	}
+	zero := zeroK8sMetric(source)
+	if zero.latest != 0 || !zero.at.Equal(end) || !zero.windowEnd.Equal(end) || len(zero.times) != len(source.times) {
+		t.Fatalf("zero metric lost its sample window: %+v", zero)
+	}
+	for i, value := range zero.values {
+		if value != 0 || !zero.times[i].Equal(source.times[i]) {
+			t.Fatalf("zero sample %d = %v at %s", i, value, zero.times[i])
+		}
+	}
+	segments := k8sChartSegments(zero, end.Add(-5*time.Minute), end, 1)
+	if len(segments) != 1 || len(segments[0]) != 3 {
+		t.Fatalf("zero line has no chart points: %+v", segments)
+	}
+	card := k8sSignalCard("5xx errors/s", zero, 80, "5m", end, "err/s")
+	if !regexp.MustCompile("[\u2801-\u28ff]").MatchString(card) {
+		t.Fatal("zero error samples did not render a chart line")
+	}
+}
+
+func TestK8sHTTPCardsFitTerminalWidth(t *testing.T) {
+	for _, width := range []int{74, 80, 87, 88, 100} {
+		cardWidth := width
+		if width >= 88 {
+			cardWidth = (width - 2) / 2
+		}
+		lines := appendK8sCards(nil, []string{strings.Repeat("a", cardWidth), strings.Repeat("b", cardWidth)}, width)
+		wantLines := 2
+		if width >= 88 {
+			wantLines = 1
+		}
+		if len(lines) != wantLines {
+			t.Errorf("width %d: got %d rows, want %d", width, len(lines), wantLines)
+		}
+		for _, line := range lines {
+			if got := lipgloss.Width(line); got > width {
+				t.Errorf("width %d: card row uses %d columns", width, got)
+			}
 		}
 	}
 }

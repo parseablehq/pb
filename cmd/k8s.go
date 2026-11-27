@@ -97,6 +97,11 @@ func runK8sSetup(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	// Dataset fetching may refresh Cloud tokens in the saved config.
+	conf, err = config.ReadConfigFromFile()
+	if err != nil {
+		return fmt.Errorf("reload pb profiles: %w", err)
+	}
 	if conf.K8sContexts == nil {
 		conf.K8sContexts = make(map[string]config.K8sContext)
 	}
@@ -176,6 +181,7 @@ func runK8sPod(cmd *cobra.Command, args []string) error {
 
 type k8sPodRequest struct {
 	Profile   config.Profile
+	client    *internalHTTP.HTTPClient
 	Mapping   config.K8sContext
 	Context   string
 	Namespace string
@@ -233,11 +239,7 @@ func fetchK8sPodMetricExpression(request k8sPodRequest, expression string) (k8sP
 	if err != nil {
 		return metric, err
 	}
-	if err := internalHTTP.AddAuthHeaders(req, &request.Profile); err != nil {
-		return metric, err
-	}
-	client := internalHTTP.DefaultClient(&request.Profile)
-	resp, err := client.Client.Do(req)
+	resp, err := k8sMetricsClient(request.Profile, request.client).DoAuthenticated(req)
 	if err != nil {
 		return metric, err
 	}
@@ -322,6 +324,7 @@ func cleanK8sText(value string) string {
 }
 
 type k8sPodLoadedMsg struct {
+	loadID    uint64
 	cpu       k8sPodMetric
 	memory    k8sPodMetric
 	extra     k8sPodExtraMetrics
@@ -337,6 +340,7 @@ func k8sRefreshTick() tea.Cmd {
 // k8sPodModel holds the current pod readings and terminal navigation state.
 type k8sPodModel struct {
 	request   k8sPodRequest
+	loadID    uint64
 	loading   bool
 	metricErr error
 	cpu       k8sPodMetric
@@ -349,13 +353,15 @@ type k8sPodModel struct {
 }
 
 func newK8sPodModel(request k8sPodRequest) k8sPodModel {
-	return k8sPodModel{request: request, loading: true, width: 100, height: 25}
+	request.client = k8sMetricsClient(request.Profile, request.client)
+	return k8sPodModel{request: request, loadID: 1, loading: true, width: 100, height: 25}
 }
 
 func (m k8sPodModel) Init() tea.Cmd { return tea.Batch(m.load(), k8sRefreshTick()) }
 
 func (m k8sPodModel) load() tea.Cmd {
 	request := m.request
+	loadID := m.loadID
 	return func() tea.Msg {
 		var cpu, memory k8sPodMetric
 		var extra k8sPodExtraMetrics
@@ -375,7 +381,7 @@ func (m k8sPodModel) load() tea.Cmd {
 			extra, extraErr = fetchK8sPodExtras(request)
 		}()
 		group.Wait()
-		return k8sPodLoadedMsg{cpu: cpu, memory: memory, extra: extra, metricErr: errors.Join(cpuErr, memoryErr, extraErr)}
+		return k8sPodLoadedMsg{loadID: loadID, cpu: cpu, memory: memory, extra: extra, metricErr: errors.Join(cpuErr, memoryErr, extraErr)}
 	}
 }
 
@@ -384,6 +390,9 @@ func (m k8sPodModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = max(20, msg.Width), max(6, msg.Height)
 	case k8sPodLoadedMsg:
+		if msg.loadID != m.loadID {
+			return m, nil
+		}
 		m.loading = false
 		m.cpu, m.memory, m.extra, m.metricErr = msg.cpu, msg.memory, msg.extra, msg.metricErr
 		m.updatedAt = time.Now()
@@ -392,6 +401,7 @@ func (m k8sPodModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, k8sRefreshTick()
 		}
 		m.loading = true
+		m.loadID++
 		return m, tea.Batch(m.load(), k8sRefreshTick())
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -407,10 +417,12 @@ func (m k8sPodModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scroll += max(1, m.height-7)
 		case "r":
 			m.loading, m.metricErr = true, nil
+			m.loadID++
 			return m, m.load()
 		case "1", "2", "3", "4":
 			m.request.From = map[string]string{"1": "15m", "2": "1h", "3": "6h", "4": "24h"}[msg.String()]
 			m.loading, m.metricErr, m.scroll = true, nil, 0
+			m.loadID++
 			return m, m.load()
 		}
 	}
@@ -483,7 +495,7 @@ func (m k8sPodModel) View() string {
 	header = append(header, k8sPodMetadata(width, "PARSEABLE PROFILE", m.request.Mapping.Profile, "KUBE CONTEXT", m.request.Context)...)
 	header = append(header, k8sPodMetadata(width, "NAMESPACE", m.request.Namespace, "UPDATED", updated+"  ·  refresh every 15s")...)
 	header = append(header, "")
-	header = append(header, strings.Split(podControls(m, width), "\n")...)
+	header = append(header, strings.Split(podControls(m), "\n")...)
 	header = append(header, "")
 	var body []string
 	if m.loading && m.updatedAt.IsZero() {
@@ -564,7 +576,7 @@ func k8sPodMetadata(width int, firstLabel, firstValue, secondLabel, secondValue 
 	return []string{first, second}
 }
 
-func podControls(m k8sPodModel, width int) string {
+func podControls(m k8sPodModel) string {
 	var ranges []string
 	for _, span := range []string{"15m", "1h", "6h", "24h"} {
 		ranges = append(ranges, deploymentButton(span, m.request.From == span))
@@ -579,7 +591,7 @@ func k8sSignalCard(name string, metric k8sPodMetric, width int, span string, end
 
 func appendK8sCards(body, cards []string, width int) []string {
 	for i := 0; i < len(cards); {
-		if width >= 74 && i+1 < len(cards) {
+		if width >= 88 && i+1 < len(cards) {
 			body = append(body, strings.Split(lipgloss.JoinHorizontal(lipgloss.Top, cards[i], "  ", cards[i+1]), "\n")...)
 			i += 2
 		} else {

@@ -11,8 +11,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/parseablehq/pb/pkg/config"
 	internalHTTP "github.com/parseablehq/pb/pkg/http"
 )
+
+func k8sMetricsClient(profile config.Profile, existing *internalHTTP.HTTPClient) *internalHTTP.HTTPClient {
+	if existing != nil {
+		return existing
+	}
+	client := internalHTTP.DefaultClient(&profile)
+	return &client
+}
 
 // k8sMetricCatalog maps available metric names to their label sets.
 type k8sMetricCatalog map[string][]map[string]string
@@ -43,6 +52,10 @@ func k8sMetricStep(start, end time.Time) int {
 
 // fetchK8sPodMetricCatalog checks which signals exist before querying them.
 func fetchK8sPodMetricCatalog(request k8sPodRequest) (k8sMetricCatalog, error) {
+	return fetchK8sMetricCatalog(request, k8sPodSelector(request, "", ""))
+}
+
+func fetchK8sMetricCatalog(request k8sPodRequest, selector string) (k8sMetricCatalog, error) {
 	start, err := parseTimeStr(request.From)
 	if err != nil {
 		return nil, err
@@ -51,7 +64,7 @@ func fetchK8sPodMetricCatalog(request k8sPodRequest) (k8sMetricCatalog, error) {
 	params.Set("stream", request.Mapping.MetricsDataset)
 	params.Set("start", start.UTC().Format(time.RFC3339))
 	params.Set("end", time.Now().UTC().Format(time.RFC3339))
-	params.Add("match[]", k8sPodSelector(request, "", ""))
+	params.Add("match[]", selector)
 	endpoint, err := url.JoinPath(request.Profile.URL, "prometheus/api/v1/series")
 	if err != nil {
 		return nil, err
@@ -60,11 +73,7 @@ func fetchK8sPodMetricCatalog(request k8sPodRequest) (k8sMetricCatalog, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := internalHTTP.AddAuthHeaders(req, &request.Profile); err != nil {
-		return nil, err
-	}
-	client := internalHTTP.DefaultClient(&request.Profile)
-	resp, err := client.Client.Do(req)
+	resp, err := k8sMetricsClient(request.Profile, request.client).DoAuthenticated(req)
 	if err != nil {
 		return nil, err
 	}
@@ -133,11 +142,11 @@ func fetchK8sPodExtras(request k8sPodRequest) (k8sPodExtraMetrics, error) {
 		group.Add(2)
 		go func() {
 			defer group.Done()
-			extra.networkReceive = fetchK8sRate(request, name, `direction="receive"`)
+			extra.networkReceive, _ = fetchK8sRate(request, name, `direction="receive"`)
 		}()
 		go func() {
 			defer group.Done()
-			extra.networkSend = fetchK8sRate(request, name, `direction="transmit"`)
+			extra.networkSend, _ = fetchK8sRate(request, name, `direction="transmit"`)
 		}()
 	}
 	group.Wait()
@@ -150,22 +159,22 @@ func fetchK8sPodExtras(request k8sPodRequest) (k8sPodExtraMetrics, error) {
 	if countName == "" {
 		return extra, nil
 	}
-	extra.requests = fetchK8sRate(request, countName, "")
+	extra.requests, _ = fetchK8sRate(request, countName, "")
 	if extra.requests.at.IsZero() {
 		return extra, nil
 	}
+statusLabels:
 	for _, label := range []string{"http.response.status_code", "http.status_code", "status_code", "http_status_code"} {
 		for _, series := range catalog[countName] {
 			if _, ok := series[label]; ok {
-				extra.errors = fetchK8sRate(request, countName, label+`=~"5.."`)
-				if extra.errors.at.IsZero() {
+				metric, queryErr := fetchK8sRate(request, countName, label+`=~"5.."`)
+				if queryErr == nil && metric.at.IsZero() {
 					extra.errors = zeroK8sMetric(extra.requests)
+				} else if queryErr == nil {
+					extra.errors = metric
 				}
-				break
+				break statusLabels
 			}
-		}
-		if !extra.errors.at.IsZero() {
-			break
 		}
 	}
 	bucketName := catalog.first(
@@ -201,14 +210,13 @@ func fetchK8sPodExtras(request k8sPodRequest) (k8sPodExtraMetrics, error) {
 	return extra, nil
 }
 
-func fetchK8sRate(request k8sPodRequest, name, matcher string) k8sPodMetric {
+func fetchK8sRate(request k8sPodRequest, name, matcher string) (k8sPodMetric, error) {
 	expression := "sum(rate(" + k8sPodSelector(request, name, matcher) + "[5m]))"
-	metric, _ := fetchK8sPodMetricExpression(request, expression)
-	return metric
+	return fetchK8sPodMetricExpression(request, expression)
 }
 
 func zeroK8sMetric(source k8sPodMetric) k8sPodMetric {
-	return k8sPodMetric{values: make([]float64, len(source.values)), latest: 0, at: source.at}
+	return k8sPodMetric{values: make([]float64, len(source.values)), times: source.times, latest: 0, at: source.at, windowEnd: source.windowEnd}
 }
 
 func scaleK8sMetric(source k8sPodMetric, multiplier float64) k8sPodMetric {
