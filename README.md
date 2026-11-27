@@ -328,6 +328,35 @@ pb role rm <role>
 pb promql ps
 ```
 
+## Monitor Kubernetes metrics with pb
+
+Kubernetes metrics must already be ingested into Parseable. Connect to
+Parseable with `pb login`, then map a kubeconfig context to its metrics dataset
+once:
+
+```bash
+pb k8s setup --context production --metrics-dataset pai-cluster-metrics
+```
+
+Replace `production` with your kubeconfig context and `pai-cluster-metrics`
+with your metrics dataset. Setup uses the active pb profile unless you pass
+`--profile prod`. If several clusters share a dataset, pass `--cluster-name`
+with the value stored in `k8s.cluster.name`.
+
+Open a metrics dashboard for a pod, Deployment, or StatefulSet:
+
+```bash
+pb k8s pod payment-123 -n shop --context production -i
+pb k8s deployment payment -n shop --context production -i
+pb k8s statefulset database -n shop --context production -i # or: pb k8s sts
+```
+
+The pod dashboard shows CPU, memory, resource requests and limits, and HTTP
+request rate, 5xx rate, and latency when those metrics are available.
+Deployment and StatefulSet dashboards show pod series with total, average,
+minimum, and maximum controls. They refresh every 15 seconds; press `r` to
+refresh or `1`–`4` to change the time range. 
+
 ## Command Groups
 
 | Area | Commands | What you can do |
@@ -335,6 +364,7 @@ pb promql ps
 | Query logs | `pb sql` | Run SQL, save queries, open interactive result tables |
 | Query metrics | `pb promql` | Run PromQL, inspect labels/series/cardinality |
 | Stream events | `pb tail` | Watch new events from a dataset |
+| Kubernetes telemetry | `pb k8s` | Map a context to a metrics dataset; inspect pod and workload metrics |
 | Datasets | `pb dataset` | List, inspect, create, and remove datasets |
 | Profiles | `pb login`, `pb cloud profile`, `pb profile`, `pb logout` | Manage self-hosted and Parseable Cloud connections |
 | Access control | `pb user`, `pb role` | Manage users and roles |

@@ -58,9 +58,10 @@ type Palette struct {
 	Ghost lipgloss.Color
 
 	// ── Brand / Accent ───────────────────────────────────────────────────────
-	Accent     lipgloss.Color
-	Accent2    lipgloss.Color
-	AccentSoft lipgloss.Color
+	Accent      lipgloss.Color
+	Accent2     lipgloss.Color
+	AccentSoft  lipgloss.Color
+	ChartYellow lipgloss.Color // deployment memory summary
 	// Active — bright sky-blue reserved for "cursor here, will edit"
 	// state (sidebar sub-section rails, code|builder toggle). Picked
 	// to contrast with Accent (purple) so users can distinguish
@@ -108,10 +109,11 @@ var Dark = Palette{
 	Faint: "#7E7E8A",
 	Ghost: "#525260",
 
-	Accent:     "#9E9EF0",
-	Accent2:    "#8484C8",
-	AccentSoft: "#2A2A4E",
-	Active:     "#38BDF8", // sky-400 — saturated, pops against purple
+	Accent:      "#9E9EF0",
+	Accent2:     "#8484C8",
+	AccentSoft:  "#2A2A4E",
+	ChartYellow: "#F3DB4E",
+	Active:      "#38BDF8", // sky-400 — saturated, pops against purple
 
 	Ok:       "#34D399",
 	OkSoft:   "#6EE7B7",
@@ -150,10 +152,11 @@ var Light = Palette{
 	Faint: "#71717A",
 	Ghost: "#A8A8AE",
 
-	Accent:     "#3A3A8C",
-	Accent2:    "#5151A0",
-	AccentSoft: "#E5E5FF",
-	Active:     "#0284C7", // sky-600 — readable on white bg (matches #38BDF8 dark hue)
+	Accent:      "#3A3A8C",
+	Accent2:     "#5151A0",
+	AccentSoft:  "#E5E5FF",
+	ChartYellow: "#876800",
+	Active:      "#0284C7", // sky-600 — readable on white bg (matches #38BDF8 dark hue)
 
 	Ok:       "#047857",
 	OkSoft:   "#047857",

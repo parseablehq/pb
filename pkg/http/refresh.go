@@ -31,12 +31,15 @@ type cloudRefreshResponse struct {
 
 func (transport *cloudRefreshTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := transport.base.RoundTrip(req)
-	if err != nil || resp.StatusCode != http.StatusUnauthorized || !transport.isProfileRequest(req) || !transport.canRefresh() {
+	if err != nil || resp.StatusCode != http.StatusUnauthorized || !transport.isProfileRequest(req) {
 		return resp, err
 	}
 
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
+	if !transport.canRefresh() {
+		return resp, nil
+	}
 
 	requestToken := requestSessionCookie(req)
 	if requestToken == transport.profile.SessionToken {
